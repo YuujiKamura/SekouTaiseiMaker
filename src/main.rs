@@ -6,7 +6,7 @@ use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, RequestMode, R
 use std::collections::HashMap;
 
 // GAS WebアプリURL
-const GAS_URL: &str = "https://script.google.com/macros/s/AKfycbwEWi2NQ9MmQKRoaWkgZA5mgSIiCrzg4KDcM1_X6NB53stmX0Kv0Kz3soIEDq6qkkcaUQ/exec";
+const GAS_URL: &str = "https://script.google.com/macros/s/AKfycby0WMayuYSyQM7msOVvMypjq3Tne10bLaPeiuVSre2YWJyu7wxgEkyeIKgQH2Zt_zsUBw/exec";
 
 /// スキーマのフィールド定義
 #[derive(Debug, Clone, Serialize, Deserialize)]

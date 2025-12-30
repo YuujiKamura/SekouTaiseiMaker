@@ -65,6 +65,18 @@ function listSpreadsheetsInFolder(folderId) {
 }
 
 /**
+ * 権限承認テスト用（実行して権限を付与）
+ */
+function testAuth() {
+  // Drive権限テスト
+  const folders = DriveApp.getRootFolder();
+  console.log('Drive OK: ' + folders.getName());
+
+  // Sheets権限テスト（任意のシートIDで試行）
+  console.log('権限承認完了');
+}
+
+/**
  * スプレッドシートを読み取り
  */
 function readSpreadsheet(sheetId) {
