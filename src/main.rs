@@ -64,6 +64,22 @@ pub struct SheetData {
     pub data: Vec<Vec<String>>,
 }
 
+/// フォルダ内スプレッドシート一覧
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FolderContents {
+    pub folder_id: String,
+    pub folder_name: String,
+    pub spreadsheets: Vec<SpreadsheetListItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpreadsheetListItem {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "lastUpdated")]
+    pub last_updated: String,
+}
+
 /// スキーマを使ってシートからフィールドを抽出
 fn extract_fields(schema: &Schema, sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
     let mut fields = Vec::new();
@@ -172,6 +188,38 @@ fn auto_detect_fields(sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
     }
 }
 
+/// GASからフォルダ内のスプレッドシート一覧を取得
+async fn fetch_folder_contents(folder_id: &str) -> Result<FolderContents, String> {
+    if folder_id.is_empty() {
+        return Err("フォルダIDを入力してください".to_string());
+    }
+    let url = format!("{}?folder={}", GAS_URL, folder_id);
+
+    let opts = RequestInit::new();
+    opts.set_method("GET");
+    opts.set_mode(RequestMode::Cors);
+
+    let request = Request::new_with_str_and_init(&url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
+
+    let data: FolderContents = serde_wasm_bindgen::from_value(json)
+        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
+
+    Ok(data)
+}
+
 /// GASからスプレッドシートを取得
 async fn fetch_spreadsheet(sheet_id: &str) -> Result<SpreadsheetData, String> {
     if sheet_id.is_empty() {
@@ -210,7 +258,8 @@ fn App() -> impl IntoView {
     let (spreadsheet, set_spreadsheet) = create_signal(None::<SpreadsheetData>);
     let (parsed_result, set_parsed_result) = create_signal(None::<ParsedResult>);
     let (use_auto_detect, set_use_auto_detect) = create_signal(true);
-    let (sheet_id_input, set_sheet_id_input) = create_signal(String::new());
+    let (folder_id_input, set_folder_id_input) = create_signal(String::new());
+    let (folder_contents, set_folder_contents) = create_signal(None::<FolderContents>);
     let (loading, set_loading) = create_signal(false);
     let (error_msg, set_error_msg) = create_signal(None::<String>);
 
@@ -292,9 +341,30 @@ fn App() -> impl IntoView {
         }
     };
 
-    // GASからデータ取得
-    let on_fetch_click = move |_| {
-        let sheet_id = sheet_id_input.get();
+    // フォルダ一覧取得
+    let on_folder_fetch = move |_| {
+        let folder_id = folder_id_input.get();
+        spawn_local(async move {
+            set_loading.set(true);
+            set_error_msg.set(None);
+
+            match fetch_folder_contents(&folder_id).await {
+                Ok(contents) => {
+                    set_folder_contents.set(Some(contents));
+                    set_spreadsheet.set(None);
+                    set_parsed_result.set(None);
+                }
+                Err(e) => {
+                    set_error_msg.set(Some(e));
+                }
+            }
+
+            set_loading.set(false);
+        });
+    };
+
+    // スプレッドシート選択
+    let on_spreadsheet_select = move |sheet_id: String| {
         spawn_local(async move {
             set_loading.set(true);
             set_error_msg.set(None);
@@ -318,25 +388,48 @@ fn App() -> impl IntoView {
             <h1>"施工体制メーカー"</h1>
 
             <div class="gas-section">
-                <h3>"Google スプレッドシートから読み込み"</h3>
+                <h3>"Google Drive フォルダから読み込み"</h3>
                 <div class="input-group">
                     <input
                         type="text"
-                        placeholder="スプレッドシートID（空欄でデフォルト）"
-                        prop:value=move || sheet_id_input.get()
-                        on:input=move |ev| set_sheet_id_input.set(event_target_value(&ev))
+                        placeholder="フォルダID"
+                        prop:value=move || folder_id_input.get()
+                        on:input=move |ev| set_folder_id_input.set(event_target_value(&ev))
                     />
                     <button
-                        on:click=on_fetch_click
+                        on:click=on_folder_fetch
                         disabled=move || loading.get()
                     >
-                        {move || if loading.get() { "読み込み中..." } else { "読み込む" }}
+                        {move || if loading.get() { "読み込み中..." } else { "フォルダを開く" }}
                     </button>
                 </div>
                 {move || error_msg.get().map(|e| view! {
                     <p class="status error">{e}</p>
                 })}
             </div>
+
+            {move || folder_contents.get().map(|contents| {
+                let folder_name = contents.folder_name.clone();
+                view! {
+                    <div class="folder-list">
+                        <h3>"フォルダ: " {folder_name}</h3>
+                        <div class="spreadsheet-list">
+                            {contents.spreadsheets.into_iter().map(|ss| {
+                                let id = ss.id.clone();
+                                let name = ss.name.clone();
+                                view! {
+                                    <button
+                                        class="spreadsheet-item"
+                                        on:click=move |_| on_spreadsheet_select(id.clone())
+                                    >
+                                        {name}
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
+                    </div>
+                }
+            })}
 
             <div class="upload-section">
                 <div class="upload-area">
