@@ -64,6 +64,13 @@ pub struct SheetData {
     pub data: Vec<Vec<String>>,
 }
 
+/// GASエラーレスポンス
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GasError {
+    pub error: bool,
+    pub message: String,
+}
+
 /// フォルダ内スプレッドシート一覧
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FolderContents {
@@ -230,6 +237,13 @@ async fn fetch_folder_contents(folder_input: &str) -> Result<FolderContents, Str
     let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
         .await
         .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
+
+    // エラーレスポンスをチェック
+    if let Ok(err) = serde_wasm_bindgen::from_value::<GasError>(json.clone()) {
+        if err.error {
+            return Err(format!("GASエラー: {}", err.message));
+        }
+    }
 
     let data: FolderContents = serde_wasm_bindgen::from_value(json)
         .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
