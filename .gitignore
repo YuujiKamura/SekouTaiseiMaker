@@ -1,5 +1,10 @@
 /target
 /dist
-/data/*.json
 *.log
 .DS_Store
+
+# 実データは除外（固有名詞を含むため）
+/data/local/
+/data/sekoutaisei/
+/data/*.json
+!/data/schema/

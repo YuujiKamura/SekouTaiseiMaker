@@ -1,0 +1,104 @@
+{
+  "id": "sekoutaicho",
+  "name": "施工体制台帳",
+  "version": "1.0",
+  "description": "建設工事の施工体制台帳書式",
+  "fields": [
+    {
+      "id": "company_name",
+      "label": "会社名・事業者ID",
+      "type": "text",
+      "row": 4,
+      "col": 12,
+      "required": true
+    },
+    {
+      "id": "office_name",
+      "label": "事業所名・現場ID",
+      "type": "text",
+      "row": 6,
+      "col": 12,
+      "required": true
+    },
+    {
+      "id": "permit_type",
+      "label": "許可業種",
+      "type": "text",
+      "row": 10,
+      "col": 8,
+      "required": true
+    },
+    {
+      "id": "permit_number",
+      "label": "許可番号",
+      "type": "text",
+      "row": 10,
+      "col": 23,
+      "required": true
+    },
+    {
+      "id": "project_name",
+      "label": "工事名称",
+      "type": "text",
+      "row": 13,
+      "col": 8,
+      "required": true
+    },
+    {
+      "id": "project_content",
+      "label": "工事内容",
+      "type": "text",
+      "row": 15,
+      "col": 8,
+      "required": true
+    },
+    {
+      "id": "client_code",
+      "label": "発注者コード",
+      "type": "text",
+      "row": 17,
+      "col": 8,
+      "required": false
+    },
+    {
+      "id": "client_name",
+      "label": "発注者名",
+      "type": "text",
+      "row": 19,
+      "col": 8,
+      "required": true
+    },
+    {
+      "id": "period_start",
+      "label": "工期開始",
+      "type": "date",
+      "row": 21,
+      "col": 10,
+      "required": true
+    },
+    {
+      "id": "period_end",
+      "label": "工期終了",
+      "type": "date",
+      "row": 23,
+      "col": 10,
+      "required": true
+    },
+    {
+      "id": "prime_contractor",
+      "label": "元請契約",
+      "type": "text",
+      "row": 27,
+      "col": 14,
+      "required": true
+    },
+    {
+      "id": "subcontractor",
+      "label": "下請契約",
+      "type": "text",
+      "row": 29,
+      "col": 14,
+      "required": false
+    }
+  ]
+}
