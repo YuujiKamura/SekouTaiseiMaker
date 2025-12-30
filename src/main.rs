@@ -188,11 +188,28 @@ fn auto_detect_fields(sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
     }
 }
 
-/// GASからフォルダ内のスプレッドシート一覧を取得
-async fn fetch_folder_contents(folder_id: &str) -> Result<FolderContents, String> {
-    if folder_id.is_empty() {
-        return Err("フォルダIDを入力してください".to_string());
+/// URLからフォルダIDを抽出
+fn extract_folder_id(input: &str) -> String {
+    // https://drive.google.com/drive/folders/FOLDER_ID 形式
+    if input.contains("/folders/") {
+        input
+            .split("/folders/")
+            .nth(1)
+            .map(|s| s.split(['?', '#']).next().unwrap_or(s))
+            .unwrap_or(input)
+            .to_string()
+    } else {
+        // IDそのまま
+        input.to_string()
     }
+}
+
+/// GASからフォルダ内のスプレッドシート一覧を取得
+async fn fetch_folder_contents(folder_input: &str) -> Result<FolderContents, String> {
+    if folder_input.is_empty() {
+        return Err("フォルダURLまたはIDを入力してください".to_string());
+    }
+    let folder_id = extract_folder_id(folder_input);
     let url = format!("{}?folder={}", GAS_URL, folder_id);
 
     let opts = RequestInit::new();
@@ -392,7 +409,7 @@ fn App() -> impl IntoView {
                 <div class="input-group">
                     <input
                         type="text"
-                        placeholder="フォルダID"
+                        placeholder="フォルダURL または ID"
                         prop:value=move || folder_id_input.get()
                         on:input=move |ev| set_folder_id_input.set(event_target_value(&ev))
                     />
