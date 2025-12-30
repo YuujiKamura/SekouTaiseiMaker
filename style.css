@@ -156,3 +156,39 @@ button {
 button:hover {
     background: #0056b3;
 }
+
+button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.gas-section {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.gas-section h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.input-group input[type="text"] {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.status.error {
+    background: #f8d7da;
+    color: #721c24;
+}

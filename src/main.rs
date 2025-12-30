@@ -1,8 +1,12 @@
 use leptos::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-use web_sys::{FileReader, HtmlInputElement};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, RequestMode, Response};
 use std::collections::HashMap;
+
+// GAS WebアプリURL
+const GAS_URL: &str = "https://script.google.com/macros/s/AKfycbwEWi2NQ9MmQKRoaWkgZA5mgSIiCrzg4KDcM1_X6NB53stmX0Kv0Kz3soIEDq6qkkcaUQ/exec";
 
 /// スキーマのフィールド定義
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,12 +172,48 @@ fn auto_detect_fields(sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
     }
 }
 
+/// GASからスプレッドシートを取得
+async fn fetch_spreadsheet(sheet_id: &str) -> Result<SpreadsheetData, String> {
+    let url = if sheet_id.is_empty() {
+        GAS_URL.to_string()
+    } else {
+        format!("{}?id={}", GAS_URL, sheet_id)
+    };
+
+    let opts = RequestInit::new();
+    opts.set_method("GET");
+    opts.set_mode(RequestMode::Cors);
+
+    let request = Request::new_with_str_and_init(&url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
+
+    let data: SpreadsheetData = serde_wasm_bindgen::from_value(json)
+        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
+
+    Ok(data)
+}
+
 #[component]
 fn App() -> impl IntoView {
     let (schema, set_schema) = create_signal(None::<Schema>);
     let (spreadsheet, set_spreadsheet) = create_signal(None::<SpreadsheetData>);
     let (parsed_result, set_parsed_result) = create_signal(None::<ParsedResult>);
     let (use_auto_detect, set_use_auto_detect) = create_signal(true);
+    let (sheet_id_input, set_sheet_id_input) = create_signal(String::new());
+    let (loading, set_loading) = create_signal(false);
+    let (error_msg, set_error_msg) = create_signal(None::<String>);
 
     // スキーマファイル読み込み
     let on_schema_change = move |ev: web_sys::Event| {
@@ -253,13 +293,55 @@ fn App() -> impl IntoView {
         }
     };
 
+    // GASからデータ取得
+    let on_fetch_click = move |_| {
+        let sheet_id = sheet_id_input.get();
+        spawn_local(async move {
+            set_loading.set(true);
+            set_error_msg.set(None);
+
+            match fetch_spreadsheet(&sheet_id).await {
+                Ok(data) => {
+                    set_spreadsheet.set(Some(data));
+                    set_parsed_result.set(None);
+                }
+                Err(e) => {
+                    set_error_msg.set(Some(e));
+                }
+            }
+
+            set_loading.set(false);
+        });
+    };
+
     view! {
         <div class="container">
             <h1>"施工体制メーカー"</h1>
 
+            <div class="gas-section">
+                <h3>"Google スプレッドシートから読み込み"</h3>
+                <div class="input-group">
+                    <input
+                        type="text"
+                        placeholder="スプレッドシートID（空欄でデフォルト）"
+                        prop:value=move || sheet_id_input.get()
+                        on:input=move |ev| set_sheet_id_input.set(event_target_value(&ev))
+                    />
+                    <button
+                        on:click=on_fetch_click
+                        disabled=move || loading.get()
+                    >
+                        {move || if loading.get() { "読み込み中..." } else { "読み込む" }}
+                    </button>
+                </div>
+                {move || error_msg.get().map(|e| view! {
+                    <p class="status error">{e}</p>
+                })}
+            </div>
+
             <div class="upload-section">
                 <div class="upload-area">
-                    <h3>"1. スキーマ (任意)"</h3>
+                    <h3>"スキーマ (任意)"</h3>
                     <p>"書式定義JSONをアップロード"</p>
                     <input type="file" accept=".json" on:change=on_schema_change />
                     {move || schema.get().map(|s| view! {
@@ -268,7 +350,7 @@ fn App() -> impl IntoView {
                 </div>
 
                 <div class="upload-area">
-                    <h3>"2. データ"</h3>
+                    <h3>"ローカルJSON"</h3>
                     <p>"スプレッドシートJSONをアップロード"</p>
                     <input type="file" accept=".json" on:change=on_data_change />
                 </div>
