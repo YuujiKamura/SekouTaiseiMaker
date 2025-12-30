@@ -174,11 +174,10 @@ fn auto_detect_fields(sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
 
 /// GASからスプレッドシートを取得
 async fn fetch_spreadsheet(sheet_id: &str) -> Result<SpreadsheetData, String> {
-    let url = if sheet_id.is_empty() {
-        GAS_URL.to_string()
-    } else {
-        format!("{}?id={}", GAS_URL, sheet_id)
-    };
+    if sheet_id.is_empty() {
+        return Err("スプレッドシートIDを入力してください".to_string());
+    }
+    let url = format!("{}?id={}", GAS_URL, sheet_id);
 
     let opts = RequestInit::new();
     opts.set_method("GET");

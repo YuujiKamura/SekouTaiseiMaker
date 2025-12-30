@@ -3,16 +3,19 @@
  * GAS経由でスプレッドシートの構造を取得
  */
 
-// デフォルトの契約書スプレッドシートID
-const DEFAULT_SHEET_ID = 'REDACTED_SHEET_ID';
-
 /**
  * Webアプリのエントリーポイント
  * GET: ?id=スプレッドシートID でデータ取得
  */
 function doGet(e) {
   try {
-    const sheetId = e.parameter.id || DEFAULT_SHEET_ID;
+    const sheetId = e.parameter.id;
+    if (!sheetId) {
+      return ContentService.createTextOutput(JSON.stringify({
+        error: true,
+        message: 'スプレッドシートIDが必要です（?id=xxx）'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
     const data = readSpreadsheet(sheetId);
 
     return ContentService.createTextOutput(JSON.stringify(data))
@@ -56,11 +59,3 @@ function readSpreadsheet(sheetId) {
   return result;
 }
 
-/**
- * テスト用: デフォルトシートの構造を取得
- */
-function testReadDefault() {
-  const data = readSpreadsheet(DEFAULT_SHEET_ID);
-  console.log(JSON.stringify(data, null, 2));
-  return data;
-}
