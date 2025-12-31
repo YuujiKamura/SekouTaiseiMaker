@@ -1,0 +1,57 @@
+{
+  "project_name": "サンプル工事",
+  "client": "○○市",
+  "period": "令和7年1月〜令和7年3月",
+  "contractors": [
+    {
+      "id": "prime",
+      "name": "元請建設株式会社",
+      "role": "元請",
+      "docs": {
+        "01_建設業許可": { "status": true, "file": "01建設業許可.pdf" },
+        "02_事業所番号": { "status": true, "file": "02事業所番号.pdf" },
+        "03_労働保険番号": { "status": true, "file": "03労働保険番号.pdf" },
+        "041_現場代理人資格": { "status": true, "file": "041資格証明.pdf" },
+        "042_現場代理人在籍": { "status": true, "file": "042在籍証明.pdf" },
+        "051_主任技術者資格": { "status": true, "file": "051資格証明.pdf" },
+        "052_主任技術者在籍": { "status": true, "file": "052在籍証明.pdf" },
+        "06_法定外労災": { "status": true, "file": "06法定外労災.pdf" },
+        "07_建退共": { "status": true, "file": "07建退共.pdf" },
+        "08_作業員名簿": { "status": true, "file": "08作業員名簿.xlsx" },
+        "09_暴対法誓約書": { "status": true, "file": "09誓約書.pdf" }
+      }
+    },
+    {
+      "id": "sub1",
+      "name": "下請A工業",
+      "role": "切削工",
+      "docs": {
+        "01_建設業許可": { "status": true, "file": "01建設業許可.pdf" },
+        "02_事業所番号": { "status": false, "file": null, "note": "要依頼" },
+        "03_労働保険番号": { "status": true, "file": "03労働保険番号.pdf" },
+        "051_主任技術者資格": { "status": true, "file": "051資格証明.pdf" },
+        "052_主任技術者在籍": { "status": true, "file": "052在籍証明.pdf" },
+        "06_法定外労災": { "status": false, "file": null, "note": "要依頼" },
+        "07_建退共": { "status": true, "file": "07建退共.xlsx" },
+        "08_作業員名簿": { "status": true, "file": "08作業員名簿.xlsx" },
+        "09_暴対法誓約書": { "status": true, "file": "09誓約書.pdf" }
+      }
+    },
+    {
+      "id": "sub2",
+      "name": "下請B株式会社",
+      "role": "区画線",
+      "docs": {
+        "01_建設業許可": { "status": true, "file": "01建設業許可.pdf" },
+        "02_事業所番号": { "status": true, "file": "02事業所番号.pdf" },
+        "03_労働保険番号": { "status": true, "file": "03労働保険番号.pdf" },
+        "051_主任技術者資格": { "status": true, "file": "051資格証明.pdf" },
+        "052_主任技術者在籍": { "status": true, "file": "052在籍証明.pdf" },
+        "06_法定外労災": { "status": true, "file": "06法定外労災.pdf" },
+        "07_建退共": { "status": true, "file": "07建退共.pdf" },
+        "08_作業員名簿": { "status": true, "file": "08作業員名簿.pdf" },
+        "09_暴対法誓約書": { "status": true, "file": "09誓約書.pdf" }
+      }
+    }
+  ]
+}

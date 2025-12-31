@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>施工体制メーカー</title>
+    <link rel="stylesheet" href="/style-7648076e8991d2db.css" integrity="sha384-2Nzioo9OCAqLI7E8wPGdWuZ7+plIB7JRYkpSicTfKQhFuMemrvM0rPq6Yb0f8nKF"/>
+<link rel="modulepreload" href="/sekou_taisei_maker-aa497a7821bcb030.js" crossorigin="anonymous" integrity="sha384-CUyellY3uopGuNxWUtDEk0TDEBwsNa54kQcXssHk9Oas0nQDE6RXPl5DgQRAQdQj"><link rel="preload" href="/sekou_taisei_maker-aa497a7821bcb030_bg.wasm" crossorigin="anonymous" integrity="sha384-4vEdxZMoLdJVNk5ZVtxQ7lk6b5/vANFK75GtX0cXRMV0calyGSHEg7jxN63lUDsR" as="fetch" type="application/wasm"></head>
+<body>
+
+<script type="module">
+import init, * as bindings from '/sekou_taisei_maker-aa497a7821bcb030.js';
+const wasm = await init({ module_or_path: '/sekou_taisei_maker-aa497a7821bcb030_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script></body>
+</html>

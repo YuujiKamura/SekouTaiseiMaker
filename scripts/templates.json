@@ -1,0 +1,25 @@
+{
+  "folder_id": "1yXx-asUzHWbZJcHn4OZOU9s8sKfXKn2n",
+  "templates": {
+    "下請契約書": {
+      "id": "13DpLrdgNMtfZhqkX69YiKCV0LHvOp4UpI434piaplk8",
+      "name": "【テンプレート】建設工事下請契約書",
+      "description": "下請業者との契約書。Linkシート→目次→施工体制とIMPORTRANGE連携"
+    },
+    "産廃契約書": {
+      "id": "1M8rZLpMZzpi_4PfZi3rBK-Uj5IQIP7RJfIRF8oxD0sg",
+      "name": "【テンプレート】建設廃棄物処理委託契約書",
+      "description": "産廃業者との委託契約書。入力シートで契約日・搬出量を設定"
+    },
+    "施工体制台帳": {
+      "id": "1YyF-nWjIS8qRfnzDNktFiKbLpotsQQewLVGGDfZMyF0",
+      "name": "【テンプレート】施工体制台帳",
+      "description": "下請業者ごとの施工体制台帳シート"
+    }
+  },
+  "urls": {
+    "下請契約書": "https://docs.google.com/spreadsheets/d/13DpLrdgNMtfZhqkX69YiKCV0LHvOp4UpI434piaplk8/edit",
+    "産廃契約書": "https://docs.google.com/spreadsheets/d/1M8rZLpMZzpi_4PfZi3rBK-Uj5IQIP7RJfIRF8oxD0sg/edit",
+    "施工体制台帳": "https://docs.google.com/spreadsheets/d/1YyF-nWjIS8qRfnzDNktFiKbLpotsQQewLVGGDfZMyF0/edit"
+  }
+}
