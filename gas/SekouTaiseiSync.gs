@@ -42,10 +42,59 @@ function doOptions(e) {
 // GETリクエスト処理（データ取得）
 function doGet(e) {
   try {
+    const action = e.parameter.action;
+
+    // PDF取得アクション
+    if (action === 'fetchPdf') {
+      const fileId = e.parameter.fileId;
+      if (!fileId) {
+        return jsonResponse({ error: 'fileId is required' });
+      }
+      const result = fetchPdfAsBase64(fileId);
+      return jsonResponse(result);
+    }
+
+    // デフォルト: プロジェクトデータ取得
     const data = loadProject();
     return jsonResponse(data);
   } catch (err) {
     return jsonResponse({ error: err.message });
+  }
+}
+
+// Google DriveからPDFを取得してBase64で返す
+function fetchPdfAsBase64(fileId) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const blob = file.getBlob();
+    const mimeType = blob.getContentType();
+
+    // PDFでない場合はPDFに変換を試みる
+    let pdfBlob;
+    if (mimeType === 'application/pdf') {
+      pdfBlob = blob;
+    } else if (mimeType.includes('google-apps.document') ||
+               mimeType.includes('google-apps.spreadsheet') ||
+               mimeType.includes('google-apps.presentation')) {
+      // Google Docs/Sheets/SlidesはPDFエクスポート
+      const exportUrl = 'https://www.googleapis.com/drive/v3/files/' + fileId + '/export?mimeType=application/pdf';
+      const response = UrlFetchApp.fetch(exportUrl, {
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }
+      });
+      pdfBlob = response.getBlob();
+    } else {
+      return { error: 'Unsupported file type: ' + mimeType };
+    }
+
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+    return {
+      success: true,
+      fileName: file.getName(),
+      mimeType: 'application/pdf',
+      base64: base64
+    };
+  } catch (err) {
+    return { error: 'Failed to fetch PDF: ' + err.message };
   }
 }
 

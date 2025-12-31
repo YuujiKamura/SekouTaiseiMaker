@@ -64,6 +64,34 @@ window.PdfEditor = (function() {
     }
 
     /**
+     * Base64文字列からPDFを読み込む
+     */
+    async function loadPdfFromBase64(base64String) {
+        try {
+            // Base64をバイナリに変換
+            const binaryString = atob(base64String);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            pdfBytes = bytes;
+            const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+            pdfDoc = await loadingTask.promise;
+            totalPages = pdfDoc.numPages;
+            currentPage = 1;
+            textAnnotations = [];
+            selectedId = null;
+            hoveredId = null;
+            annotationIdCounter = 0;
+
+            return { totalPages: totalPages };
+        } catch (err) {
+            throw err;
+        }
+    }
+
+    /**
      * 指定ページをキャンバスに描画
      */
     async function renderPage(pageNum, canvasId, overlayCanvasId) {
@@ -428,6 +456,7 @@ window.PdfEditor = (function() {
 
     return {
         loadPdf,
+        loadPdfFromBase64,
         renderPage,
         addTextAnnotation,
         undoLastAnnotation,

@@ -1909,6 +1909,36 @@ fn convert_to_embed_url(url: &str) -> String {
     url.to_string()
 }
 
+/// Google Drive URLからファイルIDを抽出
+fn extract_file_id(url: &str) -> Option<String> {
+    // https://drive.google.com/file/d/{FILE_ID}/view
+    // https://docs.google.com/document/d/{FILE_ID}/edit
+    // https://docs.google.com/spreadsheets/d/{FILE_ID}/edit
+    // https://docs.google.com/presentation/d/{FILE_ID}/edit
+
+    if let Some(start) = url.find("/d/") {
+        let rest = &url[start + 3..];
+        if let Some(end) = rest.find('/') {
+            return Some(rest[..end].to_string());
+        } else {
+            // URLの末尾にファイルIDがある場合
+            return Some(rest.to_string());
+        }
+    }
+
+    // ?id=XXX 形式
+    if let Some(start) = url.find("id=") {
+        let rest = &url[start + 3..];
+        if let Some(end) = rest.find('&') {
+            return Some(rest[..end].to_string());
+        } else {
+            return Some(rest.to_string());
+        }
+    }
+
+    None
+}
+
 #[component]
 fn PdfEditor(
     contractor: String,
@@ -1925,9 +1955,125 @@ fn PdfEditor(
     let (status_message, set_status_message) = create_signal(None::<String>);
     let (edit_mode, set_edit_mode) = create_signal("add".to_string()); // "add" | "select"
     let (has_selection, set_has_selection) = create_signal(false);
+    let (is_loading, set_is_loading) = create_signal(false);
 
     let contractor_display = contractor.clone();
     let doc_type_display = doc_type.clone();
+    let url_for_auto_load = original_url.clone();
+
+    // コンポーネントマウント時にPDFを自動読み込み
+    create_effect(move |_| {
+        // GAS URLが設定されていて、ファイルIDが抽出できる場合のみ
+        if let (Some(gas_url), Some(file_id)) = (get_gas_url(), extract_file_id(&url_for_auto_load)) {
+            set_is_loading.set(true);
+            set_status_message.set(Some("PDFを読み込み中...".to_string()));
+
+            let fetch_url = format!("{}?action=fetchPdf&fileId={}", gas_url, file_id);
+
+            spawn_local(async move {
+                let opts = RequestInit::new();
+                opts.set_method("GET");
+
+                let request = match Request::new_with_str_and_init(&fetch_url, &opts) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        set_status_message.set(Some("リクエスト作成失敗".to_string()));
+                        set_is_loading.set(false);
+                        return;
+                    }
+                };
+
+                let window = match web_sys::window() {
+                    Some(w) => w,
+                    None => {
+                        set_is_loading.set(false);
+                        return;
+                    }
+                };
+
+                let resp_value = match JsFuture::from(window.fetch_with_request(&request)).await {
+                    Ok(r) => r,
+                    Err(_) => {
+                        set_status_message.set(Some("GASへの接続に失敗しました".to_string()));
+                        set_is_loading.set(false);
+                        return;
+                    }
+                };
+
+                let resp: Response = match resp_value.dyn_into() {
+                    Ok(r) => r,
+                    Err(_) => {
+                        set_is_loading.set(false);
+                        return;
+                    }
+                };
+
+                if !resp.ok() {
+                    set_status_message.set(Some(format!("エラー: {}", resp.status())));
+                    set_is_loading.set(false);
+                    return;
+                }
+
+                let json = match resp.json() {
+                    Ok(j) => match JsFuture::from(j).await {
+                        Ok(j) => j,
+                        Err(_) => {
+                            set_status_message.set(Some("JSON解析失敗".to_string()));
+                            set_is_loading.set(false);
+                            return;
+                        }
+                    },
+                    Err(_) => {
+                        set_is_loading.set(false);
+                        return;
+                    }
+                };
+
+                // base64フィールドを取得
+                let base64 = js_sys::Reflect::get(&json, &wasm_bindgen::JsValue::from_str("base64"))
+                    .ok()
+                    .and_then(|v| v.as_string());
+
+                if let Some(base64_data) = base64 {
+                    // PdfEditor.loadPdfFromBase64を呼び出し
+                    if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
+                        if let Ok(load_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("loadPdfFromBase64")) {
+                            if let Ok(f) = load_fn.dyn_into::<js_sys::Function>() {
+                                let promise = f.call1(&editor, &wasm_bindgen::JsValue::from_str(&base64_data));
+                                if let Ok(p) = promise {
+                                    if let Ok(promise) = p.dyn_into::<js_sys::Promise>() {
+                                        if let Ok(result) = JsFuture::from(promise).await {
+                                            let pages = js_sys::Reflect::get(&result, &wasm_bindgen::JsValue::from_str("totalPages"))
+                                                .ok()
+                                                .and_then(|v| v.as_f64())
+                                                .map(|v| v as i32)
+                                                .unwrap_or(0);
+
+                                            set_total_pages.set(pages);
+                                            set_current_page.set(1);
+                                            set_pdf_loaded.set(true);
+                                            set_status_message.set(Some(format!("読み込み完了: {}ページ", pages)));
+
+                                            // 最初のページをレンダリング
+                                            render_current_page(1).await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // エラーメッセージを確認
+                    let error = js_sys::Reflect::get(&json, &wasm_bindgen::JsValue::from_str("error"))
+                        .ok()
+                        .and_then(|v| v.as_string());
+                    set_status_message.set(Some(error.unwrap_or("PDF取得失敗".to_string())));
+                }
+
+                set_is_loading.set(false);
+            });
+        }
+    });
 
     // 戻るボタン
     let on_back = move |_| {
@@ -2311,33 +2457,47 @@ fn PdfEditor(
                     on:mouseup=on_canvas_mouseup
                 ></canvas>
 
-                {move || (!pdf_loaded.get()).then(|| {
-                    let embed_url = convert_to_embed_url(&original_url);
-                    view! {
-                        <div class="pdf-preview-container">
-                            <div class="pdf-preview-header">
-                                <span class="preview-label">"プレビュー（読み取り専用）"</span>
-                                <a
-                                    class="download-btn"
-                                    href=original_url.clone()
-                                    target="_blank"
-                                    rel="noopener"
-                                >
-                                    "ダウンロード ↓"
-                                </a>
+                {move || {
+                    if pdf_loaded.get() {
+                        // 読み込み済み: 何も表示しない
+                        None
+                    } else if is_loading.get() {
+                        // ローディング中
+                        Some(view! {
+                            <div class="pdf-loading">
+                                <div class="loading-spinner"></div>
+                                <p>"PDFを読み込み中..."</p>
                             </div>
-                            <iframe
-                                class="pdf-preview-iframe"
-                                src=embed_url
-                                frameborder="0"
-                                allowfullscreen=true
-                            ></iframe>
-                            <div class="upload-instruction">
-                                <p>"編集するには上の「PDFを読み込む」からファイルをアップロードしてください"</p>
+                        }.into_view())
+                    } else {
+                        // 未読み込み: プレビュー表示（GAS未設定時のフォールバック）
+                        let embed_url = convert_to_embed_url(&original_url);
+                        Some(view! {
+                            <div class="pdf-preview-container">
+                                <div class="pdf-preview-header">
+                                    <span class="preview-label">"プレビュー（読み取り専用）"</span>
+                                    <a
+                                        class="download-btn"
+                                        href=original_url.clone()
+                                        target="_blank"
+                                        rel="noopener"
+                                    >
+                                        "ダウンロード ↓"
+                                    </a>
+                                </div>
+                                <iframe
+                                    class="pdf-preview-iframe"
+                                    src=embed_url
+                                    frameborder="0"
+                                    allowfullscreen=true
+                                ></iframe>
+                                <div class="upload-instruction">
+                                    <p>"GAS未設定のため自動読み込みできません。上の「PDFを読み込む」からファイルをアップロードしてください"</p>
+                                </div>
                             </div>
-                        </div>
+                        }.into_view())
                     }
-                })}
+                }}
             </div>
 
             <button class="back-button-float" on:click=on_back>
