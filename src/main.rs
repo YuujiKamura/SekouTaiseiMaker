@@ -2871,23 +2871,7 @@ fn App() -> impl IntoView {
     view! {
         <div class="app">
             <header class="app-header">
-                <h1>"施工体制チェッカー"</h1>
-
-                // 保存状態インジケーター
-                <div class="save-indicator">
-                    {move || {
-                        if project.get().is_some() {
-                            view! { <span class="saved">"保存済み"</span> }.into_view()
-                        } else {
-                            view! { <span class="no-data">"データなし"</span> }.into_view()
-                        }
-                    }}
-                </div>
-
-                // 編集モード表示
-                {move || edit_mode.get().then(|| view! {
-                    <span class="edit-mode-badge">"編集中"</span>
-                })}
+                <h1>"施工体制メーカー"</h1>
 
                 // チェックモード表示
                 {move || {
