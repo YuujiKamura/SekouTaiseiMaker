@@ -15,7 +15,8 @@
       "Bash(cargo build:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(curl:*)"
     ]
   }
 }
