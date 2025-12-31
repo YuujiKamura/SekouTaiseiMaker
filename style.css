@@ -1150,6 +1150,292 @@ button:disabled {
 }
 
 /* ============================================
+   PDFビューワ
+   ============================================ */
+
+.pdf-viewer {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px);
+    background: #f5f5f5;
+}
+
+.pdf-viewer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: #1a1a2e;
+    color: white;
+}
+
+.pdf-viewer-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.pdf-viewer-title .contractor-label {
+    font-size: 12px;
+    color: #aaa;
+}
+
+.pdf-viewer-title .doc-label {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.back-btn,
+.close-btn {
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.back-btn:hover,
+.close-btn:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.5);
+}
+
+.pdf-viewer-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.pdf-preview-area {
+    flex: 1;
+    background: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+}
+
+.pdf-preview-area .pdf-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.pdf-controls {
+    width: 320px;
+    padding: 20px;
+    background: #f5f5f5;
+    overflow-y: auto;
+    border-left: 1px solid #e0e0e0;
+}
+
+.control-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.control-button {
+    width: 100%;
+    padding: 12px;
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.control-button:hover {
+    background: #1976D2;
+}
+
+.control-button:disabled {
+    background: #bdbdbd;
+    cursor: not-allowed;
+}
+
+.control-button.gemini-btn {
+    background: #9c27b0;
+}
+
+.control-button.gemini-btn:hover {
+    background: #7b1fa2;
+}
+
+.control-button.export-btn {
+    background: #4caf50;
+}
+
+.control-button.export-btn:hover {
+    background: #43a047;
+}
+
+.loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 16px;
+    background: #e3f2fd;
+    border-radius: 4px;
+    color: #1976D2;
+}
+
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #1976D2;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.ocr-result-section,
+.missing-fields-section,
+.gemini-result-section {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.ocr-result-section h4,
+.missing-fields-section h4,
+.gemini-result-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: #333;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 8px;
+}
+
+.ocr-text,
+.gemini-text {
+    background: #fafafa;
+    border-radius: 4px;
+    padding: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.ocr-text pre,
+.gemini-text pre {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: inherit;
+}
+
+.missing-field {
+    margin-bottom: 15px;
+}
+
+.missing-field label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    font-size: 13px;
+    color: #333;
+}
+
+.missing-field input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.missing-field input:focus {
+    outline: none;
+    border-color: #2196F3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+}
+
+.signature-placeholder {
+    border: 2px dashed #ddd;
+    border-radius: 4px;
+    padding: 30px;
+    text-align: center;
+    color: #999;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.signature-placeholder:hover {
+    border-color: #2196F3;
+    color: #2196F3;
+}
+
+.export-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* OCRビューワプレースホルダ */
+.ocr-viewer-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.ocr-viewer-placeholder p {
+    margin-bottom: 20px;
+    color: #666;
+    font-size: 16px;
+}
+
+/* PDFビューワ レスポンシブ */
+@media (max-width: 768px) {
+    .pdf-viewer-content {
+        flex-direction: column;
+    }
+
+    .pdf-preview-area {
+        height: 50vh;
+        min-height: 300px;
+    }
+
+    .pdf-controls {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid #e0e0e0;
+        max-height: 50vh;
+    }
+
+    .pdf-viewer-header {
+        padding: 10px 15px;
+    }
+
+    .pdf-viewer-title .doc-label {
+        font-size: 14px;
+    }
+}
+
+/* ============================================
    スプレッドシートビューア
    ============================================ */
 
@@ -1234,14 +1520,14 @@ button:disabled {
     background: #2E7D32;
 }
 
-.gemini-section {
+.spreadsheet-viewer .gemini-section {
     width: 100%;
     border-top: 1px solid #ddd;
     padding-top: 20px;
     text-align: center;
 }
 
-.gemini-section h4 {
+.spreadsheet-viewer .gemini-section h4 {
     color: #666;
     font-weight: normal;
     margin-bottom: 16px;
