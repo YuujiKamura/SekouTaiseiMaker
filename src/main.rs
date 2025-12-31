@@ -1951,6 +1951,7 @@ fn PdfEditor(
     let (current_page, set_current_page) = create_signal(1);
     let (total_pages, set_total_pages) = create_signal(0);
     let (font_size, set_font_size) = create_signal(12);
+    let (font_family, set_font_family) = create_signal("mincho".to_string()); // "mincho" or "gothic"
     let (input_text, set_input_text) = create_signal(String::new());
     let (status_message, set_status_message) = create_signal(None::<String>);
     let (edit_mode, set_edit_mode) = create_signal("add".to_string()); // "add" | "select"
@@ -2292,8 +2293,10 @@ fn PdfEditor(
                     return;
                 }
                 let size = font_size.get();
+                let family = font_family.get();
 
                 call_js_editor_with_args("setFontSize", &[wasm_bindgen::JsValue::from_f64(size as f64)]);
+                call_js_editor_with_args("setFontFamily", &[wasm_bindgen::JsValue::from_str(&family)]);
                 call_js_editor_with_args("addTextAnnotation", &[
                     wasm_bindgen::JsValue::from_f64(x),
                     wasm_bindgen::JsValue::from_f64(y),
@@ -2497,6 +2500,16 @@ fn PdfEditor(
                         <option value="18">"18pt"</option>
                         <option value="20">"20pt"</option>
                         <option value="24">"24pt"</option>
+                    </select>
+                    <select
+                        class="font-family-select"
+                        on:change=move |ev| {
+                            set_font_family.set(event_target_value(&ev));
+                        }
+                        disabled=move || !pdf_loaded.get() || edit_mode.get() != "add"
+                    >
+                        <option value="mincho" selected>"明朝"</option>
+                        <option value="gothic">"ゴシック"</option>
                     </select>
                     <button class="undo-btn" on:click=on_undo disabled=move || !pdf_loaded.get()>"取消"</button>
                     <button

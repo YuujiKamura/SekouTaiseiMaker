@@ -2465,7 +2465,8 @@ button:disabled {
     font-size: 14px;
 }
 
-.text-controls .font-size-select {
+.text-controls .font-size-select,
+.text-controls .font-family-select {
     padding: 8px 12px;
     border: 1px solid #ddd;
     border-radius: 4px;

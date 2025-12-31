@@ -17,7 +17,7 @@ window.PdfEditor = (function() {
 
     // 現在の設定
     let currentFontSize = 12;
-    let currentFontFamily = 'HeiseiMin-W3';
+    let currentFontFamily = 'mincho';  // 'mincho' or 'gothic'
     let currentColor = '#000000';
 
     // 選択・移動用の状態
@@ -124,10 +124,19 @@ window.PdfEditor = (function() {
     /**
      * テキストの幅と高さを計算
      */
-    function measureText(text, fontSize) {
-        if (!overlayCtx) return { width: 0, height: 0 };
-        overlayCtx.font = `${fontSize * scale}px sans-serif`;
-        const metrics = overlayCtx.measureText(text);
+    function measureText(text, fontSize, fontFamily) {
+        const family = fontFamily || currentFontFamily;
+        const cssFont = family === 'mincho' ? 'serif' : 'sans-serif';
+
+        // overlayCtxがない場合は一時的なcanvasを使用
+        let ctx = overlayCtx;
+        if (!ctx) {
+            const tempCanvas = document.createElement('canvas');
+            ctx = tempCanvas.getContext('2d');
+        }
+
+        ctx.font = `${fontSize * scale}px ${cssFont}`;
+        const metrics = ctx.measureText(text);
         return {
             width: metrics.width / scale,
             height: fontSize * 1.2  // 行の高さの近似
@@ -138,7 +147,7 @@ window.PdfEditor = (function() {
      * テキスト注釈を追加
      */
     function addTextAnnotation(x, y, text) {
-        const dims = measureText(text, currentFontSize);
+        const dims = measureText(text, currentFontSize, currentFontFamily);
         const annotation = {
             id: 'ann_' + (annotationIdCounter++),
             page: currentPage,
@@ -166,13 +175,16 @@ window.PdfEditor = (function() {
         // 現在のページの注釈のみを対象
         const pageAnnotations = textAnnotations.filter(a => a.page === currentPage);
 
+        // ヒット判定のマージン（選択しやすくするため）
+        const margin = 5;
+
         // 後から追加されたものが上に表示されるので、逆順でチェック
         for (let i = pageAnnotations.length - 1; i >= 0; i--) {
             const ann = pageAnnotations[i];
-            // テキストのバウンディングボックスでヒット判定
+            // テキストのバウンディングボックスでヒット判定（マージン付き）
             // y座標はテキストのベースラインなので、上方向にheight分がテキスト領域
-            if (x >= ann.x && x <= ann.x + ann.width &&
-                y >= ann.y - ann.height && y <= ann.y) {
+            if (x >= ann.x - margin && x <= ann.x + ann.width + margin &&
+                y >= ann.y - ann.height - margin && y <= ann.y + margin) {
                 return ann;
             }
         }
@@ -245,8 +257,8 @@ window.PdfEditor = (function() {
         if (!ann) return false;
 
         ann.text = newText;
-        // 幅を再計算
-        const dims = measureText(newText, ann.fontSize);
+        // 幅を再計算（フォントファミリーも考慮）
+        const dims = measureText(newText, ann.fontSize, ann.fontFamily);
         ann.width = dims.width;
         ann.height = dims.height;
         redrawAnnotations();
@@ -356,8 +368,9 @@ window.PdfEditor = (function() {
                 );
             }
 
-            // テキストを描画
-            overlayCtx.font = `${annotation.fontSize * scale}px sans-serif`;
+            // テキストを描画（フォントファミリーを適用）
+            const cssFont = annotation.fontFamily === 'mincho' ? 'serif' : 'sans-serif';
+            overlayCtx.font = `${annotation.fontSize * scale}px ${cssFont}`;
             overlayCtx.fillStyle = annotation.color;
             overlayCtx.fillText(annotation.text, screenX, screenY);
         });
