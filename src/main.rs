@@ -3196,7 +3196,23 @@ fn App() -> impl IntoView {
                                     save_gas_url(&url);
                                     set_gas_connected.set(true);
                                     set_show_gas_dialog.set(false);
-                                    set_gas_message.set(Some("シート連携を設定しました".to_string()));
+                                    // プロジェクトデータがあれば自動保存
+                                    if let Some(p) = project.get() {
+                                        spawn_local(async move {
+                                            set_gas_syncing.set(true);
+                                            match sync_to_gas(&p).await {
+                                                Ok(_) => {
+                                                    set_gas_message.set(Some("シート連携を設定し、データを保存しました".to_string()));
+                                                }
+                                                Err(e) => {
+                                                    set_gas_message.set(Some(format!("連携設定完了、保存エラー: {}", e)));
+                                                }
+                                            }
+                                            set_gas_syncing.set(false);
+                                        });
+                                    } else {
+                                        set_gas_message.set(Some("シート連携を設定しました".to_string()));
+                                    }
                                 } else {
                                     set_gas_message.set(Some("正しいGAS URLを入力してください".to_string()));
                                 }
