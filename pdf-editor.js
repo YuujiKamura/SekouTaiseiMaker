@@ -682,12 +682,10 @@ window.PdfEditor = (function() {
         }
         const base64 = btoa(binary);
 
-        // GASにPOSTリクエスト
+        // GASにPOSTリクエスト（Content-Type指定なしでプリフライト回避）
         const response = await fetch(gasUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            redirect: 'follow',
             body: JSON.stringify({
                 action: 'uploadPdf',
                 base64: base64,

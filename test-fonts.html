@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Font Loading Test</title>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+</head>
+<body>
+    <h1>PDF Japanese Font Test</h1>
+    <div id="results"></div>
+    <script>
+        const FONT_URLS = {
+            gothic: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-jp@5.1.1/files/noto-sans-jp-japanese-400-normal.woff2',
+            mincho: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-jp@5.1.0/files/noto-serif-jp-japanese-400-normal.woff2'
+        };
+
+        const results = document.getElementById('results');
+
+        function log(msg, ok) {
+            const p = document.createElement('p');
+            p.textContent = (ok ? '✓ ' : '✗ ') + msg;
+            p.style.color = ok ? 'green' : 'red';
+            results.appendChild(p);
+        }
+
+        async function testFontLoad(name, url) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const bytes = await res.arrayBuffer();
+                log(`${name}: fetch OK (${(bytes.byteLength / 1024).toFixed(0)} KB)`, true);
+                return new Uint8Array(bytes);
+            } catch (e) {
+                log(`${name}: fetch FAILED - ${e.message}`, false);
+                return null;
+            }
+        }
+
+        async function testPdfEmbed(fontBytes, fontName) {
+            try {
+                const { PDFDocument } = PDFLib;
+                const pdfDoc = await PDFDocument.create();
+                pdfDoc.registerFontkit(fontkit);
+                const font = await pdfDoc.embedFont(fontBytes);
+                const page = pdfDoc.addPage();
+                page.drawText('テスト日本語 Test 123', {
+                    x: 50, y: 700, size: 24, font: font
+                });
+                const pdfBytes = await pdfDoc.save();
+                log(`${fontName}: PDF embed OK (${(pdfBytes.length / 1024).toFixed(0)} KB)`, true);
+
+                // Download link
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `test-${fontName}.pdf`;
+                a.textContent = `Download test-${fontName}.pdf`;
+                results.appendChild(a);
+                results.appendChild(document.createElement('br'));
+                return true;
+            } catch (e) {
+                log(`${fontName}: PDF embed FAILED - ${e.message}`, false);
+                return false;
+            }
+        }
+
+        async function runTests() {
+            log('Starting tests...', true);
+
+            const gothicBytes = await testFontLoad('Gothic', FONT_URLS.gothic);
+            const minchoBytes = await testFontLoad('Mincho', FONT_URLS.mincho);
+
+            if (gothicBytes) await testPdfEmbed(gothicBytes, 'gothic');
+            if (minchoBytes) await testPdfEmbed(minchoBytes, 'mincho');
+
+            log('Tests complete', true);
+        }
+
+        runTests();
+    </script>
+</body>
+</html>
