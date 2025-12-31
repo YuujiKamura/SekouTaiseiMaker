@@ -1,8 +1,8 @@
 [
   {
-    "contractor": "ユナイト",
+    "contractor": "下請A",
     "doc_type": "09_暴対法誓約書",
-    "image_url": "data/pdf_images/ユナイト_09_暴対法誓約書.png",
+    "image_url": "data/pdf_images/下請A_09_暴対法誓約書.png",
     "tokens": [
       {
         "text": "御",
@@ -445,7 +445,7 @@
         }
       },
       {
-        "text": "ユナイト",
+        "text": "下請A",
         "page": 1,
         "normalized": {
           "x": 0.6359310150146484,
@@ -725,7 +725,7 @@
         }
       },
       {
-        "text": "ユナイト",
+        "text": "下請A",
         "page": 1,
         "normalized": {
           "x": 0.17787031829357147,
@@ -1887,9 +1887,9 @@
     ]
   },
   {
-    "contractor": "アイエスティー",
+    "contractor": "下請B",
     "doc_type": "09_暴対法誓約書",
-    "image_url": "data/pdf_images/アイエスティー_09_暴対法誓約書.png",
+    "image_url": "data/pdf_images/下請B_09_暴対法誓約書.png",
     "tokens": [
       {
         "text": "誓",
@@ -2092,7 +2092,7 @@
         }
       },
       {
-        "text": "三雄",
+        "text": "元請",
         "page": 1,
         "normalized": {
           "x": 0.22070196270942688,
@@ -6294,9 +6294,9 @@
     ]
   },
   {
-    "contractor": "アイエスティー",
+    "contractor": "下請B",
     "doc_type": "08_作業員名簿",
-    "image_url": "data/pdf_images/アイエスティー_08_作業員名簿.png",
+    "image_url": "data/pdf_images/下請B_08_作業員名簿.png",
     "tokens": [
       {
         "text": "作業",
