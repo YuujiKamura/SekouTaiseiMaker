@@ -17,6 +17,12 @@ Rust/WASMからの呼び出し用APIサーバー
     POST /check/spreadsheet
         Body: {"spreadsheet_id": "XXX", "doc_type": "作業員名簿", "contractor": "業者名"}
 
+    POST /check/url
+        Body: {"url": "https://...", "doc_type": "暴対法誓約書", "contractor": "業者名"}
+
+    POST /ocr/url
+        Body: {"url": "https://..."}
+
     GET /health
         ヘルスチェック
 
@@ -35,11 +41,16 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from document_prompts import UnknownDocTypeError, DOC_TYPES
+import tempfile
+import requests
+
 from gemini_checker import (
     check_pdf_image,
     check_spreadsheet,
     check_multiple_pages,
     check_image_base64,
+    check_document_from_url,
+    download_file_from_url,
 )
 
 app = Flask(__name__)
@@ -194,6 +205,100 @@ def check_spreadsheet_endpoint():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/check/url', methods=['POST'])
+def check_from_url():
+    """
+    URLから書類を取得してチェック
+
+    Request Body:
+        {
+            "url": "https://drive.google.com/file/d/xxx/view",
+            "doc_type": "暴対法誓約書",
+            "contractor": "業者名"
+        }
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "リクエストボディが必要です"}), 400
+
+        url = data.get('url')
+        doc_type = data.get('doc_type')
+        contractor = data.get('contractor')
+
+        if not url:
+            return jsonify({"error": "url は必須です"}), 400
+        if not doc_type:
+            return jsonify({"error": "doc_type は必須です"}), 400
+        if not contractor:
+            return jsonify({"error": "contractor は必須です"}), 400
+        if doc_type not in DOC_TYPES:
+            return jsonify({
+                "error": f"無効な書類タイプ: {doc_type}",
+                "valid_types": DOC_TYPES
+            }), 400
+
+        # URLからチェック実行
+        result = check_document_from_url(url, doc_type, contractor)
+        return jsonify(result)
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "error": f"URLからのダウンロード失敗: {str(e)}"
+        }), 400
+    except UnknownDocTypeError as e:
+        app.logger.warning(f"Unknown doc type: {e}")
+        return jsonify({"error": str(e), "valid_types": DOC_TYPES}), 400
+    except Exception as e:
+        app.logger.error(f"Check from URL failed: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/ocr/url', methods=['POST'])
+def ocr_from_url():
+    """
+    URLからPDFを取得してOCR実行
+
+    Request Body:
+        {
+            "url": "https://drive.google.com/file/d/xxx/view"
+        }
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "リクエストボディが必要です"}), 400
+
+        url = data.get('url')
+        if not url:
+            return jsonify({"error": "url は必須です"}), 400
+
+        # ファイルをダウンロード
+        file_data, mime_type = download_file_from_url(url)
+
+        # 一時ファイルに保存
+        suffix = '.pdf' if 'pdf' in mime_type.lower() else '.png'
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            f.write(file_data)
+            temp_path = Path(f.name)
+
+        try:
+            # Document AI OCRを呼び出し
+            from document_ai_ocr import process_pdf
+            result = process_pdf(temp_path)
+            return jsonify(result)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "error": f"URLからのダウンロード失敗: {str(e)}"
+        }), 400
+    except Exception as e:
+        app.logger.error(f"OCR from URL failed: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 def main():
     parser = argparse.ArgumentParser(description='GEMINI書類チェック HTTPサーバー')
     parser.add_argument('--host', default='127.0.0.1', help='ホスト（デフォルト: 127.0.0.1）')
@@ -208,6 +313,8 @@ def main():
     print(f"    POST /check/pdf")
     print(f"    POST /check/pdf-base64")
     print(f"    POST /check/spreadsheet")
+    print(f"    POST /check/url")
+    print(f"    POST /ocr/url")
     print(f"    GET  /health")
     print(f"    GET  /doc-types")
 

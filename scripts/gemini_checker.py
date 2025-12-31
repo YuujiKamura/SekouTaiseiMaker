@@ -4,8 +4,12 @@ GEMINI APIを使った書類チェッカー
 import os
 import json
 import base64
+import re
+import tempfile
 from pathlib import Path
 from typing import Optional
+
+import requests
 
 import google.generativeai as genai
 from googleapiclient.discovery import build
@@ -284,6 +288,70 @@ def check_image_base64(
     ])
 
     return parse_gemini_response(response.text)
+
+
+def download_file_from_url(url: str) -> tuple[bytes, str]:
+    """
+    URLからファイルをダウンロード
+
+    Args:
+        url: ダウンロードURL (Google DriveやHTTP URL)
+
+    Returns:
+        (ファイルバイナリ, MIMEタイプ)
+    """
+    # Google Drive URLの場合、ダウンロード用URLに変換
+    if "drive.google.com" in url:
+        # /file/d/FILE_ID/view -> export/download形式に変換
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            file_id = match.group(1)
+            url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+
+    response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+    response.raise_for_status()
+
+    content_type = response.headers.get('Content-Type', 'application/pdf')
+    return response.content, content_type
+
+
+def check_document_from_url(
+    url: str,
+    doc_type: str,
+    contractor_name: str
+) -> dict:
+    """
+    URLから書類をダウンロードしてチェック
+
+    Args:
+        url: 書類のURL
+        doc_type: 書類タイプ
+        contractor_name: 業者名
+
+    Returns:
+        チェック結果 dict
+    """
+    # ファイルをダウンロード
+    file_data, mime_type = download_file_from_url(url)
+
+    # 一時ファイルに保存
+    suffix = '.pdf' if 'pdf' in mime_type.lower() else '.png'
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        f.write(file_data)
+        temp_path = Path(f.name)
+
+    try:
+        # 既存のチェック関数を呼び出し
+        # gemini-2.0-flash-expはPDF対応なので直接チェック
+        result = check_pdf_image(temp_path, doc_type, contractor_name)
+        return result
+    finally:
+        # 一時ファイルを削除
+        temp_path.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':
