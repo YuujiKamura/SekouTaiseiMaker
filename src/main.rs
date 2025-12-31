@@ -2,7 +2,7 @@ use leptos::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, RequestMode, Response};
+use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, Response};
 use std::collections::HashMap;
 
 // Base64エンコード/デコード（web_sys経由）
@@ -109,6 +109,33 @@ pub struct DocStatus {
     pub url: Option<String>,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub valid_from: Option<String>,  // 有効期間開始 (YYYY-MM-DD)
+    #[serde(default)]
+    pub valid_until: Option<String>, // 有効期限 (YYYY-MM-DD)
+}
+
+// チェック結果
+#[derive(Debug, Clone, PartialEq)]
+pub enum CheckMode {
+    None,
+    Existence,  // 書類存在チェック
+    Date,       // 日付チェック
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckResult {
+    pub contractor_name: String,
+    pub doc_name: String,
+    pub status: CheckStatus,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CheckStatus {
+    Ok,
+    Warning,
+    Error,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,60 +148,6 @@ pub struct Contract {
     pub url: Option<String>,
 }
 
-// ============================================
-// 既存のスプレッドシート解析用データ構造
-// ============================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaField {
-    pub id: String,
-    pub label: String,
-    #[serde(rename = "type")]
-    pub field_type: String,
-    pub row: usize,
-    pub col: usize,
-    #[serde(default)]
-    pub required: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Schema {
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    #[serde(default)]
-    pub description: String,
-    pub fields: Vec<SchemaField>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExtractedField {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    pub row: usize,
-    pub col: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ParsedResult {
-    pub sheet_name: String,
-    pub schema_name: String,
-    pub fields: Vec<ExtractedField>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SpreadsheetData {
-    pub spreadsheet_name: String,
-    pub spreadsheet_id: String,
-    pub sheets: HashMap<String, SheetData>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SheetData {
-    pub rows: usize,
-    pub data: Vec<Vec<String>>,
-}
 
 // ============================================
 // ダッシュボードコンポーネント
@@ -189,31 +162,15 @@ pub struct ProjectContext {
     pub set_loading: WriteSignal<bool>,
     pub error_msg: ReadSignal<Option<String>>,
     pub set_error_msg: WriteSignal<Option<String>>,
+    pub check_mode: ReadSignal<CheckMode>,
+    pub set_check_mode: WriteSignal<CheckMode>,
+    pub check_results: ReadSignal<Vec<CheckResult>>,
+    pub set_check_results: WriteSignal<Vec<CheckResult>>,
 }
 
 #[component]
 fn Dashboard() -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
-    let (share_url, set_share_url) = create_signal(None::<String>);
-    let (copy_success, set_copy_success) = create_signal(false);
-
-    // 共有URL生成
-    let generate_share_url = move |_| {
-        if let Some(p) = ctx.project.get() {
-            if let Some(url) = set_hash_data(&p) {
-                set_share_url.set(Some(url.clone()));
-                if let Some(window) = web_sys::window() {
-                    let clipboard = window.navigator().clipboard();
-                    let _ = clipboard.write_text(&url);
-                    set_copy_success.set(true);
-                    spawn_local(async move {
-                        gloo::timers::future::TimeoutFuture::new(2000).await;
-                        set_copy_success.set(false);
-                    });
-                }
-            }
-        }
-    };
 
     view! {
         <div class="dashboard">
@@ -222,14 +179,6 @@ fn Dashboard() -> impl IntoView {
             })}
 
             {move || ctx.project.get().map(|p| view! {
-                <div class="share-section">
-                    <button on:click=generate_share_url class="share-btn">
-                        {move || if copy_success.get() { "コピーしました!" } else { "共有URLを生成" }}
-                    </button>
-                    {move || share_url.get().map(|url| view! {
-                        <input type="text" class="share-url" readonly value=url />
-                    })}
-                </div>
                 <ProjectView project=p />
             })}
 
@@ -379,24 +328,202 @@ async fn fetch_json(url: &str) -> Result<ProjectData, String> {
 }
 
 // ============================================
-// メインアプリ（タブ切り替え）
+// チェック結果パネル
 // ============================================
 
-#[derive(Clone, Copy, PartialEq)]
-enum Tab {
-    Dashboard,
-    Parser,
+#[component]
+fn CheckResultsPanel() -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+
+    view! {
+        {move || {
+            let mode = ctx.check_mode.get();
+            let results = ctx.check_results.get();
+
+            (mode != CheckMode::None && !results.is_empty()).then(|| {
+                let title = match mode {
+                    CheckMode::Existence => "書類存在チェック結果",
+                    CheckMode::Date => "日付チェック結果",
+                    CheckMode::None => "",
+                };
+
+                // 結果を分類
+                let errors: Vec<_> = results.iter().filter(|r| r.status == CheckStatus::Error).collect();
+                let warnings: Vec<_> = results.iter().filter(|r| r.status == CheckStatus::Warning).collect();
+                let oks: Vec<_> = results.iter().filter(|r| r.status == CheckStatus::Ok).collect();
+
+                view! {
+                    <div class="check-results-panel">
+                        <h3>{title}</h3>
+
+                        <div class="check-summary">
+                            <span class="summary-ok">"OK: " {oks.len()}</span>
+                            <span class="summary-warning">"警告: " {warnings.len()}</span>
+                            <span class="summary-error">"エラー: " {errors.len()}</span>
+                        </div>
+
+                        {(!errors.is_empty()).then(|| view! {
+                            <div class="check-section error-section">
+                                <h4>"エラー"</h4>
+                                {errors.into_iter().map(|r| view! {
+                                    <div class="check-result-item error">
+                                        <span class="result-contractor">{r.contractor_name.clone()}</span>
+                                        <span class="result-doc">{r.doc_name.clone()}</span>
+                                        <span class="result-message">{r.message.clone()}</span>
+                                    </div>
+                                }).collect_view()}
+                            </div>
+                        })}
+
+                        {(!warnings.is_empty()).then(|| view! {
+                            <div class="check-section warning-section">
+                                <h4>"警告"</h4>
+                                {warnings.into_iter().map(|r| view! {
+                                    <div class="check-result-item warning">
+                                        <span class="result-contractor">{r.contractor_name.clone()}</span>
+                                        <span class="result-doc">{r.doc_name.clone()}</span>
+                                        <span class="result-message">{r.message.clone()}</span>
+                                    </div>
+                                }).collect_view()}
+                            </div>
+                        })}
+
+                        {(mode == CheckMode::Date && !oks.is_empty()).then(|| view! {
+                            <div class="check-section ok-section">
+                                <h4>"有効期限内"</h4>
+                                {oks.into_iter().map(|r| view! {
+                                    <div class="check-result-item ok">
+                                        <span class="result-contractor">{r.contractor_name.clone()}</span>
+                                        <span class="result-doc">{r.doc_name.clone()}</span>
+                                        <span class="result-message">{r.message.clone()}</span>
+                                    </div>
+                                }).collect_view()}
+                            </div>
+                        })}
+                    </div>
+                }
+            })
+        }}
+    }
+}
+
+// ============================================
+// メインアプリ
+// ============================================
+
+// 書類存在チェック実行
+fn run_existence_check(project: &ProjectData) -> Vec<CheckResult> {
+    let mut results = Vec::new();
+    for contractor in &project.contractors {
+        for (doc_key, doc_status) in &contractor.docs {
+            let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+            let label = label.trim_start_matches('_').to_string();
+
+            if !doc_status.status {
+                results.push(CheckResult {
+                    contractor_name: contractor.name.clone(),
+                    doc_name: label,
+                    status: CheckStatus::Error,
+                    message: doc_status.note.clone().unwrap_or_else(|| "未提出".to_string()),
+                });
+            } else if doc_status.url.is_none() && doc_status.file.is_some() {
+                results.push(CheckResult {
+                    contractor_name: contractor.name.clone(),
+                    doc_name: label,
+                    status: CheckStatus::Warning,
+                    message: "URLが未登録".to_string(),
+                });
+            } else {
+                results.push(CheckResult {
+                    contractor_name: contractor.name.clone(),
+                    doc_name: label,
+                    status: CheckStatus::Ok,
+                    message: "OK".to_string(),
+                });
+            }
+        }
+    }
+    results
+}
+
+// 日付チェック実行
+fn run_date_check(project: &ProjectData, today: &str) -> Vec<CheckResult> {
+    let mut results = Vec::new();
+    for contractor in &project.contractors {
+        for (doc_key, doc_status) in &contractor.docs {
+            let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+            let label = label.trim_start_matches('_').to_string();
+
+            // 有効期限がある書類のみチェック
+            if let Some(ref valid_until) = doc_status.valid_until {
+                if valid_until.as_str() < today {
+                    results.push(CheckResult {
+                        contractor_name: contractor.name.clone(),
+                        doc_name: label,
+                        status: CheckStatus::Error,
+                        message: format!("期限切れ: {}", valid_until),
+                    });
+                } else {
+                    // 30日以内に期限切れになる場合は警告
+                    let warning_date = add_days_to_date(today, 30);
+                    if valid_until.as_str() <= warning_date.as_str() {
+                        results.push(CheckResult {
+                            contractor_name: contractor.name.clone(),
+                            doc_name: label,
+                            status: CheckStatus::Warning,
+                            message: format!("期限間近: {}", valid_until),
+                        });
+                    } else {
+                        results.push(CheckResult {
+                            contractor_name: contractor.name.clone(),
+                            doc_name: label,
+                            status: CheckStatus::Ok,
+                            message: format!("有効期限: {}", valid_until),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    results
+}
+
+// 日付に日数を加算 (簡易実装)
+fn add_days_to_date(date: &str, days: i32) -> String {
+    // YYYY-MM-DD形式を想定
+    if let Some((year, rest)) = date.split_once('-') {
+        if let Some((month, day)) = rest.split_once('-') {
+            if let (Ok(y), Ok(m), Ok(d)) = (year.parse::<i32>(), month.parse::<i32>(), day.parse::<i32>()) {
+                let total_days = d + days;
+                let new_month = m + (total_days - 1) / 30;
+                let new_day = ((total_days - 1) % 30) + 1;
+                return format!("{:04}-{:02}-{:02}", y + (new_month - 1) / 12, ((new_month - 1) % 12) + 1, new_day);
+            }
+        }
+    }
+    date.to_string()
+}
+
+// 今日の日付を取得
+fn get_today() -> String {
+    let date = js_sys::Date::new_0();
+    let year = date.get_full_year();
+    let month = date.get_month() + 1; // 0-indexed
+    let day = date.get_date();
+    format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
 #[component]
 fn App() -> impl IntoView {
-    let (current_tab, set_current_tab) = create_signal(Tab::Dashboard);
     let (menu_open, set_menu_open) = create_signal(false);
+    let (copy_success, set_copy_success) = create_signal(false);
 
     // プロジェクトデータのグローバル状態
     let (project, set_project) = create_signal(None::<ProjectData>);
     let (loading, set_loading) = create_signal(false);
     let (error_msg, set_error_msg) = create_signal(None::<String>);
+    let (check_mode, set_check_mode) = create_signal(CheckMode::None);
+    let (check_results, set_check_results) = create_signal(Vec::<CheckResult>::new());
 
     // コンテキスト提供
     let ctx = ProjectContext {
@@ -406,6 +533,10 @@ fn App() -> impl IntoView {
         set_loading,
         error_msg,
         set_error_msg,
+        check_mode,
+        set_check_mode,
+        check_results,
+        set_check_results,
     };
     provide_context(ctx.clone());
 
@@ -478,31 +609,81 @@ fn App() -> impl IntoView {
         });
     };
 
+    // 共有URL生成
+    let generate_share_url = move |_| {
+        set_menu_open.set(false);
+        if let Some(p) = project.get() {
+            if let Some(url) = set_hash_data(&p) {
+                if let Some(window) = web_sys::window() {
+                    let clipboard = window.navigator().clipboard();
+                    let _ = clipboard.write_text(&url);
+                    set_copy_success.set(true);
+                    spawn_local(async move {
+                        gloo::timers::future::TimeoutFuture::new(2000).await;
+                        set_copy_success.set(false);
+                    });
+                }
+            }
+        }
+    };
+
     // キャッシュクリア
     let on_clear_cache = move |_| {
         clear_cache();
         set_project.set(None);
+        set_check_mode.set(CheckMode::None);
+        set_check_results.set(Vec::new());
         set_menu_open.set(false);
+    };
+
+    // 書類存在チェック
+    let on_existence_check = move |_| {
+        set_menu_open.set(false);
+        if let Some(p) = project.get() {
+            let results = run_existence_check(&p);
+            set_check_results.set(results);
+            set_check_mode.set(CheckMode::Existence);
+        }
+    };
+
+    // 日付チェック
+    let on_date_check = move |_| {
+        set_menu_open.set(false);
+        if let Some(p) = project.get() {
+            let today = get_today();
+            let results = run_date_check(&p, &today);
+            set_check_results.set(results);
+            set_check_mode.set(CheckMode::Date);
+        }
+    };
+
+    // チェック結果クリア
+    let on_clear_check = move |_| {
+        set_check_mode.set(CheckMode::None);
+        set_check_results.set(Vec::new());
     };
 
     view! {
         <div class="app">
             <header class="app-header">
-                <h1>"施工体制メーカー"</h1>
-                <nav class="tabs">
-                    <button
-                        class=move || if current_tab.get() == Tab::Dashboard { "active" } else { "" }
-                        on:click=move |_| set_current_tab.set(Tab::Dashboard)
-                    >
-                        "ダッシュボード"
-                    </button>
-                    <button
-                        class=move || if current_tab.get() == Tab::Parser { "active" } else { "" }
-                        on:click=move |_| set_current_tab.set(Tab::Parser)
-                    >
-                        "シート解析"
-                    </button>
-                </nav>
+                <h1>"施工体制チェッカー"</h1>
+
+                // チェックモード表示
+                {move || {
+                    let mode = check_mode.get();
+                    (mode != CheckMode::None).then(|| {
+                        let label = match mode {
+                            CheckMode::Existence => "書類存在チェック中",
+                            CheckMode::Date => "日付チェック中",
+                            CheckMode::None => "",
+                        };
+                        view! {
+                            <span class="check-mode-badge" on:click=on_clear_check>
+                                {label} " ✕"
+                            </span>
+                        }
+                    })
+                }}
 
                 // 三点メニュー
                 <div class="menu-container">
@@ -517,6 +698,17 @@ fn App() -> impl IntoView {
                             </label>
                             <button class="menu-item" on:click=load_sample disabled=move || loading.get()>
                                 {move || if loading.get() { "読込中..." } else { "サンプル読込" }}
+                            </button>
+                            <hr class="menu-divider" />
+                            <button class="menu-item" on:click=on_existence_check disabled=move || project.get().is_none()>
+                                "書類存在チェック"
+                            </button>
+                            <button class="menu-item" on:click=on_date_check disabled=move || project.get().is_none()>
+                                "日付チェック"
+                            </button>
+                            <hr class="menu-divider" />
+                            <button class="menu-item" on:click=generate_share_url disabled=move || project.get().is_none()>
+                                {move || if copy_success.get() { "URLをコピーしました!" } else { "共有URLを生成" }}
                             </button>
                             <hr class="menu-divider" />
                             <a class="menu-item" href="https://github.com/YuujiKamura/SekouTaiseiMaker" target="_blank" rel="noopener">
@@ -535,259 +727,13 @@ fn App() -> impl IntoView {
             </header>
 
             <main class="container">
-                {move || match current_tab.get() {
-                    Tab::Dashboard => view! { <Dashboard /> }.into_view(),
-                    Tab::Parser => view! { <ParserView /> }.into_view(),
-                }}
+                <Dashboard />
+                <CheckResultsPanel />
             </main>
         </div>
     }
 }
 
-// ============================================
-// 既存のシート解析機能
-// ============================================
-
-const GAS_URL: &str = "https://script.google.com/macros/s/AKfycby0WMayuYSyQM7msOVvMypjq3Tne10bLaPeiuVSre2YWJyu7wxgEkyeIKgQH2Zt_zsUBw/exec";
-
-fn extract_fields(schema: &Schema, sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
-    let mut fields = Vec::new();
-    for field_def in &schema.fields {
-        let value = data
-            .get(field_def.row)
-            .and_then(|row| row.get(field_def.col))
-            .cloned()
-            .unwrap_or_default();
-        fields.push(ExtractedField {
-            id: field_def.id.clone(),
-            label: field_def.label.clone(),
-            value,
-            row: field_def.row,
-            col: field_def.col,
-        });
-    }
-    ParsedResult {
-        sheet_name: sheet_name.to_string(),
-        schema_name: schema.name.clone(),
-        fields,
-    }
-}
-
-fn auto_detect_fields(sheet_name: &str, data: &[Vec<String>]) -> ParsedResult {
-    let mut fields = Vec::new();
-    let patterns = [
-        ("会社名", "company_name"), ("工事名称", "project_name"),
-        ("工事名", "project_name"), ("発注者", "client"),
-        ("工期", "period"), ("請負代金", "contract_amount"),
-    ];
-    for (row_idx, row) in data.iter().enumerate() {
-        for (col_idx, cell) in row.iter().enumerate() {
-            for (pattern, field_id) in &patterns {
-                if cell.contains(pattern) {
-                    let value = row.get(col_idx + 1)
-                        .filter(|v| !v.is_empty())
-                        .or_else(|| row.get(col_idx + 2).filter(|v| !v.is_empty()))
-                        .cloned()
-                        .unwrap_or_default();
-                    if !value.is_empty() && !value.contains(pattern) {
-                        fields.push(ExtractedField {
-                            id: field_id.to_string(),
-                            label: pattern.to_string(),
-                            value,
-                            row: row_idx,
-                            col: col_idx,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    ParsedResult { sheet_name: sheet_name.to_string(), schema_name: "自動検出".to_string(), fields }
-}
-
-fn extract_sheet_id(input: &str) -> String {
-    if input.contains("/d/") {
-        input.split("/d/").nth(1)
-            .map(|s| s.split('/').next().unwrap_or(s))
-            .unwrap_or(input).to_string()
-    } else {
-        input.to_string()
-    }
-}
-
-async fn fetch_spreadsheet(sheet_id: &str) -> Result<SpreadsheetData, String> {
-    if sheet_id.is_empty() {
-        return Err("スプレッドシートIDを入力してください".to_string());
-    }
-    let url = format!("{}?id={}", GAS_URL, sheet_id);
-    let opts = RequestInit::new();
-    opts.set_method("GET");
-    opts.set_mode(RequestMode::Cors);
-
-    let request = Request::new_with_str_and_init(&url, &opts)
-        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request))
-        .await.map_err(|e| format!("fetch失敗: {:?}", e))?;
-    let resp: Response = resp_value.dyn_into().map_err(|_| "Responseへの変換失敗")?;
-    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
-        .await.map_err(|e| format!("JSON解析失敗: {:?}", e))?;
-    serde_wasm_bindgen::from_value(json).map_err(|e| format!("デシリアライズ失敗: {:?}", e))
-}
-
-#[component]
-fn ParserView() -> impl IntoView {
-    let (schema, set_schema) = create_signal(None::<Schema>);
-    let (spreadsheet, set_spreadsheet) = create_signal(None::<SpreadsheetData>);
-    let (parsed_result, set_parsed_result) = create_signal(None::<ParsedResult>);
-    let (use_auto_detect, set_use_auto_detect) = create_signal(true);
-    let (sheet_url_input, set_sheet_url_input) = create_signal(String::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error_msg, set_error_msg) = create_signal(None::<String>);
-
-    let on_schema_change = move |ev: web_sys::Event| {
-        let input: HtmlInputElement = event_target(&ev);
-        if let Some(files) = input.files() {
-            if let Some(file) = files.get(0) {
-                let reader = FileReader::new().unwrap();
-                let reader_clone = reader.clone();
-                let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                    if let Ok(result) = reader_clone.result() {
-                        if let Some(text) = result.as_string() {
-                            if let Ok(s) = serde_json::from_str::<Schema>(&text) {
-                                set_schema.set(Some(s));
-                                set_use_auto_detect.set(false);
-                            }
-                        }
-                    }
-                }) as Box<dyn FnMut(_)>);
-                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
-                onload.forget();
-                let _ = reader.read_as_text(&file);
-            }
-        }
-    };
-
-    let on_data_change = move |ev: web_sys::Event| {
-        let input: HtmlInputElement = event_target(&ev);
-        if let Some(files) = input.files() {
-            if let Some(file) = files.get(0) {
-                let reader = FileReader::new().unwrap();
-                let reader_clone = reader.clone();
-                let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                    if let Ok(result) = reader_clone.result() {
-                        if let Some(text) = result.as_string() {
-                            if let Ok(data) = serde_json::from_str::<SpreadsheetData>(&text) {
-                                set_spreadsheet.set(Some(data));
-                                set_parsed_result.set(None);
-                            }
-                        }
-                    }
-                }) as Box<dyn FnMut(_)>);
-                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
-                onload.forget();
-                let _ = reader.read_as_text(&file);
-            }
-        }
-    };
-
-    let on_sheet_select = move |sheet_name: String| {
-        if let Some(data) = spreadsheet.get() {
-            if let Some(sheet) = data.sheets.get(&sheet_name) {
-                let result = if use_auto_detect.get() {
-                    auto_detect_fields(&sheet_name, &sheet.data)
-                } else if let Some(s) = schema.get() {
-                    extract_fields(&s, &sheet_name, &sheet.data)
-                } else {
-                    auto_detect_fields(&sheet_name, &sheet.data)
-                };
-                set_parsed_result.set(Some(result));
-            }
-        }
-    };
-
-    let on_sheet_fetch = move |_| {
-        let url_input = sheet_url_input.get();
-        let sheet_id = extract_sheet_id(&url_input);
-        spawn_local(async move {
-            set_loading.set(true);
-            set_error_msg.set(None);
-            match fetch_spreadsheet(&sheet_id).await {
-                Ok(data) => { set_spreadsheet.set(Some(data)); set_parsed_result.set(None); }
-                Err(e) => { set_error_msg.set(Some(e)); }
-            }
-            set_loading.set(false);
-        });
-    };
-
-    view! {
-        <div class="parser-view">
-            <h2>"シート解析"</h2>
-
-            <div class="gas-section">
-                <h3>"Google スプレッドシート"</h3>
-                <div class="input-group">
-                    <input type="text" placeholder="URL または ID"
-                        prop:value=move || sheet_url_input.get()
-                        on:input=move |ev| set_sheet_url_input.set(event_target_value(&ev)) />
-                    <button on:click=on_sheet_fetch disabled=move || loading.get()>
-                        {move || if loading.get() { "読込中..." } else { "読み込む" }}
-                    </button>
-                </div>
-                {move || error_msg.get().map(|e| view! { <p class="status error">{e}</p> })}
-            </div>
-
-            <div class="upload-section">
-                <div class="upload-area">
-                    <h3>"スキーマ (任意)"</h3>
-                    <input type="file" accept=".json" on:change=on_schema_change />
-                    {move || schema.get().map(|s| view! { <p class="status success">"スキーマ: " {s.name}</p> })}
-                </div>
-                <div class="upload-area">
-                    <h3>"ローカルJSON"</h3>
-                    <input type="file" accept=".json" on:change=on_data_change />
-                </div>
-            </div>
-
-            <div class="mode-toggle">
-                <label>
-                    <input type="checkbox" checked=move || use_auto_detect.get()
-                        on:change=move |ev| set_use_auto_detect.set(event_target_checked(&ev)) />
-                    " 自動検出モード"
-                </label>
-            </div>
-
-            {move || spreadsheet.get().map(|data| {
-                let sheets: Vec<String> = data.sheets.keys().cloned().collect();
-                view! {
-                    <div class="sheet-preview">
-                        <h3>{data.spreadsheet_name.clone()}</h3>
-                        <div class="sheet-buttons">
-                            {sheets.into_iter().map(|name| {
-                                let n = name.clone();
-                                view! { <button on:click=move |_| on_sheet_select(n.clone())>{name}</button> }
-                            }).collect_view()}
-                        </div>
-                    </div>
-                }
-            })}
-
-            {move || parsed_result.get().map(|result| view! {
-                <div class="sheet-preview">
-                    <h3>"解析結果: " {result.sheet_name.clone()}</h3>
-                    <div class="field-list">
-                        {result.fields.iter().filter(|f| !f.value.is_empty()).map(|f| view! {
-                            <div class="field-card">
-                                <h4>{f.label.clone()}</h4>
-                                <div class="value">{f.value.clone()}</div>
-                            </div>
-                        }).collect_view()}
-                    </div>
-                </div>
-            })}
-        </div>
-    }
-}
 
 fn main() {
     console_error_panic_hook::set_once();
