@@ -338,33 +338,6 @@ pub enum CheckStatus {
     Error,
 }
 
-// ============================================
-// 拡張チェック結果データ構造 (T5)
-// ============================================
-
-/// チェック結果項目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResultItem {
-    pub item_type: String,  // "ok", "warning", "error", "info"
-    pub message: String,
-}
-
-/// 未記入フィールド情報
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MissingFieldInfo {
-    pub field: String,
-    pub location: String,
-}
-
-/// 拡張チェック結果データ
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResultData {
-    pub status: String,  // "ok", "warning", "error"
-    pub summary: String,
-    pub items: Vec<CheckResultItem>,
-    pub missing_fields: Vec<MissingFieldInfo>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contract {
     pub id: String,
@@ -464,25 +437,6 @@ impl Default for OcrResult {
 // APIチェック結果データ構造
 // ============================================
 
-/// チェック項目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckItem {
-    pub name: String,
-    pub status: String,
-    pub message: String,
-}
-
-/// チェック結果データ
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResultData {
-    pub status: String,
-    pub summary: String,
-    #[serde(default)]
-    pub items: Vec<CheckItem>,
-    #[serde(default)]
-    pub missing_fields: Vec<MissingField>,
-}
-
 /// チェックAPIリクエスト
 #[derive(Debug, Clone, Serialize)]
 pub struct CheckRequest {
@@ -499,7 +453,7 @@ pub struct CheckResponse {
     #[serde(default)]
     pub items: Vec<CheckItem>,
     #[serde(default)]
-    pub missing_fields: Vec<MissingField>,
+    pub missing_fields: Vec<CheckMissingField>,
 }
 
 /// APIエラーレスポンス
