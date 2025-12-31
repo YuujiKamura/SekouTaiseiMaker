@@ -17,15 +17,10 @@ body {
 .app-header {
     background: #1a1a2e;
     color: white;
-    padding: 15px 20px;
+    padding: 8px 12px;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
-}
-
-.app-header h1 {
-    font-size: 1.5rem;
-    margin: 0;
 }
 
 .tabs {
@@ -595,11 +590,6 @@ button:disabled {
    ============================================ */
 
 @media (max-width: 768px) {
-    .app-header {
-        flex-direction: column;
-        gap: 10px;
-    }
-
     .upload-section {
         grid-template-columns: 1fr;
     }

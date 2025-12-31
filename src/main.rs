@@ -2826,12 +2826,6 @@ fn App() -> impl IntoView {
         }
     };
 
-    // チェック結果クリア
-    let on_clear_check = move |_| {
-        set_check_mode.set(CheckMode::None);
-        set_check_results.set(Vec::new());
-    };
-
     // 新規プロジェクト作成
     let on_new_project = move |_| {
         set_menu_open.set(false);
@@ -2871,26 +2865,6 @@ fn App() -> impl IntoView {
     view! {
         <div class="app">
             <header class="app-header">
-                <h1>"施工体制メーカー"</h1>
-
-                // チェックモード表示
-                {move || {
-                    let mode = check_mode.get();
-                    (mode != CheckMode::None).then(|| {
-                        let label = match mode {
-                            CheckMode::Existence => "書類存在チェック中",
-                            CheckMode::Date => "日付チェック中",
-                            CheckMode::None => "",
-                        };
-                        view! {
-                            <span class="check-mode-badge" on:click=on_clear_check>
-                                {label} " ✕"
-                            </span>
-                        }
-                    })
-                }}
-
-                // 三点メニュー
                 <div class="menu-container">
                     <button class="menu-btn" on:click=move |_| set_menu_open.update(|v| *v = !*v)>
                         "⋮"
