@@ -1661,6 +1661,7 @@ button:disabled {
 }
 
 /* ============================================
+<<<<<<< HEAD
    チェック結果パネル - 拡張版 (T5)
    ============================================ */
 
@@ -1871,4 +1872,26 @@ button:disabled {
     .check-result-panel .field-location {
         margin-left: 1.5rem;
     }
+}
+
+/* ============================================
+   保存インジケーター
+   ============================================ */
+
+.save-indicator {
+    font-size: 0.85rem;
+    padding: 0.25rem 0.5rem;
+    margin-left: 12px;
+}
+
+.save-indicator .saved {
+    color: #4CAF50;
+}
+
+.save-indicator .no-data {
+    color: #999;
+}
+
+.save-indicator .unsaved {
+    color: #ff9800;
 }

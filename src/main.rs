@@ -1741,6 +1741,40 @@ fn run_date_check(project: &ProjectData, today: &str) -> Vec<CheckResult> {
     results
 }
 
+/// 全書類のチェック結果をクリア
+#[allow(dead_code)]
+fn clear_all_check_results(project: &mut ProjectData) {
+    for contractor in &mut project.contractors {
+        for (_, doc) in &mut contractor.docs {
+            // DocStatusにはcheck_result, last_checkedフィールドがないため、
+            // 将来の拡張用にコメントを残す
+            // doc.check_result = None;
+            // doc.last_checked = None;
+            let _ = doc; // 現在は何もしない
+        }
+    }
+}
+
+/// 特定の書類のチェック結果をクリア
+#[allow(dead_code)]
+fn clear_check_result(
+    project: &mut ProjectData,
+    contractor_id: &str,
+    doc_key: &str,
+) {
+    if let Some(contractor) = project.contractors.iter_mut()
+        .find(|c| c.id == contractor_id)
+    {
+        if let Some(doc) = contractor.docs.get_mut(doc_key) {
+            // DocStatusにはcheck_result, last_checkedフィールドがないため、
+            // 将来の拡張用にコメントを残す
+            // doc.check_result = None;
+            // doc.last_checked = None;
+            let _ = doc; // 現在は何もしない
+        }
+    }
+}
+
 // 日付に日数を加算 (簡易実装)
 fn add_days_to_date(date: &str, days: i32) -> String {
     // YYYY-MM-DD形式を想定
@@ -2106,11 +2140,28 @@ fn draw_ocr_canvas(canvas: &HtmlCanvasElement, doc: &OcrDocument, show_all: bool
     }
 }
 
-// JSONダウンロード用関数
+// タイムスタンプを取得
+fn get_timestamp() -> String {
+    let date = js_sys::Date::new_0();
+    let year = date.get_full_year();
+    let month = date.get_month() + 1;
+    let day = date.get_date();
+    let hours = date.get_hours();
+    let minutes = date.get_minutes();
+    let seconds = date.get_seconds();
+    format!("{:04}{:02}{:02}_{:02}{:02}{:02}", year, month, day, hours, minutes, seconds)
+}
+
+// JSONダウンロード用関数（タイムスタンプ付き）
 fn download_json(project: &ProjectData) {
     if let Ok(json) = serde_json::to_string_pretty(project) {
         if let Some(window) = web_sys::window() {
             if let Some(document) = window.document() {
+                // タイムスタンプ付きファイル名
+                let timestamp = get_timestamp();
+                let project_name = project.project_name.replace(" ", "_").replace("/", "-");
+                let filename = format!("{}_{}.json", project_name, timestamp);
+
                 // Blobを作成
                 let blob_parts = js_sys::Array::new();
                 blob_parts.push(&JsValue::from_str(&json));
@@ -2121,7 +2172,6 @@ fn download_json(project: &ProjectData) {
                     if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
                         if let Ok(a) = document.create_element("a") {
                             let _ = a.set_attribute("href", &url);
-                            let filename = format!("{}.json", project.project_name.replace(" ", "_"));
                             let _ = a.set_attribute("download", &filename);
                             if let Some(element) = a.dyn_ref::<web_sys::HtmlElement>() {
                                 element.click();
@@ -2393,6 +2443,17 @@ fn App() -> impl IntoView {
             <header class="app-header">
                 <h1>"施工体制チェッカー"</h1>
 
+                // 保存状態インジケーター
+                <div class="save-indicator">
+                    {move || {
+                        if project.get().is_some() {
+                            view! { <span class="saved">"保存済み"</span> }.into_view()
+                        } else {
+                            view! { <span class="no-data">"データなし"</span> }.into_view()
+                        }
+                    }}
+                </div>
+
                 // 編集モード表示
                 {move || edit_mode.get().then(|| view! {
                     <span class="edit-mode-badge">"編集中"</span>
@@ -2442,6 +2503,13 @@ fn App() -> impl IntoView {
                             </button>
                             <button class="menu-item" on:click=on_date_check disabled=move || project.get().is_none() || edit_mode.get()>
                                 "日付チェック"
+                            </button>
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                set_check_mode.set(CheckMode::None);
+                                set_check_results.set(Vec::new());
+                            } disabled=move || check_mode.get() == CheckMode::None>
+                                "チェック結果をクリア"
                             </button>
                             <hr class="menu-divider" />
                             <button class="menu-item" on:click=move |_| {
