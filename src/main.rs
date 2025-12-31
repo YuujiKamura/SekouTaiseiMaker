@@ -87,9 +87,32 @@ pub struct ProjectData {
     pub client: String,
     #[serde(default)]
     pub period: String,
+    #[serde(default)]
+    pub project_docs: ProjectDocs,  // 全体書類
     pub contractors: Vec<Contractor>,
     #[serde(default)]
     pub contracts: Vec<Contract>,
+}
+
+// 全体書類（施工体系図、施工体制台帳、下請契約書）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProjectDocs {
+    #[serde(default)]
+    pub sekou_taikeizu: Option<DocLink>,      // 施工体系図
+    #[serde(default)]
+    pub sekou_taisei_daicho: Option<DocLink>, // 施工体制台帳
+    #[serde(default)]
+    pub shitauke_keiyaku: Option<DocLink>,    // 下請契約書
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocLink {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub status: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +248,8 @@ fn ProjectView(project: ProjectData) -> impl IntoView {
         .count();
     let progress = if total_docs > 0 { (complete_docs * 100) / total_docs } else { 0 };
 
+    let project_docs = project.project_docs.clone();
+
     view! {
         <div class="project-view">
             <div class="project-header">
@@ -242,37 +267,109 @@ fn ProjectView(project: ProjectData) -> impl IntoView {
                 <span class="progress-text">{complete_docs}"/" {total_docs} " (" {progress}"%)"</span>
             </div>
 
-            <div class="contractors-grid">
-                {project.contractors.into_iter().map(|c| view! {
-                    <ContractorCard contractor=c />
-                }).collect_view()}
+            // 全体書類セクション
+            <div class="project-docs-section">
+                <h4>"全体書類"</h4>
+                <div class="project-docs-grid">
+                    <ProjectDocCard
+                        label="施工体系図"
+                        doc=project_docs.sekou_taikeizu.clone()
+                    />
+                    <ProjectDocCard
+                        label="施工体制台帳"
+                        doc=project_docs.sekou_taisei_daicho.clone()
+                    />
+                    <ProjectDocCard
+                        label="下請契約書"
+                        doc=project_docs.shitauke_keiyaku.clone()
+                    />
+                </div>
             </div>
 
-            {(!project.contracts.is_empty()).then(|| view! {
-                <div class="contracts-section">
-                    <h4>"契約書類"</h4>
-                    <div class="contracts-list">
-                        {project.contracts.into_iter().map(|c| view! {
-                            <div class="contract-item">
-                                {if let Some(url) = c.url {
-                                    view! {
-                                        <a class="contract-link" href=url target="_blank" rel="noopener">
-                                            {c.name.clone()}
-                                        </a>
-                                    }.into_view()
-                                } else {
-                                    view! {
-                                        <span class="contract-name">{c.name.clone()}</span>
-                                    }.into_view()
-                                }}
-                                {c.contractor.map(|ct| view! {
-                                    <span class="contract-contractor">{ct}</span>
-                                })}
-                            </div>
-                        }).collect_view()}
-                    </div>
+            // 各社書類セクション
+            <div class="contractors-section">
+                <h4>"各社書類"</h4>
+                <div class="contractors-grid">
+                    {project.contractors.into_iter().map(|c| view! {
+                        <ContractorCard contractor=c />
+                    }).collect_view()}
                 </div>
-            })}
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn ProjectDocCard(label: &'static str, doc: Option<DocLink>) -> impl IntoView {
+    let (has_doc, url, status) = match &doc {
+        Some(d) => (true, d.url.clone(), d.status),
+        None => (false, None, false),
+    };
+
+    view! {
+        <div class=format!("project-doc-card {}", if status { "complete" } else if has_doc { "incomplete" } else { "empty" })>
+            <span class="doc-icon">{
+                if status { "✓" } else if has_doc { "○" } else { "−" }
+            }</span>
+            {if let Some(u) = url {
+                view! {
+                    <a class="doc-link" href=u target="_blank" rel="noopener">{label}</a>
+                }.into_view()
+            } else {
+                view! {
+                    <span class="doc-name">{label}</span>
+                }.into_view()
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn ProjectDocEditor<G, F>(
+    label: &'static str,
+    doc: G,
+    on_update: F,
+) -> impl IntoView
+where
+    G: Fn() -> Option<DocLink> + 'static,
+    F: Fn(Option<DocLink>) + 'static + Clone,
+{
+    let initial = doc();
+    let (status, set_status) = create_signal(initial.as_ref().map(|d| d.status).unwrap_or(false));
+    let (url, set_url) = create_signal(initial.as_ref().and_then(|d| d.url.clone()).unwrap_or_default());
+
+    let on_update_1 = on_update.clone();
+    let on_update_2 = on_update;
+
+    view! {
+        <div class="project-doc-editor-row">
+            <label class="checkbox-label">
+                <input type="checkbox"
+                    prop:checked=move || status.get()
+                    on:change=move |ev| {
+                        let new_status = event_target_checked(&ev);
+                        set_status.set(new_status);
+                        on_update_1(Some(DocLink {
+                            name: label.to_string(),
+                            url: if url.get().is_empty() { None } else { Some(url.get()) },
+                            status: new_status,
+                        }));
+                    }
+                />
+                <span class="doc-label">{label}</span>
+            </label>
+            <input type="text" class="url-input" placeholder="URL"
+                prop:value=move || url.get()
+                on:input=move |ev| {
+                    let new_url = event_target_value(&ev);
+                    set_url.set(new_url.clone());
+                    on_update_2(Some(DocLink {
+                        name: label.to_string(),
+                        url: if new_url.is_empty() { None } else { Some(new_url) },
+                        status: status.get(),
+                    }));
+                }
+            />
         </div>
     }
 }
@@ -339,6 +436,7 @@ fn ProjectEditor(project: ProjectData) -> impl IntoView {
     let (project_name, set_project_name) = create_signal(project.project_name.clone());
     let (client, set_client) = create_signal(project.client.clone());
     let (period, set_period) = create_signal(project.period.clone());
+    let (project_docs, set_project_docs) = create_signal(project.project_docs.clone());
     let (contractors, set_contractors) = create_signal(project.contractors.clone());
     let (contracts, _set_contracts) = create_signal(project.contracts.clone());
 
@@ -348,6 +446,7 @@ fn ProjectEditor(project: ProjectData) -> impl IntoView {
             project_name: project_name.get(),
             client: client.get(),
             period: period.get(),
+            project_docs: project_docs.get(),
             contractors: contractors.get(),
             contracts: contracts.get(),
         };
@@ -416,6 +515,27 @@ fn ProjectEditor(project: ProjectData) -> impl IntoView {
                             on:input=move |ev| set_period.set(event_target_value(&ev))
                         />
                     </div>
+                </div>
+            </div>
+
+            <div class="editor-section">
+                <h3>"全体書類"</h3>
+                <div class="project-docs-editor">
+                    <ProjectDocEditor
+                        label="施工体系図"
+                        doc=move || project_docs.get().sekou_taikeizu.clone()
+                        on_update=move |d| set_project_docs.update(|pd| pd.sekou_taikeizu = d)
+                    />
+                    <ProjectDocEditor
+                        label="施工体制台帳"
+                        doc=move || project_docs.get().sekou_taisei_daicho.clone()
+                        on_update=move |d| set_project_docs.update(|pd| pd.sekou_taisei_daicho = d)
+                    />
+                    <ProjectDocEditor
+                        label="下請契約書"
+                        doc=move || project_docs.get().shitauke_keiyaku.clone()
+                        on_update=move |d| set_project_docs.update(|pd| pd.shitauke_keiyaku = d)
+                    />
                 </div>
             </div>
 
@@ -1083,6 +1203,7 @@ fn App() -> impl IntoView {
             project_name: "新規工事".to_string(),
             client: "".to_string(),
             period: "".to_string(),
+            project_docs: ProjectDocs::default(),
             contractors: vec![
                 Contractor {
                     id: "prime".to_string(),

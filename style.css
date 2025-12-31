@@ -1009,3 +1009,142 @@ button:disabled {
         flex: 1;
     }
 }
+
+/* ============================================
+   全体書類セクション
+   ============================================ */
+
+.project-docs-section {
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.project-docs-section h4 {
+    font-size: 1rem;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.project-docs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.project-doc-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #fafafa;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.project-doc-card.complete {
+    border-color: #4caf50;
+    background: #f1f8e9;
+}
+
+.project-doc-card.complete .doc-icon {
+    color: #4caf50;
+}
+
+.project-doc-card.incomplete {
+    border-color: #ff9800;
+    background: #fff8e1;
+}
+
+.project-doc-card.incomplete .doc-icon {
+    color: #ff9800;
+}
+
+.project-doc-card.empty {
+    border-color: #e0e0e0;
+    background: #fafafa;
+}
+
+.project-doc-card.empty .doc-icon {
+    color: #999;
+}
+
+.project-doc-card .doc-icon {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.project-doc-card .doc-link {
+    color: #1976D2;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.project-doc-card .doc-link:hover {
+    text-decoration: underline;
+}
+
+.project-doc-card .doc-name {
+    color: #666;
+}
+
+/* 各社書類セクション */
+.contractors-section {
+    margin-top: 20px;
+}
+
+.contractors-section h4 {
+    font-size: 1rem;
+    color: #333;
+    margin-bottom: 16px;
+}
+
+/* 全体書類エディタ */
+.project-docs-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.project-doc-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+}
+
+.project-doc-editor-row .checkbox-label {
+    min-width: 150px;
+}
+
+.project-doc-editor-row .url-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.project-doc-editor-row .url-input:focus {
+    outline: none;
+    border-color: #2196F3;
+}
+
+@media (max-width: 768px) {
+    .project-docs-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .project-doc-editor-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .project-doc-editor-row .checkbox-label {
+        min-width: auto;
+    }
+}

@@ -2,6 +2,11 @@
   "project_name": "サンプル工事",
   "client": "○○市",
   "period": "令和7年1月〜令和7年3月",
+  "project_docs": {
+    "sekou_taikeizu": null,
+    "sekou_taisei_daicho": null,
+    "shitauke_keiyaku": null
+  },
   "contractors": [
     {
       "id": "prime",
