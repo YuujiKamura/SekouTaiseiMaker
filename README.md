@@ -2,7 +2,7 @@
 
 建設工事の施工体制書類を管理・チェックするWebアプリケーション。
 
-**デモ**: https://sekoutaiseimaker.pages.dev
+**デモ**: https://yuujikamura.github.io/SekouTaiseiMaker/
 
 ## 機能
 
