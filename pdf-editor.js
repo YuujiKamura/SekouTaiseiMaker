@@ -107,10 +107,24 @@ window.PdfEditor = (function() {
         const page = await pdfDoc.getPage(pageNum);
         const viewport = page.getViewport({ scale: scale });
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        overlayCanvas.width = viewport.width;
-        overlayCanvas.height = viewport.height;
+        // 高解像度ディスプレイ対応（Retina等）
+        const dpr = window.devicePixelRatio || 1;
+
+        // キャンバスの内部解像度を上げる
+        canvas.width = viewport.width * dpr;
+        canvas.height = viewport.height * dpr;
+        overlayCanvas.width = viewport.width * dpr;
+        overlayCanvas.height = viewport.height * dpr;
+
+        // CSSサイズは元のサイズに
+        canvas.style.width = viewport.width + 'px';
+        canvas.style.height = viewport.height + 'px';
+        overlayCanvas.style.width = viewport.width + 'px';
+        overlayCanvas.style.height = viewport.height + 'px';
+
+        // コンテキストをリセットしてスケール
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         await page.render({
             canvasContext: ctx,
@@ -365,7 +379,9 @@ window.PdfEditor = (function() {
     function redrawAnnotations() {
         if (!overlayCtx || !overlayCanvas) return;
 
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        // dprでスケール済みなので論理サイズでクリア
+        const dpr = window.devicePixelRatio || 1;
+        overlayCtx.clearRect(0, 0, overlayCanvas.width / dpr, overlayCanvas.height / dpr);
 
         textAnnotations.filter(a => a.page === currentPage).forEach(annotation => {
             const screenX = annotation.x * scale;
