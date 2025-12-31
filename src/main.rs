@@ -1905,6 +1905,8 @@ fn PdfEditor(
     let (font_size, set_font_size) = create_signal(12);
     let (input_text, set_input_text) = create_signal(String::new());
     let (status_message, set_status_message) = create_signal(None::<String>);
+    let (edit_mode, set_edit_mode) = create_signal("add".to_string()); // "add" | "select"
+    let (has_selection, set_has_selection) = create_signal(false);
 
     let contractor_display = contractor.clone();
     let doc_type_display = doc_type.clone();
@@ -1912,6 +1914,54 @@ fn PdfEditor(
     // 戻るボタン
     let on_back = move |_| {
         ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // JavaScript PdfEditor呼び出しヘルパー
+    fn call_js_editor(method: &str) -> Option<wasm_bindgen::JsValue> {
+        js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor"))
+            .ok()
+            .and_then(|editor| {
+                js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str(method))
+                    .ok()
+                    .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                    .and_then(|f| f.call0(&editor).ok())
+            })
+    }
+
+    fn call_js_editor_with_args(method: &str, args: &[wasm_bindgen::JsValue]) -> Option<wasm_bindgen::JsValue> {
+        js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor"))
+            .ok()
+            .and_then(|editor| {
+                js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str(method))
+                    .ok()
+                    .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                    .and_then(|f| {
+                        let js_args = js_sys::Array::new();
+                        for arg in args {
+                            js_args.push(arg);
+                        }
+                        f.apply(&editor, &js_args).ok()
+                    })
+            })
+    }
+
+    // モード切替
+    let on_mode_add = move |_| {
+        set_edit_mode.set("add".to_string());
+        call_js_editor_with_args("setEditMode", &[wasm_bindgen::JsValue::from_str("add")]);
+        set_has_selection.set(false);
+    };
+
+    let on_mode_select = move |_| {
+        set_edit_mode.set("select".to_string());
+        call_js_editor_with_args("setEditMode", &[wasm_bindgen::JsValue::from_str("select")]);
+    };
+
+    // 削除
+    let on_delete = move |_| {
+        call_js_editor("deleteSelected");
+        set_has_selection.set(false);
+        set_status_message.set(Some("削除しました".to_string()));
     };
 
     // PDFファイル読み込み
@@ -1992,9 +2042,9 @@ fn PdfEditor(
         }
     }
 
-    // キャンバスクリック時のテキスト追加
-    let on_canvas_click = move |ev: web_sys::MouseEvent| {
-        if !pdf_loaded.get() || input_text.get().is_empty() {
+    // キャンバスクリック（追加モード or 選択モード）
+    let on_canvas_mousedown = move |ev: web_sys::MouseEvent| {
+        if !pdf_loaded.get() {
             return;
         }
 
@@ -2004,34 +2054,82 @@ fn PdfEditor(
             let x = ev.client_x() as f64 - rect.left();
             let y = ev.client_y() as f64 - rect.top();
 
-            let text = input_text.get();
-            let size = font_size.get();
-
-            // JavaScript側でテキスト追加
-            if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
-                // フォントサイズを設定
-                if let Ok(set_size_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("setFontSize")) {
-                    if let Ok(f) = set_size_fn.dyn_into::<js_sys::Function>() {
-                        let _ = f.call1(&editor, &wasm_bindgen::JsValue::from_f64(size as f64));
-                    }
+            if edit_mode.get() == "add" {
+                // 追加モード: テキストを配置
+                let text = input_text.get();
+                if text.is_empty() {
+                    return;
                 }
+                let size = font_size.get();
 
-                // テキスト追加
-                if let Ok(add_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("addTextAnnotation")) {
-                    if let Ok(f) = add_fn.dyn_into::<js_sys::Function>() {
-                        let _ = f.call3(
-                            &editor,
-                            &wasm_bindgen::JsValue::from_f64(x),
-                            &wasm_bindgen::JsValue::from_f64(y),
-                            &wasm_bindgen::JsValue::from_str(&text)
-                        );
+                call_js_editor_with_args("setFontSize", &[wasm_bindgen::JsValue::from_f64(size as f64)]);
+                call_js_editor_with_args("addTextAnnotation", &[
+                    wasm_bindgen::JsValue::from_f64(x),
+                    wasm_bindgen::JsValue::from_f64(y),
+                    wasm_bindgen::JsValue::from_str(&text)
+                ]);
+
+                set_input_text.set(String::new());
+                set_status_message.set(Some("テキストを追加しました".to_string()));
+            } else {
+                // 選択モード: クリック位置の注釈を取得
+                let result = call_js_editor_with_args("getAnnotationAt", &[
+                    wasm_bindgen::JsValue::from_f64(x),
+                    wasm_bindgen::JsValue::from_f64(y)
+                ]);
+
+                if let Some(ann) = result {
+                    if ann.is_null() || ann.is_undefined() {
+                        // 空白をクリック → 選択解除
+                        call_js_editor("deselectAll");
+                        set_has_selection.set(false);
+                    } else {
+                        // 注釈をクリック → 選択してドラッグ開始
+                        if let Ok(id) = js_sys::Reflect::get(&ann, &wasm_bindgen::JsValue::from_str("id")) {
+                            if let Some(id_str) = id.as_string() {
+                                call_js_editor_with_args("selectAnnotation", &[wasm_bindgen::JsValue::from_str(&id_str)]);
+                                call_js_editor_with_args("startDrag", &[
+                                    wasm_bindgen::JsValue::from_f64(x),
+                                    wasm_bindgen::JsValue::from_f64(y)
+                                ]);
+                                set_has_selection.set(true);
+                            }
+                        }
                     }
                 }
             }
-
-            set_input_text.set(String::new());
-            set_status_message.set(Some("テキストを追加しました".to_string()));
         }
+    };
+
+    // マウス移動（ドラッグ + ホバー）
+    let on_canvas_mousemove = move |ev: web_sys::MouseEvent| {
+        if !pdf_loaded.get() {
+            return;
+        }
+
+        let target = ev.target().and_then(|t| t.dyn_into::<web_sys::HtmlCanvasElement>().ok());
+        if let Some(canvas) = target {
+            let rect = canvas.get_bounding_client_rect();
+            let x = ev.client_x() as f64 - rect.left();
+            let y = ev.client_y() as f64 - rect.top();
+
+            // ドラッグ中の更新
+            call_js_editor_with_args("updateDrag", &[
+                wasm_bindgen::JsValue::from_f64(x),
+                wasm_bindgen::JsValue::from_f64(y)
+            ]);
+
+            // ホバー状態の更新
+            call_js_editor_with_args("updateHover", &[
+                wasm_bindgen::JsValue::from_f64(x),
+                wasm_bindgen::JsValue::from_f64(y)
+            ]);
+        }
+    };
+
+    // マウスアップ（ドラッグ終了）
+    let on_canvas_mouseup = move |_ev: web_sys::MouseEvent| {
+        call_js_editor("endDrag");
     };
 
     // 元に戻す
@@ -2126,6 +2224,24 @@ fn PdfEditor(
                     <input type="file" accept=".pdf" on:change=on_file_load style="display:none" />
                 </label>
 
+                // モード切替ボタン
+                <div class="mode-toggle">
+                    <button
+                        class=move || if edit_mode.get() == "add" { "mode-btn active" } else { "mode-btn" }
+                        on:click=on_mode_add
+                        disabled=move || !pdf_loaded.get()
+                    >
+                        "追加"
+                    </button>
+                    <button
+                        class=move || if edit_mode.get() == "select" { "mode-btn active" } else { "mode-btn" }
+                        on:click=on_mode_select
+                        disabled=move || !pdf_loaded.get()
+                    >
+                        "選択"
+                    </button>
+                </div>
+
                 <div class="text-controls">
                     <input
                         type="text"
@@ -2133,7 +2249,7 @@ fn PdfEditor(
                         class="text-input"
                         prop:value=move || input_text.get()
                         on:input=move |ev| set_input_text.set(event_target_value(&ev))
-                        disabled=move || !pdf_loaded.get()
+                        disabled=move || !pdf_loaded.get() || edit_mode.get() != "add"
                     />
                     <select
                         class="font-size-select"
@@ -2141,7 +2257,7 @@ fn PdfEditor(
                             let val: i32 = event_target_value(&ev).parse().unwrap_or(12);
                             set_font_size.set(val);
                         }
-                        disabled=move || !pdf_loaded.get()
+                        disabled=move || !pdf_loaded.get() || edit_mode.get() != "add"
                     >
                         <option value="10">"10pt"</option>
                         <option value="12" selected>"12pt"</option>
@@ -2152,6 +2268,13 @@ fn PdfEditor(
                         <option value="24">"24pt"</option>
                     </select>
                     <button class="undo-btn" on:click=on_undo disabled=move || !pdf_loaded.get()>"取消"</button>
+                    <button
+                        class="delete-btn"
+                        on:click=on_delete
+                        disabled=move || !pdf_loaded.get() || !has_selection.get()
+                    >
+                        "削除"
+                    </button>
                     <button class="save-btn" on:click=on_save disabled=move || !pdf_loaded.get()>"保存"</button>
                 </div>
             </div>
@@ -2162,7 +2285,13 @@ fn PdfEditor(
 
             <div class="pdf-canvas-container">
                 <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
-                <canvas id="pdf-overlay" class="pdf-overlay" on:click=on_canvas_click></canvas>
+                <canvas
+                    id="pdf-overlay"
+                    class="pdf-overlay"
+                    on:mousedown=on_canvas_mousedown
+                    on:mousemove=on_canvas_mousemove
+                    on:mouseup=on_canvas_mouseup
+                ></canvas>
 
                 {move || (!pdf_loaded.get()).then(|| view! {
                     <div class="pdf-placeholder">

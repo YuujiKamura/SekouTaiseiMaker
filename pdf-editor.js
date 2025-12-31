@@ -1,6 +1,6 @@
 /**
  * PDF Editor Module
- * PDFにテキストを追加して保存する機能
+ * PDFにテキストを追加・選択・移動・削除する機能
  */
 
 window.PdfEditor = (function() {
@@ -17,8 +17,19 @@ window.PdfEditor = (function() {
 
     // 現在の設定
     let currentFontSize = 12;
-    let currentFontFamily = 'HeiseiMin-W3'; // 日本語対応フォント
+    let currentFontFamily = 'HeiseiMin-W3';
     let currentColor = '#000000';
+
+    // 選択・移動用の状態
+    let editMode = 'add';       // 'add' | 'select'
+    let selectedId = null;
+    let hoveredId = null;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let annotationIdCounter = 0;
 
     // PDF.js worker設定
     if (typeof pdfjsLib !== 'undefined') {
@@ -39,6 +50,9 @@ window.PdfEditor = (function() {
                     totalPages = pdfDoc.numPages;
                     currentPage = 1;
                     textAnnotations = [];
+                    selectedId = null;
+                    hoveredId = null;
+                    annotationIdCounter = 0;
                     resolve({ totalPages: totalPages });
                 } catch (err) {
                     reject(err);
@@ -75,28 +89,159 @@ window.PdfEditor = (function() {
             viewport: viewport
         }).promise;
 
-        // テキスト注釈を再描画
         redrawAnnotations();
-
         currentPage = pageNum;
+    }
+
+    /**
+     * テキストの幅と高さを計算
+     */
+    function measureText(text, fontSize) {
+        if (!overlayCtx) return { width: 0, height: 0 };
+        overlayCtx.font = `${fontSize * scale}px sans-serif`;
+        const metrics = overlayCtx.measureText(text);
+        return {
+            width: metrics.width / scale,
+            height: fontSize * 1.2  // 行の高さの近似
+        };
     }
 
     /**
      * テキスト注釈を追加
      */
     function addTextAnnotation(x, y, text) {
+        const dims = measureText(text, currentFontSize);
         const annotation = {
+            id: 'ann_' + (annotationIdCounter++),
             page: currentPage,
-            x: x / scale,  // PDF座標に変換
+            x: x / scale,
             y: y / scale,
             text: text,
             fontSize: currentFontSize,
             fontFamily: currentFontFamily,
-            color: currentColor
+            color: currentColor,
+            width: dims.width,
+            height: dims.height
         };
         textAnnotations.push(annotation);
         redrawAnnotations();
         return annotation;
+    }
+
+    /**
+     * 座標位置にある注釈を取得
+     */
+    function getAnnotationAt(screenX, screenY) {
+        const x = screenX / scale;
+        const y = screenY / scale;
+
+        // 現在のページの注釈のみを対象
+        const pageAnnotations = textAnnotations.filter(a => a.page === currentPage);
+
+        // 後から追加されたものが上に表示されるので、逆順でチェック
+        for (let i = pageAnnotations.length - 1; i >= 0; i--) {
+            const ann = pageAnnotations[i];
+            // テキストのバウンディングボックスでヒット判定
+            // y座標はテキストのベースラインなので、上方向にheight分がテキスト領域
+            if (x >= ann.x && x <= ann.x + ann.width &&
+                y >= ann.y - ann.height && y <= ann.y) {
+                return ann;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 注釈を選択
+     */
+    function selectAnnotation(id) {
+        selectedId = id;
+        redrawAnnotations();
+        return selectedId;
+    }
+
+    /**
+     * 選択解除
+     */
+    function deselectAll() {
+        selectedId = null;
+        redrawAnnotations();
+    }
+
+    /**
+     * 選択中の注釈を削除
+     */
+    function deleteSelected() {
+        if (!selectedId) return false;
+
+        const idx = textAnnotations.findIndex(a => a.id === selectedId);
+        if (idx !== -1) {
+            textAnnotations.splice(idx, 1);
+            selectedId = null;
+            redrawAnnotations();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * ドラッグ開始
+     */
+    function startDrag(screenX, screenY) {
+        if (!selectedId) return false;
+
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        if (!ann) return false;
+
+        isDragging = true;
+        dragStartX = screenX;
+        dragStartY = screenY;
+        dragOffsetX = screenX / scale - ann.x;
+        dragOffsetY = screenY / scale - ann.y;
+        return true;
+    }
+
+    /**
+     * ドラッグ中の更新
+     */
+    function updateDrag(screenX, screenY) {
+        if (!isDragging || !selectedId) return;
+
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        if (!ann) return;
+
+        ann.x = screenX / scale - dragOffsetX;
+        ann.y = screenY / scale - dragOffsetY;
+        redrawAnnotations();
+    }
+
+    /**
+     * ドラッグ終了
+     */
+    function endDrag() {
+        isDragging = false;
+    }
+
+    /**
+     * ホバー状態を更新
+     */
+    function updateHover(screenX, screenY) {
+        if (editMode !== 'select') {
+            if (hoveredId !== null) {
+                hoveredId = null;
+                redrawAnnotations();
+            }
+            return null;
+        }
+
+        const ann = getAnnotationAt(screenX, screenY);
+        const newHoveredId = ann ? ann.id : null;
+
+        if (newHoveredId !== hoveredId) {
+            hoveredId = newHoveredId;
+            redrawAnnotations();
+        }
+        return hoveredId;
     }
 
     /**
@@ -108,9 +253,44 @@ window.PdfEditor = (function() {
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
         textAnnotations.filter(a => a.page === currentPage).forEach(annotation => {
+            const screenX = annotation.x * scale;
+            const screenY = annotation.y * scale;
+            const screenWidth = annotation.width * scale;
+            const screenHeight = annotation.height * scale;
+
+            // 選択中の場合、背景を描画
+            if (annotation.id === selectedId) {
+                overlayCtx.fillStyle = 'rgba(33, 150, 243, 0.2)';
+                overlayCtx.fillRect(
+                    screenX - 2,
+                    screenY - screenHeight - 2,
+                    screenWidth + 4,
+                    screenHeight + 4
+                );
+                overlayCtx.strokeStyle = '#2196F3';
+                overlayCtx.lineWidth = 2;
+                overlayCtx.strokeRect(
+                    screenX - 2,
+                    screenY - screenHeight - 2,
+                    screenWidth + 4,
+                    screenHeight + 4
+                );
+            } else if (annotation.id === hoveredId) {
+                // ホバー中の場合、薄い枠を描画
+                overlayCtx.strokeStyle = 'rgba(33, 150, 243, 0.5)';
+                overlayCtx.lineWidth = 1;
+                overlayCtx.strokeRect(
+                    screenX - 2,
+                    screenY - screenHeight - 2,
+                    screenWidth + 4,
+                    screenHeight + 4
+                );
+            }
+
+            // テキストを描画
             overlayCtx.font = `${annotation.fontSize * scale}px sans-serif`;
             overlayCtx.fillStyle = annotation.color;
-            overlayCtx.fillText(annotation.text, annotation.x * scale, annotation.y * scale);
+            overlayCtx.fillText(annotation.text, screenX, screenY);
         });
     }
 
@@ -122,6 +302,9 @@ window.PdfEditor = (function() {
         if (pageAnnotations.length > 0) {
             const lastIdx = textAnnotations.lastIndexOf(pageAnnotations[pageAnnotations.length - 1]);
             textAnnotations.splice(lastIdx, 1);
+            if (selectedId && !textAnnotations.find(a => a.id === selectedId)) {
+                selectedId = null;
+            }
             redrawAnnotations();
         }
     }
@@ -131,27 +314,20 @@ window.PdfEditor = (function() {
      */
     async function savePdf() {
         if (!pdfBytes || textAnnotations.length === 0) {
-            // 注釈がない場合は元のPDFをそのまま返す
             return pdfBytes;
         }
 
         const { PDFDocument, rgb, StandardFonts } = PDFLib;
         const pdfDocLib = await PDFDocument.load(pdfBytes);
-
-        // 標準フォントを使用（日本語は制限あり）
         const font = await pdfDocLib.embedFont(StandardFonts.Helvetica);
-
         const pages = pdfDocLib.getPages();
 
         for (const annotation of textAnnotations) {
             if (annotation.page <= pages.length) {
                 const page = pages[annotation.page - 1];
                 const { height } = page.getSize();
-
-                // PDF座標系はY軸が下から上なので変換
                 const pdfY = height - annotation.y;
 
-                // 色をRGBに変換
                 const colorHex = annotation.color.replace('#', '');
                 const r = parseInt(colorHex.substr(0, 2), 16) / 255;
                 const g = parseInt(colorHex.substr(2, 2), 16) / 255;
@@ -206,13 +382,33 @@ window.PdfEditor = (function() {
         scale = newScale;
     }
 
+    function setEditMode(mode) {
+        editMode = mode;
+        if (mode === 'add') {
+            selectedId = null;
+            hoveredId = null;
+            redrawAnnotations();
+        }
+        return editMode;
+    }
+
+    function getEditMode() {
+        return editMode;
+    }
+
+    function getSelectedId() {
+        return selectedId;
+    }
+
     function getState() {
         return {
             currentPage,
             totalPages,
             annotationCount: textAnnotations.length,
             fontSize: currentFontSize,
-            color: currentColor
+            color: currentColor,
+            editMode: editMode,
+            selectedId: selectedId
         };
     }
 
@@ -241,8 +437,20 @@ window.PdfEditor = (function() {
         setFontFamily,
         setColor,
         setScale,
+        setEditMode,
+        getEditMode,
+        getSelectedId,
         getState,
         nextPage,
-        prevPage
+        prevPage,
+        // 選択・移動・削除用
+        getAnnotationAt,
+        selectAnnotation,
+        deselectAll,
+        deleteSelected,
+        startDrag,
+        updateDrag,
+        endDrag,
+        updateHover
     };
 })();
