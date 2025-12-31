@@ -8,8 +8,8 @@
       "name": "元請建設株式会社",
       "role": "元請",
       "docs": {
-        "01_建設業許可": { "status": true, "file": "01建設業許可.pdf" },
-        "02_事業所番号": { "status": true, "file": "02事業所番号.pdf" },
+        "01_建設業許可": { "status": true, "file": "01建設業許可.pdf", "url": "https://example.com/doc1" },
+        "02_事業所番号": { "status": true, "file": "02事業所番号.pdf", "url": "https://example.com/doc2" },
         "03_労働保険番号": { "status": true, "file": "03労働保険番号.pdf" },
         "041_現場代理人資格": { "status": true, "file": "041資格証明.pdf" },
         "042_現場代理人在籍": { "status": true, "file": "042在籍証明.pdf" },
@@ -52,6 +52,19 @@
         "08_作業員名簿": { "status": true, "file": "08作業員名簿.pdf" },
         "09_暴対法誓約書": { "status": true, "file": "09誓約書.pdf" }
       }
+    }
+  ],
+  "contracts": [
+    {
+      "id": "sekou_taicho",
+      "name": "施工体制台帳",
+      "url": "https://example.com/contract1"
+    },
+    {
+      "id": "sub1_contract",
+      "name": "下請契約書",
+      "contractor": "下請A工業",
+      "url": "https://example.com/contract2"
     }
   ]
 }
