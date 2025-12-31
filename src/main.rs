@@ -2275,7 +2275,6 @@ fn App() -> impl IntoView {
 
     // 共有URL生成
     let generate_share_url = move |_| {
-        set_menu_open.set(false);
         if let Some(p) = project.get() {
             let json = serde_json::to_string(&p).ok();
             if let Some(json_str) = json {
@@ -2288,17 +2287,33 @@ fn App() -> impl IntoView {
                         // フルURLを取得してクリップボードにコピー
                         if let Ok(href) = window.location().href() {
                             let clipboard = window.navigator().clipboard();
-                            let _ = clipboard.write_text(&href);
-                            set_copy_success.set(true);
+                            let promise = clipboard.write_text(&href);
+
+                            // 非同期でクリップボードにコピー
                             spawn_local(async move {
-                                gloo::timers::future::TimeoutFuture::new(2000).await;
-                                set_copy_success.set(false);
+                                match JsFuture::from(promise).await {
+                                    Ok(_) => {
+                                        set_copy_success.set(true);
+                                        // コンソールにも出力
+                                        web_sys::console::log_1(&"共有URLをクリップボードにコピーしました".into());
+                                        gloo::timers::future::TimeoutFuture::new(3000).await;
+                                        set_copy_success.set(false);
+                                    }
+                                    Err(e) => {
+                                        web_sys::console::error_1(&format!("クリップボードへのコピー失敗: {:?}", e).into());
+                                        // フォールバック: alertで表示
+                                        if let Some(window) = web_sys::window() {
+                                            let _ = window.alert_with_message(&format!("共有URL:\n{}", href));
+                                        }
+                                    }
+                                }
                             });
                         }
                     }
                 }
             }
         }
+        set_menu_open.set(false);
     };
 
     // キャッシュクリア
