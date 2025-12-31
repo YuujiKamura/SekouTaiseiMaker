@@ -11,53 +11,37 @@ Document AI OCRでPDFからテキストと座標を抽出
 import json
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
 from google.cloud import documentai_v1 as documentai
 from google.oauth2 import service_account
 
+from config import DocumentAIConfig, GmailDriveConfig, ConfigError
 
-def get_config():
-    """環境変数から設定を取得"""
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not credentials_path:
-        raise ValueError(
-            "環境変数 GOOGLE_APPLICATION_CREDENTIALS が設定されていません。"
-            "サービスアカウントJSONファイルのパスを設定してください。"
-        )
 
-    project_id = os.environ.get("DOCUMENT_AI_PROJECT_ID")
-    if not project_id:
-        raise ValueError(
-            "環境変数 DOCUMENT_AI_PROJECT_ID が設定されていません。"
-        )
+# モジュールレベルの設定キャッシュ
+_config: Optional[DocumentAIConfig] = None
 
-    processor_id = os.environ.get("DOCUMENT_AI_PROCESSOR_ID")
-    if not processor_id:
-        raise ValueError(
-            "環境変数 DOCUMENT_AI_PROCESSOR_ID が設定されていません。"
-        )
 
-    location = os.environ.get("DOCUMENT_AI_LOCATION", "us")
-
-    return {
-        "credentials_path": Path(credentials_path),
-        "project_id": project_id,
-        "location": location,
-        "processor_id": processor_id,
-    }
+def get_config() -> DocumentAIConfig:
+    """環境変数から設定を取得（キャッシュ付き）"""
+    global _config
+    if _config is None:
+        _config = DocumentAIConfig.from_env()
+    return _config
 
 
 def get_documentai_client():
     """Document AIクライアントを取得"""
     config = get_config()
     credentials = service_account.Credentials.from_service_account_file(
-        str(config["credentials_path"])
+        str(config.credentials_path)
     )
     client = documentai.DocumentProcessorServiceClient(
         credentials=credentials,
-        client_options={"api_endpoint": f"{config['location']}-documentai.googleapis.com"}
+        client_options={"api_endpoint": f"{config.location}-documentai.googleapis.com"}
     )
     return client, config
 
@@ -103,9 +87,9 @@ def process_pdf(pdf_path: Path) -> dict:
 
     # プロセッサ名
     processor_name = client.processor_path(
-        config["project_id"],
-        config["location"],
-        config["processor_id"]
+        config.project_id,
+        config.location,
+        config.processor_id
     )
 
     # PDFを読み込み
@@ -210,14 +194,8 @@ def process_pdf_from_drive(file_id: str) -> dict:
     import googleapiclient.discovery
 
     # 環境変数からトークンパスを取得
-    token_path = os.environ.get("GMAIL_TOKEN_PATH")
-    if not token_path:
-        raise ValueError(
-            "環境変数 GMAIL_TOKEN_PATH が設定されていません。"
-            "Gmail/Drive API用トークンファイルのパスを設定してください。"
-        )
-
-    creds = Credentials.from_authorized_user_file(token_path)
+    drive_config = GmailDriveConfig.from_env()
+    creds = Credentials.from_authorized_user_file(str(drive_config.token_path))
 
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())

@@ -10,39 +10,26 @@ from typing import Optional
 import google.generativeai as genai
 from googleapiclient.discovery import build
 
-# APIキーのパス設定
-# Windows環境: C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\gemini_api_key.txt
-# Linux環境: 環境変数 GEMINI_API_KEY または カレントディレクトリの credentials/gemini_api_key.txt
-API_KEY_PATHS = [
-    Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\gemini_api_key.txt"),
-    Path.home() / "credentials" / "gemini_api_key.txt",
-    Path(__file__).parent.parent / "credentials" / "gemini_api_key.txt",
-]
+from config import GeminiConfig, GoogleAPIConfig, ConfigError
 
 
-def get_api_key() -> str:
-    """APIキーを取得"""
-    # 環境変数から取得
-    env_key = os.environ.get("GEMINI_API_KEY")
-    if env_key:
-        return env_key.strip()
+# モジュールレベルの設定キャッシュ
+_gemini_config: Optional[GeminiConfig] = None
 
-    # ファイルから取得
-    for path in API_KEY_PATHS:
-        if path.exists():
-            return path.read_text().strip()
 
-    raise FileNotFoundError(
-        "APIキーが見つかりません。環境変数 GEMINI_API_KEY を設定するか、"
-        f"以下のいずれかにAPIキーファイルを配置してください: {API_KEY_PATHS}"
-    )
+def get_gemini_config() -> GeminiConfig:
+    """Gemini設定を取得（キャッシュ付き）"""
+    global _gemini_config
+    if _gemini_config is None:
+        _gemini_config = GeminiConfig.from_env()
+    return _gemini_config
 
 
 def init_gemini():
     """GEMINI APIを初期化"""
-    api_key = get_api_key()
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-2.0-flash-exp')
+    config = get_gemini_config()
+    genai.configure(api_key=config.api_key)
+    return genai.GenerativeModel(config.model_name)
 
 
 def image_to_base64(image_path: Path) -> str:
@@ -143,11 +130,8 @@ def read_sheet_data(spreadsheet_id: str, sheet_name: Optional[str] = None) -> li
     Returns:
         2次元リスト [[row1], [row2], ...]
     """
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("環境変数 GOOGLE_API_KEY を設定してください")
-
-    service = build('sheets', 'v4', developerKey=api_key)
+    google_config = GoogleAPIConfig.from_env()
+    service = build('sheets', 'v4', developerKey=google_config.api_key)
 
     # シート名が指定されていない場合は最初のシートを取得
     if not sheet_name:
