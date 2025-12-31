@@ -1891,6 +1891,24 @@ fn SpreadsheetViewer(
 // PDFエディタ
 // ============================================
 
+/// Google Drive URLをiframe埋め込み用URLに変換
+fn convert_to_embed_url(url: &str) -> String {
+    // Google Drive file URL: https://drive.google.com/file/d/{FILE_ID}/view
+    // -> Preview URL: https://drive.google.com/file/d/{FILE_ID}/preview
+    if url.contains("drive.google.com/file/d/") {
+        return url.replace("/view", "/preview").replace("/edit", "/preview");
+    }
+
+    // Google Docs/Sheets/Slides URL: https://docs.google.com/document/d/{FILE_ID}/edit
+    // -> Preview URL: https://docs.google.com/document/d/{FILE_ID}/preview
+    if url.contains("docs.google.com/") {
+        return url.replace("/edit", "/preview").replace("/view", "/preview");
+    }
+
+    // その他のURLはそのまま返す
+    url.to_string()
+}
+
 #[component]
 fn PdfEditor(
     contractor: String,
@@ -2293,11 +2311,32 @@ fn PdfEditor(
                     on:mouseup=on_canvas_mouseup
                 ></canvas>
 
-                {move || (!pdf_loaded.get()).then(|| view! {
-                    <div class="pdf-placeholder">
-                        <p>"PDFファイルをアップロードしてください"</p>
-                        <p class="hint">"Google DriveからダウンロードしたPDFを編集できます"</p>
-                    </div>
+                {move || (!pdf_loaded.get()).then(|| {
+                    let embed_url = convert_to_embed_url(&original_url);
+                    view! {
+                        <div class="pdf-preview-container">
+                            <div class="pdf-preview-header">
+                                <span class="preview-label">"プレビュー（読み取り専用）"</span>
+                                <a
+                                    class="download-btn"
+                                    href=original_url.clone()
+                                    target="_blank"
+                                    rel="noopener"
+                                >
+                                    "ダウンロード ↓"
+                                </a>
+                            </div>
+                            <iframe
+                                class="pdf-preview-iframe"
+                                src=embed_url
+                                frameborder="0"
+                                allowfullscreen=true
+                            ></iframe>
+                            <div class="upload-instruction">
+                                <p>"編集するには上の「PDFを読み込む」からファイルをアップロードしてください"</p>
+                            </div>
+                        </div>
+                    }
                 })}
             </div>
 
