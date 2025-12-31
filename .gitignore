@@ -3,6 +3,11 @@
 *.log
 .DS_Store
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # 実データは除外（固有名詞を含むため）
 /data/projects/
 /data/local/
