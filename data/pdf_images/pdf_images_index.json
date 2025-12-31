@@ -1,0 +1,32 @@
+[
+  {
+    "contractor": "ユナイト",
+    "doc_type": "09_暴対法誓約書",
+    "url": "https://drive.google.com/file/d/19xI_bR5C5HSn4cZbupJ7s3P1n7GQYO2D/view?usp=drivesdk",
+    "image_path": "data/pdf_images/ユナイト_09_暴対法誓約書.png",
+    "image_size": {
+      "width": 1241,
+      "height": 1755
+    }
+  },
+  {
+    "contractor": "アイエスティー",
+    "doc_type": "09_暴対法誓約書",
+    "url": "https://drive.google.com/file/d/1znOfPSm_oeIxoAOqLJ7uSWrnhayBj-Sv/view?usp=drivesdk",
+    "image_path": "data/pdf_images/アイエスティー_09_暴対法誓約書.png",
+    "image_size": {
+      "width": 1240,
+      "height": 1755
+    }
+  },
+  {
+    "contractor": "アイエスティー",
+    "doc_type": "08_作業員名簿",
+    "url": "https://drive.google.com/file/d/1V1eQvRuDVu2rf0Y56HObUIeA_weWuTLX/view?usp=drivesdk",
+    "image_path": "data/pdf_images/アイエスティー_08_作業員名簿.png",
+    "image_size": {
+      "width": 2482,
+      "height": 1755
+    }
+  }
+]

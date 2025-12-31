@@ -1150,87 +1150,165 @@ button:disabled {
 }
 
 /* ============================================
-   PDFビューワ
+   書類セルのクリック可能スタイル
    ============================================ */
 
-.pdf-viewer {
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 60px);
-    background: #f5f5f5;
-}
-
-.pdf-viewer-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 20px;
-    background: #1a1a2e;
-    color: white;
-}
-
-.pdf-viewer-title {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.pdf-viewer-title .contractor-label {
-    font-size: 12px;
-    color: #aaa;
-}
-
-.pdf-viewer-title .doc-label {
-    font-size: 16px;
-    font-weight: bold;
-}
-
-.back-btn,
-.close-btn {
-    background: transparent;
-    color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 8px 16px;
-    border-radius: 4px;
+.doc-item.clickable {
     cursor: pointer;
+    position: relative;
     transition: all 0.2s;
 }
 
-.back-btn:hover,
-.close-btn:hover {
-    background: rgba(255,255,255,0.1);
-    border-color: rgba(255,255,255,0.5);
+.doc-item.clickable:hover {
+    background-color: #e3f2fd;
+    transform: translateX(2px);
 }
 
-.pdf-viewer-content {
+.doc-item.clickable:hover .click-hint {
+    opacity: 1;
+}
+
+.click-hint {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: #1976D2;
+    opacity: 0;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* ============================================
+   ビューワ共通スタイル
+   ============================================ */
+
+.viewer-container {
     display: flex;
+    flex-direction: column;
+    height: calc(100vh - 80px);
+    background: #f5f5f5;
+}
+
+.viewer-header {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    gap: 20px;
+}
+
+.viewer-header .back-button {
+    padding: 8px 16px;
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.viewer-header .back-button:hover {
+    background: #e0e0e0;
+}
+
+.viewer-header .doc-title {
     flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.viewer-header .contractor-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.viewer-header .doc-type {
+    font-size: 14px;
+    color: #666;
+    background: #e0e0e0;
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
+.viewer-header .external-link {
+    padding: 8px 16px;
+    background: #2196F3;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.viewer-header .external-link:hover {
+    background: #1976D2;
+}
+
+.viewer-content {
+    flex: 1;
+    display: flex;
     overflow: hidden;
 }
 
-.pdf-preview-area {
-    flex: 1;
-    background: #333;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-}
-
-.pdf-preview-area .pdf-iframe {
+/* PDFビューワ */
+.pdf-viewer .pdf-frame {
     width: 100%;
     height: 100%;
     border: none;
+    background: #fff;
 }
 
-.pdf-controls {
-    width: 320px;
-    padding: 20px;
-    background: #f5f5f5;
-    overflow-y: auto;
-    border-left: 1px solid #e0e0e0;
+/* スプレッドシートビューワ */
+.spreadsheet-viewer .spreadsheet-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
 }
+
+/* ============================================
+   レスポンシブ対応（ビューワ）
+   ============================================ */
+
+@media (max-width: 768px) {
+    .viewer-header {
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 12px 16px;
+    }
+
+    .viewer-header .doc-title {
+        order: 2;
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .viewer-header .back-button {
+        order: 1;
+    }
+
+    .viewer-header .external-link {
+        order: 3;
+        width: 100%;
+        text-align: center;
+    }
+
+    .viewer-container {
+        height: calc(100vh - 120px);
+    }
+}
+
+/* ============================================
+   OCR・Gemini関連スタイル
+   ============================================ */
 
 .control-buttons {
     display: flex;
@@ -1390,24 +1468,6 @@ button:disabled {
     border-top: 1px solid #e0e0e0;
 }
 
-/* OCRビューワプレースホルダ */
-.ocr-viewer-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 300px;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-}
-
-.ocr-viewer-placeholder p {
-    margin-bottom: 20px;
-    color: #666;
-    font-size: 16px;
-}
-
 /* PDFビューワ レスポンシブ */
 @media (max-width: 768px) {
     .pdf-viewer-content {
@@ -1436,179 +1496,166 @@ button:disabled {
 }
 
 /* ============================================
-   スプレッドシートビューア
+   OCRビューア
    ============================================ */
 
-.spreadsheet-viewer {
+.ocr-viewer {
     background: white;
     border-radius: 12px;
+    padding: 24px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    overflow: hidden;
 }
 
-.spreadsheet-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    background: #f5f5f5;
-    border-bottom: 1px solid #e0e0e0;
-}
-
-.spreadsheet-header .back-btn {
-    background: transparent;
-    color: #1976D2;
-    padding: 8px 16px;
-    font-size: 14px;
-}
-
-.spreadsheet-header .back-btn:hover {
-    background: rgba(25, 118, 210, 0.1);
-}
-
-.spreadsheet-header .close-btn {
-    background: transparent;
-    color: #666;
-    padding: 8px 12px;
-    font-size: 16px;
-}
-
-.spreadsheet-header .close-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #333;
-}
-
-.spreadsheet-doc-name {
-    font-weight: 500;
-    color: #333;
-}
-
-.spreadsheet-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 40px;
-    max-width: 600px;
-    margin: 0 auto;
-}
-
-.spreadsheet-icon {
-    font-size: 64px;
+.ocr-header {
     margin-bottom: 20px;
 }
 
-.spreadsheet-message {
-    font-size: 18px;
-    color: #666;
-    margin-bottom: 30px;
-    text-align: center;
-}
-
-.open-button {
-    padding: 15px 40px;
-    font-size: 16px;
-    background: #34A853;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-bottom: 30px;
-    transition: background 0.2s;
-}
-
-.open-button:hover {
-    background: #2E7D32;
-}
-
-.spreadsheet-viewer .gemini-section {
-    width: 100%;
-    border-top: 1px solid #ddd;
-    padding-top: 20px;
-    text-align: center;
-}
-
-.spreadsheet-viewer .gemini-section h4 {
-    color: #666;
-    font-weight: normal;
-    margin-bottom: 16px;
-}
-
-.check-button {
-    padding: 12px 30px;
-    font-size: 14px;
-    background: #4285F4;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-
-.check-button:hover {
-    background: #3367D6;
-}
-
-.check-button:disabled {
-    background: #9AA0A6;
-    cursor: not-allowed;
-}
-
-.check-result-container {
-    margin-top: 20px;
-    text-align: left;
-}
-
-.check-result-label {
-    font-size: 14px;
-    color: #666;
-    margin-bottom: 10px;
-}
-
-.spreadsheet-viewer .check-result {
-    margin-top: 15px;
-    padding: 15px;
-    background: #f9f9f9;
-    border-radius: 4px;
-    white-space: pre-wrap;
-}
-
-.spreadsheet-viewer .check-result.ok {
-    border-left: 4px solid #34A853;
-    background: #f1f8e9;
-}
-
-.spreadsheet-viewer .check-result.warning {
-    border-left: 4px solid #FBBC04;
-    background: #fff8e1;
-}
-
-.spreadsheet-viewer .check-result.error {
-    border-left: 4px solid #EA4335;
-    background: #ffebee;
-}
-
-.check-result-message {
-    margin: 8px 0;
-    font-size: 14px;
+.ocr-header h2 {
     color: #333;
-    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.ocr-description {
+    color: #666;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.ocr-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 12px;
+    background: #f5f5f5;
+    border-radius: 8px;
+}
+
+.ocr-controls select {
+    flex: 1;
+    max-width: 400px;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+}
+
+.ocr-canvas-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: #e0e0e0;
+    border-radius: 8px;
+    overflow: auto;
+}
+
+.ocr-canvas {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.ocr-token-list {
+    margin-bottom: 20px;
+}
+
+.ocr-token-list h4 {
+    color: #333;
+    margin-bottom: 12px;
+    font-size: 1rem;
+}
+
+.token-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 12px;
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+.token-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+}
+
+.token-item:hover {
+    border-color: #2196F3;
+    background: #e3f2fd;
+}
+
+.token-item.selected {
+    border-color: #f44336;
+    background: #ffebee;
+    font-weight: bold;
+}
+
+.token-text {
+    color: #333;
+}
+
+.token-coords {
+    color: #999;
+    font-size: 11px;
+    font-family: monospace;
+}
+
+.token-detail {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.token-detail h4 {
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.token-detail table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.token-detail td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 13px;
+}
+
+.token-detail td:first-child {
+    color: #666;
+    width: 120px;
+}
+
+.token-detail td:last-child {
+    font-family: monospace;
+    color: #333;
 }
 
 @media (max-width: 768px) {
-    .spreadsheet-content {
-        padding: 20px;
+    .ocr-controls {
+        flex-direction: column;
+        align-items: stretch;
     }
 
-    .spreadsheet-icon {
-        font-size: 48px;
+    .ocr-controls select {
+        max-width: none;
     }
 
-    .spreadsheet-message {
-        font-size: 16px;
-    }
-
-    .open-button {
-        width: 100%;
-        padding: 12px;
+    .token-grid {
+        max-height: 150px;
     }
 }
