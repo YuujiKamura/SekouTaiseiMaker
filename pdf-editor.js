@@ -35,6 +35,42 @@ window.PdfEditor = (function() {
     let currentPdfId = null;
     const STORAGE_PREFIX = 'pdfEditor_annotations_';
 
+    // 日本語フォントキャッシュ
+    let fontCache = {
+        mincho: null,
+        gothic: null
+    };
+
+    // 日本語フォントURL (Google Fonts)
+    const FONT_URLS = {
+        gothic: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-jp@5.0.1/files/noto-sans-jp-japanese-400-normal.woff',
+        mincho: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-jp@5.0.1/files/noto-serif-jp-japanese-400-normal.woff'
+    };
+
+    /**
+     * 日本語フォントを取得（キャッシュあり）
+     */
+    async function getJapaneseFont(family) {
+        const key = family === 'mincho' ? 'mincho' : 'gothic';
+
+        if (fontCache[key]) {
+            return fontCache[key];
+        }
+
+        try {
+            const response = await fetch(FONT_URLS[key]);
+            if (!response.ok) {
+                throw new Error(`Font fetch failed: ${response.status}`);
+            }
+            const fontBytes = await response.arrayBuffer();
+            fontCache[key] = new Uint8Array(fontBytes);
+            return fontCache[key];
+        } catch (e) {
+            console.error('Failed to load Japanese font:', e);
+            throw new Error('日本語フォントの読み込みに失敗しました');
+        }
+    }
+
     /**
      * PDFのユニークIDを生成（サイズ + 先頭バイトのハッシュ）
      */
@@ -560,9 +596,19 @@ window.PdfEditor = (function() {
             throw new Error('PDFが読み込まれていないか、無効なPDFです。ページをリロードしてPDFを再度開いてください。');
         }
 
-        const { PDFDocument, rgb, StandardFonts } = PDFLib;
+        const { PDFDocument, rgb } = PDFLib;
         const pdfDocLib = await PDFDocument.load(pdfBytes);
-        const font = await pdfDocLib.embedFont(StandardFonts.Helvetica);
+
+        // 使用するフォントファミリーを収集
+        const usedFamilies = new Set(textAnnotations.map(a => a.fontFamily || 'gothic'));
+
+        // 必要なフォントを読み込み・埋め込み
+        const embeddedFonts = {};
+        for (const family of usedFamilies) {
+            const fontBytes = await getJapaneseFont(family);
+            embeddedFonts[family] = await pdfDocLib.embedFont(fontBytes);
+        }
+
         const pages = pdfDocLib.getPages();
 
         for (const annotation of textAnnotations) {
@@ -575,6 +621,9 @@ window.PdfEditor = (function() {
                 const r = parseInt(colorHex.substr(0, 2), 16) / 255;
                 const g = parseInt(colorHex.substr(2, 2), 16) / 255;
                 const b = parseInt(colorHex.substr(4, 2), 16) / 255;
+
+                const fontFamily = annotation.fontFamily || 'gothic';
+                const font = embeddedFonts[fontFamily];
 
                 page.drawText(annotation.text, {
                     x: annotation.x,
