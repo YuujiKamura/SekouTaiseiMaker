@@ -1148,3 +1148,160 @@ button:disabled {
         min-width: auto;
     }
 }
+
+/* ============================================
+   書類セルのクリック可能スタイル
+   ============================================ */
+
+.doc-item.clickable {
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.doc-item.clickable:hover {
+    background-color: #e3f2fd;
+    transform: translateX(2px);
+}
+
+.doc-item.clickable:hover .click-hint {
+    opacity: 1;
+}
+
+.click-hint {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: #1976D2;
+    opacity: 0;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* ============================================
+   ビューワ共通スタイル
+   ============================================ */
+
+.viewer-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 80px);
+    background: #f5f5f5;
+}
+
+.viewer-header {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    gap: 20px;
+}
+
+.viewer-header .back-button {
+    padding: 8px 16px;
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.viewer-header .back-button:hover {
+    background: #e0e0e0;
+}
+
+.viewer-header .doc-title {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.viewer-header .contractor-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.viewer-header .doc-type {
+    font-size: 14px;
+    color: #666;
+    background: #e0e0e0;
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
+.viewer-header .external-link {
+    padding: 8px 16px;
+    background: #2196F3;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.viewer-header .external-link:hover {
+    background: #1976D2;
+}
+
+.viewer-content {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* PDFビューワ */
+.pdf-viewer .pdf-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
+}
+
+/* スプレッドシートビューワ */
+.spreadsheet-viewer .spreadsheet-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
+}
+
+/* ============================================
+   レスポンシブ対応（ビューワ）
+   ============================================ */
+
+@media (max-width: 768px) {
+    .viewer-header {
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 12px 16px;
+    }
+
+    .viewer-header .doc-title {
+        order: 2;
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .viewer-header .back-button {
+        order: 1;
+    }
+
+    .viewer-header .external-link {
+        order: 3;
+        width: 100%;
+        text-align: center;
+    }
+
+    .viewer-container {
+        height: calc(100vh - 120px);
+    }
+}

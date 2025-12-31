@@ -138,6 +138,58 @@ pub struct DocStatus {
     pub valid_until: Option<String>, // 有効期限 (YYYY-MM-DD)
 }
 
+// ============================================
+// ビューモード (ダッシュボード連携)
+// ============================================
+
+#[derive(Clone, PartialEq)]
+pub enum ViewMode {
+    Dashboard,
+    OcrViewer,
+    PdfViewer { contractor: String, doc_type: String, url: String },
+    SpreadsheetViewer { contractor: String, doc_type: String, url: String },
+}
+
+impl Default for ViewMode {
+    fn default() -> Self {
+        ViewMode::Dashboard
+    }
+}
+
+// 書類ファイルタイプ
+#[derive(Clone, PartialEq, Debug)]
+pub enum DocFileType {
+    Pdf,
+    GoogleSpreadsheet,
+    Excel,
+    GoogleDoc,
+    Image,
+    Unknown,
+}
+
+// ファイルタイプ判定関数
+fn detect_file_type(url: &str) -> DocFileType {
+    let url_lower = url.to_lowercase();
+
+    if url_lower.contains("docs.google.com/spreadsheets") {
+        DocFileType::GoogleSpreadsheet
+    } else if url_lower.contains("docs.google.com/document") {
+        DocFileType::GoogleDoc
+    } else if url_lower.contains("drive.google.com/file") {
+        // Google DriveのファイルはデフォルトでPDF扱い
+        // 実際にはAPIでMIMEタイプを確認すべき
+        DocFileType::Pdf
+    } else if url_lower.ends_with(".pdf") {
+        DocFileType::Pdf
+    } else if url_lower.ends_with(".xlsx") || url_lower.ends_with(".xls") {
+        DocFileType::Excel
+    } else if url_lower.ends_with(".png") || url_lower.ends_with(".jpg") || url_lower.ends_with(".jpeg") {
+        DocFileType::Image
+    } else {
+        DocFileType::Unknown
+    }
+}
+
 // チェック結果
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckMode {
@@ -191,6 +243,8 @@ pub struct ProjectContext {
     pub set_check_results: WriteSignal<Vec<CheckResult>>,
     pub edit_mode: ReadSignal<bool>,
     pub set_edit_mode: WriteSignal<bool>,
+    pub view_mode: ReadSignal<ViewMode>,
+    pub set_view_mode: WriteSignal<ViewMode>,
 }
 
 // 標準的な書類リスト
@@ -401,9 +455,12 @@ where
 
 #[component]
 fn ContractorCard(contractor: Contractor) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
     let total = contractor.docs.len();
     let complete = contractor.docs.values().filter(|d| d.status).count();
     let is_complete = complete == total;
+
+    let contractor_name = contractor.name.clone();
 
     // ドキュメントをソートして表示
     let mut docs: Vec<_> = contractor.docs.into_iter().collect();
@@ -423,23 +480,65 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let label = label.trim_start_matches('_').to_string();
                     let has_url = status.url.is_some();
                     let url = status.url.clone();
+
+                    let contractor_name_click = contractor_name.clone();
+                    let label_click = label.clone();
+                    let url_click = url.clone();
+                    let set_view_mode = ctx.set_view_mode;
+
+                    let on_doc_click = move |ev: web_sys::MouseEvent| {
+                        ev.prevent_default();
+                        if let Some(ref u) = url_click {
+                            let file_type = detect_file_type(u);
+                            match file_type {
+                                DocFileType::Pdf | DocFileType::Image => {
+                                    set_view_mode.set(ViewMode::PdfViewer {
+                                        contractor: contractor_name_click.clone(),
+                                        doc_type: label_click.clone(),
+                                        url: u.clone(),
+                                    });
+                                }
+                                DocFileType::GoogleSpreadsheet | DocFileType::Excel => {
+                                    set_view_mode.set(ViewMode::SpreadsheetViewer {
+                                        contractor: contractor_name_click.clone(),
+                                        doc_type: label_click.clone(),
+                                        url: u.clone(),
+                                    });
+                                }
+                                _ => {
+                                    // 不明な場合はURLを新規タブで開く
+                                    if let Some(window) = web_sys::window() {
+                                        let _ = window.open_with_url_and_target(u, "_blank");
+                                    }
+                                }
+                            }
+                        }
+                    };
+
                     view! {
-                        <div class=format!("doc-item {} {}",
-                            if status.status { "ok" } else { "missing" },
-                            if has_url { "has-link" } else { "" }
-                        )>
+                        <div
+                            class=format!("doc-item {} {} {}",
+                                if status.status { "ok" } else { "missing" },
+                                if has_url { "has-link" } else { "" },
+                                if has_url { "clickable" } else { "" }
+                            )
+                            on:click=on_doc_click
+                        >
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
-                            {if let Some(u) = url {
+                            {if url.is_some() {
                                 view! {
-                                    <a class="doc-name doc-link" href=u target="_blank" rel="noopener">{label}</a>
+                                    <span class="doc-name doc-link">{label.clone()}</span>
                                 }.into_view()
                             } else {
                                 view! {
-                                    <span class="doc-name">{label}</span>
+                                    <span class="doc-name">{label.clone()}</span>
                                 }.into_view()
                             }}
                             {status.note.map(|n| view! {
                                 <span class="doc-note">{n}</span>
+                            })}
+                            {has_url.then(|| view! {
+                                <span class="click-hint">"クリックで開く"</span>
                             })}
                         </div>
                     }
@@ -854,6 +953,115 @@ async fn fetch_json(url: &str) -> Result<ProjectData, String> {
 }
 
 // ============================================
+// PDFビューワコンポーネント
+// ============================================
+
+#[component]
+fn PdfViewer(
+    contractor: String,
+    doc_type: String,
+    url: String,
+) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+
+    let on_back = move |_| {
+        ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // Google Drive URLをプレビュー用に変換
+    let preview_url = if url.contains("drive.google.com/file/d/") {
+        // drive.google.com/file/d/FILE_ID/view -> drive.google.com/file/d/FILE_ID/preview
+        url.replace("/view", "/preview")
+    } else if url.contains("drive.google.com") && !url.contains("/preview") {
+        format!("{}/preview", url.trim_end_matches('/'))
+    } else {
+        url.clone()
+    };
+
+    view! {
+        <div class="viewer-container pdf-viewer">
+            <div class="viewer-header">
+                <button class="back-button" on:click=on_back>
+                    "← 戻る"
+                </button>
+                <div class="doc-title">
+                    <span class="contractor-name">{contractor}</span>
+                    <span class="doc-type">{doc_type}</span>
+                </div>
+                <a class="external-link" href=url.clone() target="_blank" rel="noopener">
+                    "新規タブで開く ↗"
+                </a>
+            </div>
+            <div class="viewer-content">
+                <iframe
+                    src=preview_url
+                    class="pdf-frame"
+                    allow="autoplay"
+                ></iframe>
+            </div>
+        </div>
+    }
+}
+
+// ============================================
+// スプレッドシートビューワコンポーネント
+// ============================================
+
+#[component]
+fn SpreadsheetViewer(
+    contractor: String,
+    doc_type: String,
+    url: String,
+) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+
+    let on_back = move |_| {
+        ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // Google Sheets URLを埋め込み用に変換
+    let embed_url = if url.contains("docs.google.com/spreadsheets") {
+        // /edit や /view を /htmlembed に変換
+        let base_url = url
+            .replace("/edit", "")
+            .replace("/view", "")
+            .replace("#gid=", "/htmlembed?gid=");
+        if base_url.contains("/htmlembed") {
+            base_url
+        } else if base_url.contains("?") {
+            format!("{}&embedded=true", base_url)
+        } else {
+            format!("{}?embedded=true", base_url)
+        }
+    } else {
+        url.clone()
+    };
+
+    view! {
+        <div class="viewer-container spreadsheet-viewer">
+            <div class="viewer-header">
+                <button class="back-button" on:click=on_back>
+                    "← 戻る"
+                </button>
+                <div class="doc-title">
+                    <span class="contractor-name">{contractor}</span>
+                    <span class="doc-type">{doc_type}</span>
+                </div>
+                <a class="external-link" href=url.clone() target="_blank" rel="noopener">
+                    "新規タブで開く ↗"
+                </a>
+            </div>
+            <div class="viewer-content">
+                <iframe
+                    src=embed_url
+                    class="spreadsheet-frame"
+                ></iframe>
+            </div>
+        </div>
+    }
+}
+
+// ============================================
 // チェック結果パネル
 // ============================================
 
@@ -1080,6 +1288,7 @@ fn App() -> impl IntoView {
     let (check_mode, set_check_mode) = create_signal(CheckMode::None);
     let (check_results, set_check_results) = create_signal(Vec::<CheckResult>::new());
     let (edit_mode, set_edit_mode) = create_signal(false);
+    let (view_mode, set_view_mode) = create_signal(ViewMode::Dashboard);
 
     // コンテキスト提供
     let ctx = ProjectContext {
@@ -1095,6 +1304,8 @@ fn App() -> impl IntoView {
         set_check_results,
         edit_mode,
         set_edit_mode,
+        view_mode,
+        set_view_mode,
     };
     provide_context(ctx.clone());
 
@@ -1335,10 +1546,38 @@ fn App() -> impl IntoView {
                 </div>
             </header>
 
-            <main class="container">
-                <Dashboard />
-                <CheckResultsPanel />
-            </main>
+            {move || {
+                match view_mode.get() {
+                    ViewMode::Dashboard => view! {
+                        <main class="container">
+                            <Dashboard />
+                            <CheckResultsPanel />
+                        </main>
+                    }.into_view(),
+
+                    ViewMode::OcrViewer => view! {
+                        <main class="container">
+                            <p>"OCRビューワは準備中です"</p>
+                        </main>
+                    }.into_view(),
+
+                    ViewMode::PdfViewer { contractor, doc_type, url } => view! {
+                        <PdfViewer
+                            contractor=contractor
+                            doc_type=doc_type
+                            url=url
+                        />
+                    }.into_view(),
+
+                    ViewMode::SpreadsheetViewer { contractor, doc_type, url } => view! {
+                        <SpreadsheetViewer
+                            contractor=contractor
+                            doc_type=doc_type
+                            url=url
+                        />
+                    }.into_view(),
+                }
+            }}
         </div>
     }
 }
