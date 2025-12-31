@@ -118,7 +118,8 @@ window.PdfEditor = (function() {
             reader.onload = async function(e) {
                 try {
                     pdfBytes = new Uint8Array(e.target.result);
-                    const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+                    // pdf.jsにはコピーを渡す（Workerに転送されると元の配列が使用不能になるため）
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice() });
                     pdfDoc = await loadingTask.promise;
                     totalPages = pdfDoc.numPages;
                     currentPage = 1;
@@ -155,7 +156,8 @@ window.PdfEditor = (function() {
             }
 
             pdfBytes = bytes;
-            const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+            // pdf.jsにはコピーを渡す（Workerに転送されると元の配列が使用不能になるため）
+            const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice() });
             pdfDoc = await loadingTask.promise;
             totalPages = pdfDoc.numPages;
             currentPage = 1;
