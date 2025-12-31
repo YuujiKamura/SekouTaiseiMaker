@@ -519,6 +519,13 @@ fn App() -> impl IntoView {
                                 {move || if loading.get() { "読込中..." } else { "サンプル読込" }}
                             </button>
                             <hr class="menu-divider" />
+                            <a class="menu-item" href="https://github.com/YuujiKamura/SekouTaiseiMaker" target="_blank" rel="noopener">
+                                "GitHub リポジトリ ↗"
+                            </a>
+                            <a class="menu-item" href="https://github.com/YuujiKamura/SekouTaiseiMaker/actions" target="_blank" rel="noopener">
+                                "GitHub Actions ↗"
+                            </a>
+                            <hr class="menu-divider" />
                             <button class="menu-item danger" on:click=on_clear_cache>
                                 "キャッシュクリア"
                             </button>
