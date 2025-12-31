@@ -6,23 +6,23 @@ CLIからGEMINIチェックを実行
     # PDF画像をチェック
     python run_gemini_check.py \\
         --type pdf \\
-        --path "data/pdf_images/ユナイト_09_暴対法誓約書.png" \\
+        --path "data/pdf_images/下請A_09_暴対法誓約書.png" \\
         --doc-type "暴対法誓約書" \\
-        --contractor "ユナイト"
+        --contractor "下請A"
 
     # 複数ページのPDF画像をチェック
     python run_gemini_check.py \\
         --type pdf \\
         --path "data/pdf_images/page1.png" "data/pdf_images/page2.png" \\
         --doc-type "作業員名簿" \\
-        --contractor "アイエスティー"
+        --contractor "下請B"
 
     # スプレッドシートをチェック
     python run_gemini_check.py \\
         --type spreadsheet \\
-        --spreadsheet-id "1Tm6alT13Jno_Fcq0Ml5OvPh9RqKNkIdXxhoVRqK--a8" \\
+        --spreadsheet-id "SPREADSHEET_ID_HERE" \\
         --doc-type "作業員名簿" \\
-        --contractor "アイエスティー"
+        --contractor "下請B"
 """
 import argparse
 import json

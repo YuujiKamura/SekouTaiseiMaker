@@ -304,16 +304,16 @@ if __name__ == '__main__':
 # PDF画像をチェック
 python run_gemini_check.py \
     --type pdf \
-    --path "data/pdf_images/ユナイト_09_暴対法誓約書.png" \
+    --path "data/pdf_images/下請A_09_暴対法誓約書.png" \
     --doc-type "暴対法誓約書" \
-    --contractor "ユナイト"
+    --contractor "下請A"
 
 # スプレッドシートをチェック
 python run_gemini_check.py \
     --type spreadsheet \
     --spreadsheet-id "1Tm6alT13Jno_Fcq0Ml5OvPh9RqKNkIdXxhoVRqK--a8" \
     --doc-type "作業員名簿" \
-    --contractor "アイエスティー"
+    --contractor "下請B"
 ```
 
 ## Rust側からの呼び出し
