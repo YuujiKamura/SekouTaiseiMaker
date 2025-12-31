@@ -1660,6 +1660,53 @@ button:disabled {
     }
 }
 
+/* ============================================
+   ビューワアクションバー (T4)
+   ============================================ */
+
+.viewer-actions {
+    display: flex;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    align-items: center;
+}
+
+.action-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.check-btn {
+    background: #4CAF50;
+    color: white;
+}
+
+.check-btn:hover {
+    background: #45a049;
+}
+
+.check-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.api-warning {
+    color: #f44336;
+    font-size: 0.9rem;
+}
+
+.error-message {
+    background: #ffebee;
+    color: #c62828;
+    padding: 0.5rem 1rem;
+    margin: 0.5rem 1rem;
+    border-radius: 4px;
+}
 
 /* ============================================
    チェック結果パネル - 拡張版 (T5)
@@ -1875,7 +1922,7 @@ button:disabled {
 }
 
 /* ============================================
-   チェックバッジ
+   チェックバッジ (T6)
    ============================================ */
 
 .check-badge {
@@ -1962,13 +2009,12 @@ button:disabled {
 }
 
 /* ============================================
-   保存インジケーター
+   保存インジケーター (T7)
    ============================================ */
 
 .save-indicator {
     font-size: 0.85rem;
     padding: 0.25rem 0.5rem;
-    margin-left: 12px;
 }
 
 .save-indicator .saved {
@@ -1981,4 +2027,20 @@ button:disabled {
 
 .save-indicator .unsaved {
     color: #ff9800;
+}
+
+/* ============================================
+   レスポンシブ対応（アクションバー）
+   ============================================ */
+
+@media (max-width: 768px) {
+    .viewer-actions {
+        flex-wrap: wrap;
+        padding: 0.5rem;
+    }
+
+    .action-btn {
+        flex: 1;
+        min-width: 120px;
+    }
 }

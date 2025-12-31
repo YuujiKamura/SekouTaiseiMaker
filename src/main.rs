@@ -339,30 +339,46 @@ pub enum CheckStatus {
 }
 
 // ============================================
-// 拡張チェック結果データ構造 (T5)
+// API通信用データ構造
 // ============================================
 
-/// チェック結果項目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResultItem {
-    pub item_type: String,  // "ok", "warning", "error", "info"
-    pub message: String,
-}
+/// APIサーバーにチェックリクエストを送信
+async fn call_check_api(request: CheckRequest) -> Result<CheckResultData, String> {
+    let opts = RequestInit::new();
+    opts.set_method("POST");
 
-/// 未記入フィールド情報
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MissingFieldInfo {
-    pub field: String,
-    pub location: String,
-}
+    let body = serde_json::to_string(&request)
+        .map_err(|e| format!("リクエストのシリアライズ失敗: {}", e))?;
+    opts.set_body(&JsValue::from_str(&body));
 
-/// 拡張チェック結果データ
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResultData {
-    pub status: String,  // "ok", "warning", "error"
-    pub summary: String,
-    pub items: Vec<CheckResultItem>,
-    pub missing_fields: Vec<MissingFieldInfo>,
+    let headers = web_sys::Headers::new()
+        .map_err(|_| "ヘッダー作成失敗")?;
+    headers.set("Content-Type", "application/json")
+        .map_err(|_| "Content-Type設定失敗")?;
+    opts.set_headers(&headers);
+
+    let url = "http://localhost:8000/api/check";
+    let request_obj = Request::new_with_str_and_init(url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request_obj))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    if !resp.ok() {
+        return Err(format!("APIエラー: {}", resp.status()));
+    }
+
+    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
+
+    serde_wasm_bindgen::from_value(json)
+        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -913,6 +929,8 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let label = label.trim_start_matches('_').to_string();
                     let has_url = status.url.is_some();
                     let url = status.url.clone();
+                    let key_click = key.clone();
+                    let contractor_id_click = contractor_id.clone();
 
                     // チェック結果からバッジを決定
                     let check_badge = status.check_result.as_ref().map(|r| {
@@ -1436,11 +1454,52 @@ fn PdfViewer(
     contractor: String,
     doc_type: String,
     url: String,
+    doc_key: String,
+    contractor_id: String,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
 
+    // ローカル状態
+    let (checking, set_checking) = create_signal(false);
+    let (check_result, set_check_result) = create_signal(None::<CheckResultData>);
+    let (error_msg, set_error_msg) = create_signal(None::<String>);
+
     let on_back = move |_| {
         ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // チェック実行
+    let url_for_check = url.clone();
+    let doc_type_for_check = doc_type.clone();
+    let contractor_for_check = contractor.clone();
+    let _doc_key_for_save = doc_key.clone();
+    let _contractor_id_for_save = contractor_id.clone();
+
+    let on_check = move |_| {
+        let url = url_for_check.clone();
+        let doc_type = doc_type_for_check.clone();
+        let contractor = contractor_for_check.clone();
+
+        set_checking.set(true);
+        set_error_msg.set(None);
+
+        spawn_local(async move {
+            let request = CheckRequest {
+                url,
+                doc_type,
+                contractor,
+            };
+
+            match call_check_api(request).await {
+                Ok(result) => {
+                    set_check_result.set(Some(result));
+                }
+                Err(e) => {
+                    set_error_msg.set(Some(e));
+                }
+            }
+            set_checking.set(false);
+        });
     };
 
     // Google Drive URLをプレビュー用に変換（堅牢なID抽出方式）
@@ -1452,6 +1511,9 @@ fn PdfViewer(
         url.clone()
     };
 
+    let contractor_display = contractor.clone();
+    let doc_type_display = doc_type.clone();
+
     view! {
         <div class="viewer-container pdf-viewer">
             <div class="viewer-header">
@@ -1459,13 +1521,39 @@ fn PdfViewer(
                     "← 戻る"
                 </button>
                 <div class="doc-title">
-                    <span class="contractor-name">{contractor}</span>
-                    <span class="doc-type">{doc_type}</span>
+                    <span class="contractor-name">{contractor_display}</span>
+                    <span class="doc-type">{doc_type_display}</span>
                 </div>
                 <a class="external-link" href=url.clone() target="_blank" rel="noopener">
                     "新規タブで開く ↗"
                 </a>
             </div>
+
+            // アクションバー
+            <div class="viewer-actions">
+                <button
+                    class="action-btn check-btn"
+                    on:click=on_check
+                    disabled=move || checking.get() || !ctx.api_connected.get()
+                >
+                    {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
+                </button>
+
+                {move || (!ctx.api_connected.get()).then(|| view! {
+                    <span class="api-warning">"※サーバー未接続"</span>
+                })}
+            </div>
+
+            // エラー表示
+            {move || error_msg.get().map(|e| view! {
+                <div class="error-message">{e}</div>
+            })}
+
+            // チェック結果パネル
+            {move || check_result.get().map(|result| view! {
+                <ViewerCheckResultPanel result=result />
+            })}
+
             <div class="viewer-content">
                 <iframe
                     src=preview_url
@@ -1473,6 +1561,81 @@ fn PdfViewer(
                     allow="autoplay"
                 ></iframe>
             </div>
+        </div>
+    }
+}
+
+// ============================================
+// ビューワチェック結果パネル
+// ============================================
+
+#[component]
+fn ViewerCheckResultPanel(result: CheckResultData) -> impl IntoView {
+    let status_class = match result.status.as_str() {
+        "ok" => "status-ok",
+        "warning" => "status-warning",
+        "error" => "status-error",
+        _ => "status-unknown",
+    };
+
+    let result_items = result.items.clone();
+    let missing_fields = result.missing_fields.clone();
+
+    view! {
+        <div class=format!("check-result-panel {}", status_class)>
+            <div class="result-header">
+                <span class="result-status">{
+                    match result.status.as_str() {
+                        "ok" => "✓ OK",
+                        "warning" => "⚠ 警告",
+                        "error" => "✗ エラー",
+                        _ => "? 不明",
+                    }
+                }</span>
+                <span class="result-summary">{result.summary}</span>
+            </div>
+
+            {(!result_items.is_empty()).then(|| {
+                let items = result_items.clone();
+                view! {
+                    <div class="result-items">
+                        <h4>"チェック項目"</h4>
+                        <ul>
+                            {items.into_iter().map(|item| {
+                                let icon = match item.item_type.as_str() {
+                                    "ok" => "✓",
+                                    "warning" => "⚠",
+                                    "error" => "✗",
+                                    _ => "•",
+                                };
+                                view! {
+                                    <li class=format!("item-{}", item.item_type)>
+                                        <span class="item-icon">{icon}</span>
+                                        <span class="item-message">{item.message}</span>
+                                    </li>
+                                }
+                            }).collect_view()}
+                        </ul>
+                    </div>
+                }
+            })}
+
+            {(!missing_fields.is_empty()).then(|| {
+                let fields = missing_fields.clone();
+                view! {
+                    <div class="missing-fields-list">
+                        <h4>"未記入項目"</h4>
+                        <ul>
+                            {fields.into_iter().map(|field| view! {
+                                <li>
+                                    <span class="field-name">{field.field}</span>
+                                    <span class="field-location">"（"{field.location}"）"</span>
+                                </li>
+                            }).collect_view()}
+                        </ul>
+                    </div>
+                }
+            })}
         </div>
     }
 }
@@ -1486,11 +1649,52 @@ fn SpreadsheetViewer(
     contractor: String,
     doc_type: String,
     url: String,
+    doc_key: String,
+    contractor_id: String,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
 
+    // ローカル状態
+    let (checking, set_checking) = create_signal(false);
+    let (check_result, set_check_result) = create_signal(None::<CheckResultData>);
+    let (error_msg, set_error_msg) = create_signal(None::<String>);
+
     let on_back = move |_| {
         ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // チェック実行
+    let url_for_check = url.clone();
+    let doc_type_for_check = doc_type.clone();
+    let contractor_for_check = contractor.clone();
+    let _doc_key_for_save = doc_key.clone();
+    let _contractor_id_for_save = contractor_id.clone();
+
+    let on_check = move |_| {
+        let url = url_for_check.clone();
+        let doc_type = doc_type_for_check.clone();
+        let contractor = contractor_for_check.clone();
+
+        set_checking.set(true);
+        set_error_msg.set(None);
+
+        spawn_local(async move {
+            let request = CheckRequest {
+                url,
+                doc_type,
+                contractor,
+            };
+
+            match call_check_api(request).await {
+                Ok(result) => {
+                    set_check_result.set(Some(result));
+                }
+                Err(e) => {
+                    set_error_msg.set(Some(e));
+                }
+            }
+            set_checking.set(false);
+        });
     };
 
     // Google Sheets URLを埋め込み用に変換（堅牢なID抽出方式）
@@ -1502,6 +1706,9 @@ fn SpreadsheetViewer(
         url.clone()
     };
 
+    let contractor_display = contractor.clone();
+    let doc_type_display = doc_type.clone();
+
     view! {
         <div class="viewer-container spreadsheet-viewer">
             <div class="viewer-header">
@@ -1509,13 +1716,39 @@ fn SpreadsheetViewer(
                     "← 戻る"
                 </button>
                 <div class="doc-title">
-                    <span class="contractor-name">{contractor}</span>
-                    <span class="doc-type">{doc_type}</span>
+                    <span class="contractor-name">{contractor_display}</span>
+                    <span class="doc-type">{doc_type_display}</span>
                 </div>
                 <a class="external-link" href=url.clone() target="_blank" rel="noopener">
                     "新規タブで開く ↗"
                 </a>
             </div>
+
+            // アクションバー
+            <div class="viewer-actions">
+                <button
+                    class="action-btn check-btn"
+                    on:click=on_check
+                    disabled=move || checking.get() || !ctx.api_connected.get()
+                >
+                    {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
+                </button>
+
+                {move || (!ctx.api_connected.get()).then(|| view! {
+                    <span class="api-warning">"※サーバー未接続"</span>
+                })}
+            </div>
+
+            // エラー表示
+            {move || error_msg.get().map(|e| view! {
+                <div class="error-message">{e}</div>
+            })}
+
+            // チェック結果パネル
+            {move || check_result.get().map(|result| view! {
+                <ViewerCheckResultPanel result=result />
+            })}
+
             <div class="viewer-content">
                 <iframe
                     src=embed_url
@@ -2248,7 +2481,6 @@ fn download_json(project: &ProjectData) {
 fn App() -> impl IntoView {
     let (menu_open, set_menu_open) = create_signal(false);
     let (copy_success, set_copy_success) = create_signal(false);
-    let (view_mode, set_view_mode) = create_signal(ViewMode::Dashboard);
 
     // プロジェクトデータのグローバル状態
     let (project, set_project) = create_signal(None::<ProjectData>);
@@ -2258,6 +2490,7 @@ fn App() -> impl IntoView {
     let (check_results, set_check_results) = create_signal(Vec::<CheckResult>::new());
     let (edit_mode, set_edit_mode) = create_signal(false);
     let (view_mode, set_view_mode) = create_signal(ViewMode::Dashboard);
+    let (api_connected, set_api_connected) = create_signal(true);  // デフォルトは接続状態
 
     // API接続状態
     let (api_connected, set_api_connected) = create_signal(false);
@@ -2663,19 +2896,23 @@ fn App() -> impl IntoView {
                         </main>
                     }.into_view(),
 
-                    ViewMode::PdfViewer { contractor, doc_type, url, doc_key: _, contractor_id: _ } => view! {
+                    ViewMode::PdfViewer { contractor, doc_type, url, doc_key, contractor_id } => view! {
                         <PdfViewer
                             contractor=contractor
                             doc_type=doc_type
                             url=url
+                            doc_key=doc_key
+                            contractor_id=contractor_id
                         />
                     }.into_view(),
 
-                    ViewMode::SpreadsheetViewer { contractor, doc_type, url, doc_key: _, contractor_id: _ } => view! {
+                    ViewMode::SpreadsheetViewer { contractor, doc_type, url, doc_key, contractor_id } => view! {
                         <SpreadsheetViewer
                             contractor=contractor
                             doc_type=doc_type
                             url=url
+                            doc_key=doc_key
+                            contractor_id=contractor_id
                         />
                     }.into_view(),
                 }
