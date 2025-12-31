@@ -216,33 +216,45 @@ fn build_drive_preview_url(file_id: &str) -> String {
     format!("https://drive.google.com/file/d/{}/preview", file_id)
 }
 
-/// Google Sheets URLからスプレッドシートIDとgidを抽出
-/// パターン: /spreadsheets/d/{spreadsheet_id}/
-fn extract_spreadsheet_info(url: &str) -> Option<(String, Option<String>)> {
+/// Google Sheets URLからスプレッドシートIDを抽出
+/// パターン: /spreadsheets/d/{SPREADSHEET_ID}/...
+fn extract_spreadsheet_id(url: &str) -> Option<String> {
     if let Some(start) = url.find("/d/") {
-        let after_d = &url[start + 3..];
-        let end = after_d.find('/').unwrap_or(after_d.len());
-        let spreadsheet_id = &after_d[..end];
-
-        // gidを抽出（あれば）- URLパラメータまたはハッシュから
-        let gid = if let Some(pos) = url.find("gid=") {
-            let after_gid = &url[pos + 4..];
-            // gidの終端を探す（&か#か文字列終端）
-            let end = after_gid.find(|c| c == '&' || c == '#').unwrap_or(after_gid.len());
-            Some(after_gid[..end].to_string())
-        } else if let Some(pos) = url.find("#gid=") {
-            let after_gid = &url[pos + 5..];
-            let end = after_gid.find('&').unwrap_or(after_gid.len());
-            Some(after_gid[..end].to_string())
-        } else {
-            None
-        };
-
-        if !spreadsheet_id.is_empty() {
-            return Some((spreadsheet_id.to_string(), gid));
+        let id_start = start + 3;
+        let rest = &url[id_start..];
+        // ID終端: '/', '?', '#' のいずれか
+        let id_end = rest.find(|c| c == '/' || c == '?' || c == '#')
+            .unwrap_or(rest.len());
+        let id = &rest[..id_end];
+        if !id.is_empty() {
+            return Some(id.to_string());
         }
     }
     None
+}
+
+/// URLからgidパラメータを抽出
+fn extract_gid(url: &str) -> Option<String> {
+    // #gid= または ?gid= または &gid= を探す
+    for prefix in ["#gid=", "?gid=", "&gid="] {
+        if let Some(start) = url.find(prefix) {
+            let gid_start = start + prefix.len();
+            let rest = &url[gid_start..];
+            // gid終端: '&', '#', 空白のいずれか
+            let gid_end = rest.find(|c: char| c == '&' || c == '#' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let gid = &rest[..gid_end];
+            if !gid.is_empty() && gid.chars().all(|c| c.is_ascii_digit()) {
+                return Some(gid.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Google Sheets URLからスプレッドシートIDとgidを抽出
+fn extract_spreadsheet_info(url: &str) -> Option<(String, Option<String>)> {
+    extract_spreadsheet_id(url).map(|id| (id, extract_gid(url)))
 }
 
 /// Google Sheets埋め込みURLを構築
