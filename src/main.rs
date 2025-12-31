@@ -139,6 +139,58 @@ pub struct DocStatus {
     pub valid_until: Option<String>, // 有効期限 (YYYY-MM-DD)
 }
 
+// ============================================
+// ビューモード (ダッシュボード連携)
+// ============================================
+
+#[derive(Clone, PartialEq)]
+pub enum ViewMode {
+    Dashboard,
+    OcrViewer,
+    PdfViewer { contractor: String, doc_type: String, url: String },
+    SpreadsheetViewer { contractor: String, doc_type: String, url: String },
+}
+
+impl Default for ViewMode {
+    fn default() -> Self {
+        ViewMode::Dashboard
+    }
+}
+
+// 書類ファイルタイプ
+#[derive(Clone, PartialEq, Debug)]
+pub enum DocFileType {
+    Pdf,
+    GoogleSpreadsheet,
+    Excel,
+    GoogleDoc,
+    Image,
+    Unknown,
+}
+
+// ファイルタイプ判定関数
+fn detect_file_type(url: &str) -> DocFileType {
+    let url_lower = url.to_lowercase();
+
+    if url_lower.contains("docs.google.com/spreadsheets") {
+        DocFileType::GoogleSpreadsheet
+    } else if url_lower.contains("docs.google.com/document") {
+        DocFileType::GoogleDoc
+    } else if url_lower.contains("drive.google.com/file") {
+        // Google DriveのファイルはデフォルトでPDF扱い
+        // 実際にはAPIでMIMEタイプを確認すべき
+        DocFileType::Pdf
+    } else if url_lower.ends_with(".pdf") {
+        DocFileType::Pdf
+    } else if url_lower.ends_with(".xlsx") || url_lower.ends_with(".xls") {
+        DocFileType::Excel
+    } else if url_lower.ends_with(".png") || url_lower.ends_with(".jpg") || url_lower.ends_with(".jpeg") {
+        DocFileType::Image
+    } else {
+        DocFileType::Unknown
+    }
+}
+
 // チェック結果
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckMode {
@@ -160,68 +212,6 @@ pub enum CheckStatus {
     Ok,
     Warning,
     Error,
-}
-
-// ============================================
-// ビューモード
-// ============================================
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ViewMode {
-    Dashboard,
-    OcrViewer,
-    PdfViewer(String), // contractor_name_doc_type
-}
-
-impl Default for ViewMode {
-    fn default() -> Self {
-        ViewMode::Dashboard
-    }
-}
-
-// ============================================
-// PDFビューワ用データ構造
-// ============================================
-
-#[derive(Clone, Serialize, Deserialize, Default)]
-pub struct OcrResult {
-    pub text: String,
-    pub fields: Vec<OcrField>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct OcrField {
-    pub name: String,
-    pub value: String,
-    pub position: Option<FieldPosition>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct MissingField {
-    pub field_name: String,
-    pub field_type: String, // "date", "text", "signature"
-    pub value: String,
-    pub position: Option<FieldPosition>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct FieldPosition {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-#[derive(Clone)]
-pub struct PdfViewerContext {
-    pub pdf_url: RwSignal<String>,
-    pub pdf_blob_url: RwSignal<Option<String>>,
-    pub ocr_result: RwSignal<Option<OcrResult>>,
-    pub missing_fields: RwSignal<Vec<MissingField>>,
-    pub gemini_check_result: RwSignal<Option<String>>,
-    pub is_loading: RwSignal<bool>,
-    pub doc_name: RwSignal<String>,
-    pub contractor_name: RwSignal<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,20 +246,6 @@ pub struct ProjectContext {
     pub set_edit_mode: WriteSignal<bool>,
     pub view_mode: ReadSignal<ViewMode>,
     pub set_view_mode: WriteSignal<ViewMode>,
-    pub set_pdf_viewer_url: WriteSignal<String>,
-    pub set_pdf_viewer_doc_name: WriteSignal<String>,
-    pub set_pdf_viewer_contractor: WriteSignal<String>,
-}
-
-impl ProjectContext {
-    /// PDFビューワを開く
-    pub fn open_pdf_viewer(&self, url: String, doc_name: String, contractor_name: String) {
-        let key = format!("{}_{}", contractor_name, doc_name);
-        self.set_pdf_viewer_url.set(url);
-        self.set_pdf_viewer_doc_name.set(doc_name);
-        self.set_pdf_viewer_contractor.set(contractor_name);
-        self.set_view_mode.set(ViewMode::PdfViewer(key));
-    }
 }
 
 // 標準的な書類リスト
@@ -480,9 +456,12 @@ where
 
 #[component]
 fn ContractorCard(contractor: Contractor) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
     let total = contractor.docs.len();
     let complete = contractor.docs.values().filter(|d| d.status).count();
     let is_complete = complete == total;
+
+    let contractor_name = contractor.name.clone();
 
     // ドキュメントをソートして表示
     let mut docs: Vec<_> = contractor.docs.into_iter().collect();
@@ -502,23 +481,65 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let label = label.trim_start_matches('_').to_string();
                     let has_url = status.url.is_some();
                     let url = status.url.clone();
+
+                    let contractor_name_click = contractor_name.clone();
+                    let label_click = label.clone();
+                    let url_click = url.clone();
+                    let set_view_mode = ctx.set_view_mode;
+
+                    let on_doc_click = move |ev: web_sys::MouseEvent| {
+                        ev.prevent_default();
+                        if let Some(ref u) = url_click {
+                            let file_type = detect_file_type(u);
+                            match file_type {
+                                DocFileType::Pdf | DocFileType::Image => {
+                                    set_view_mode.set(ViewMode::PdfViewer {
+                                        contractor: contractor_name_click.clone(),
+                                        doc_type: label_click.clone(),
+                                        url: u.clone(),
+                                    });
+                                }
+                                DocFileType::GoogleSpreadsheet | DocFileType::Excel => {
+                                    set_view_mode.set(ViewMode::SpreadsheetViewer {
+                                        contractor: contractor_name_click.clone(),
+                                        doc_type: label_click.clone(),
+                                        url: u.clone(),
+                                    });
+                                }
+                                _ => {
+                                    // 不明な場合はURLを新規タブで開く
+                                    if let Some(window) = web_sys::window() {
+                                        let _ = window.open_with_url_and_target(u, "_blank");
+                                    }
+                                }
+                            }
+                        }
+                    };
+
                     view! {
-                        <div class=format!("doc-item {} {}",
-                            if status.status { "ok" } else { "missing" },
-                            if has_url { "has-link" } else { "" }
-                        )>
+                        <div
+                            class=format!("doc-item {} {} {}",
+                                if status.status { "ok" } else { "missing" },
+                                if has_url { "has-link" } else { "" },
+                                if has_url { "clickable" } else { "" }
+                            )
+                            on:click=on_doc_click
+                        >
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
-                            {if let Some(u) = url {
+                            {if url.is_some() {
                                 view! {
-                                    <a class="doc-name doc-link" href=u target="_blank" rel="noopener">{label}</a>
+                                    <span class="doc-name doc-link">{label.clone()}</span>
                                 }.into_view()
                             } else {
                                 view! {
-                                    <span class="doc-name">{label}</span>
+                                    <span class="doc-name">{label.clone()}</span>
                                 }.into_view()
                             }}
                             {status.note.map(|n| view! {
                                 <span class="doc-note">{n}</span>
+                            })}
+                            {has_url.then(|| view! {
+                                <span class="click-hint">"クリックで開く"</span>
                             })}
                         </div>
                     }
@@ -933,6 +954,115 @@ async fn fetch_json(url: &str) -> Result<ProjectData, String> {
 }
 
 // ============================================
+// PDFビューワコンポーネント
+// ============================================
+
+#[component]
+fn PdfViewer(
+    contractor: String,
+    doc_type: String,
+    url: String,
+) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+
+    let on_back = move |_| {
+        ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // Google Drive URLをプレビュー用に変換
+    let preview_url = if url.contains("drive.google.com/file/d/") {
+        // drive.google.com/file/d/FILE_ID/view -> drive.google.com/file/d/FILE_ID/preview
+        url.replace("/view", "/preview")
+    } else if url.contains("drive.google.com") && !url.contains("/preview") {
+        format!("{}/preview", url.trim_end_matches('/'))
+    } else {
+        url.clone()
+    };
+
+    view! {
+        <div class="viewer-container pdf-viewer">
+            <div class="viewer-header">
+                <button class="back-button" on:click=on_back>
+                    "← 戻る"
+                </button>
+                <div class="doc-title">
+                    <span class="contractor-name">{contractor}</span>
+                    <span class="doc-type">{doc_type}</span>
+                </div>
+                <a class="external-link" href=url.clone() target="_blank" rel="noopener">
+                    "新規タブで開く ↗"
+                </a>
+            </div>
+            <div class="viewer-content">
+                <iframe
+                    src=preview_url
+                    class="pdf-frame"
+                    allow="autoplay"
+                ></iframe>
+            </div>
+        </div>
+    }
+}
+
+// ============================================
+// スプレッドシートビューワコンポーネント
+// ============================================
+
+#[component]
+fn SpreadsheetViewer(
+    contractor: String,
+    doc_type: String,
+    url: String,
+) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+
+    let on_back = move |_| {
+        ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // Google Sheets URLを埋め込み用に変換
+    let embed_url = if url.contains("docs.google.com/spreadsheets") {
+        // /edit や /view を /htmlembed に変換
+        let base_url = url
+            .replace("/edit", "")
+            .replace("/view", "")
+            .replace("#gid=", "/htmlembed?gid=");
+        if base_url.contains("/htmlembed") {
+            base_url
+        } else if base_url.contains("?") {
+            format!("{}&embedded=true", base_url)
+        } else {
+            format!("{}?embedded=true", base_url)
+        }
+    } else {
+        url.clone()
+    };
+
+    view! {
+        <div class="viewer-container spreadsheet-viewer">
+            <div class="viewer-header">
+                <button class="back-button" on:click=on_back>
+                    "← 戻る"
+                </button>
+                <div class="doc-title">
+                    <span class="contractor-name">{contractor}</span>
+                    <span class="doc-type">{doc_type}</span>
+                </div>
+                <a class="external-link" href=url.clone() target="_blank" rel="noopener">
+                    "新規タブで開く ↗"
+                </a>
+            </div>
+            <div class="viewer-content">
+                <iframe
+                    src=embed_url
+                    class="spreadsheet-frame"
+                ></iframe>
+            </div>
+        </div>
+    }
+}
+
+// ============================================
 // チェック結果パネル
 // ============================================
 
@@ -1009,287 +1139,6 @@ fn CheckResultsPanel() -> impl IntoView {
                 }
             })
         }}
-    }
-}
-
-// ============================================
-// PDFビューワコンポーネント
-// ============================================
-
-/// Google DriveのURLからファイルIDを抽出
-fn extract_drive_file_id(url: &str) -> Option<String> {
-    // パターン1: https://drive.google.com/file/d/{FILE_ID}/view
-    // パターン2: https://drive.google.com/open?id={FILE_ID}
-    if url.contains("/file/d/") {
-        let parts: Vec<&str> = url.split("/file/d/").collect();
-        if parts.len() > 1 {
-            let id_part = parts[1].split('/').next()?;
-            return Some(id_part.to_string());
-        }
-    } else if url.contains("id=") {
-        let parts: Vec<&str> = url.split("id=").collect();
-        if parts.len() > 1 {
-            let id_part = parts[1].split('&').next()?;
-            return Some(id_part.to_string());
-        }
-    }
-    None
-}
-
-/// Google Driveのプレビュー用URLを生成
-fn get_drive_preview_url(url: &str) -> String {
-    if let Some(file_id) = extract_drive_file_id(url) {
-        format!("https://drive.google.com/file/d/{}/preview", file_id)
-    } else {
-        url.to_string()
-    }
-}
-
-// ダミーOCR実行関数（Task Dで実装予定）
-async fn run_ocr(_pdf_url: &str) -> Result<OcrResult, String> {
-    // ダミー結果を返す
-    gloo::timers::future::TimeoutFuture::new(1000).await;
-    Ok(OcrResult {
-        text: "OCR結果のサンプルテキスト\n日付: 令和6年1月1日\n署名欄: 未記入".to_string(),
-        fields: vec![
-            OcrField {
-                name: "日付".to_string(),
-                value: "令和6年1月1日".to_string(),
-                position: Some(FieldPosition { x: 100.0, y: 50.0, width: 150.0, height: 20.0 }),
-            },
-            OcrField {
-                name: "署名".to_string(),
-                value: "".to_string(),
-                position: Some(FieldPosition { x: 100.0, y: 200.0, width: 200.0, height: 30.0 }),
-            },
-        ],
-    })
-}
-
-// ダミーGEMINIチェック関数（Task Dで実装予定）
-async fn run_gemini_check(_pdf_url: &str) -> Result<String, String> {
-    // ダミー結果を返す
-    gloo::timers::future::TimeoutFuture::new(1500).await;
-    Ok("GEMINIチェック結果:\n- 日付が記入されています\n- 署名欄が未記入です\n- その他の項目は問題ありません".to_string())
-}
-
-// 不足項目を検出する関数
-fn detect_missing_fields(ocr_result: &OcrResult) -> Vec<MissingField> {
-    let mut missing = Vec::new();
-    for field in &ocr_result.fields {
-        if field.value.is_empty() || field.value == "未記入" {
-            missing.push(MissingField {
-                field_name: field.name.clone(),
-                field_type: if field.name.contains("日付") { "date".to_string() }
-                           else if field.name.contains("署名") { "signature".to_string() }
-                           else { "text".to_string() },
-                value: String::new(),
-                position: field.position.clone(),
-            });
-        }
-    }
-    missing
-}
-
-#[component]
-fn PdfViewer(
-    pdf_url: String,
-    doc_name: String,
-    contractor_name: String,
-    on_close: impl Fn() + 'static + Clone,
-) -> impl IntoView {
-    // PDFビューワのコンテキストを作成
-    let pdf_viewer_ctx = PdfViewerContext {
-        pdf_url: create_rw_signal(pdf_url.clone()),
-        pdf_blob_url: create_rw_signal(None),
-        ocr_result: create_rw_signal(None),
-        missing_fields: create_rw_signal(Vec::new()),
-        gemini_check_result: create_rw_signal(None),
-        is_loading: create_rw_signal(false),
-        doc_name: create_rw_signal(doc_name.clone()),
-        contractor_name: create_rw_signal(contractor_name.clone()),
-    };
-
-    let preview_url = get_drive_preview_url(&pdf_url);
-
-    let ocr_result = pdf_viewer_ctx.ocr_result;
-    let missing_fields = pdf_viewer_ctx.missing_fields;
-    let gemini_check_result = pdf_viewer_ctx.gemini_check_result;
-    let is_loading = pdf_viewer_ctx.is_loading;
-
-    let pdf_url_for_ocr = pdf_url.clone();
-    let pdf_url_for_gemini = pdf_url.clone();
-
-    // OCR実行ハンドラ
-    let on_ocr_click = move |_| {
-        let url = pdf_url_for_ocr.clone();
-        spawn_local(async move {
-            is_loading.set(true);
-            match run_ocr(&url).await {
-                Ok(result) => {
-                    let fields = detect_missing_fields(&result);
-                    missing_fields.set(fields);
-                    ocr_result.set(Some(result));
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("OCRエラー: {}", e).into());
-                }
-            }
-            is_loading.set(false);
-        });
-    };
-
-    // GEMINIチェック実行ハンドラ
-    let on_gemini_click = move |_| {
-        let url = pdf_url_for_gemini.clone();
-        spawn_local(async move {
-            is_loading.set(true);
-            match run_gemini_check(&url).await {
-                Ok(result) => {
-                    gemini_check_result.set(Some(result));
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("GEMINIエラー: {}", e).into());
-                }
-            }
-            is_loading.set(false);
-        });
-    };
-
-    // PDF出力ハンドラ（ダミー）
-    let on_export_click = move |_| {
-        web_sys::console::log_1(&"PDF出力機能は未実装です".into());
-    };
-
-    let on_close_clone = on_close.clone();
-
-    view! {
-        <div class="pdf-viewer">
-            // ヘッダー
-            <div class="pdf-viewer-header">
-                <button class="back-btn" on:click=move |_| on_close_clone()>
-                    "← 戻る"
-                </button>
-                <div class="pdf-viewer-title">
-                    <span class="contractor-label">{contractor_name.clone()}</span>
-                    <span class="doc-label">{doc_name.clone()}</span>
-                </div>
-                <button class="close-btn" on:click=move |_| on_close()>
-                    "✕"
-                </button>
-            </div>
-
-            // メインコンテンツ
-            <div class="pdf-viewer-content">
-                // PDFプレビューエリア
-                <div class="pdf-preview-area">
-                    <iframe
-                        src=preview_url
-                        class="pdf-iframe"
-                        title="PDF Preview"
-                    ></iframe>
-                </div>
-
-                // 操作パネル
-                <div class="pdf-controls">
-                    // ローディング表示
-                    {move || is_loading.get().then(|| view! {
-                        <div class="loading-indicator">
-                            <span class="loading-spinner"></span>
-                            <span>"処理中..."</span>
-                        </div>
-                    })}
-
-                    // 操作ボタン
-                    <div class="control-buttons">
-                        <button class="control-button" on:click=on_ocr_click disabled=move || is_loading.get()>
-                            "OCR実行"
-                        </button>
-                        <button class="control-button gemini-btn" on:click=on_gemini_click disabled=move || is_loading.get()>
-                            "GEMINIチェック"
-                        </button>
-                    </div>
-
-                    // OCR結果
-                    {move || ocr_result.get().map(|result| view! {
-                        <div class="ocr-result-section">
-                            <h4>"OCR結果"</h4>
-                            <div class="ocr-text">
-                                <pre>{result.text}</pre>
-                            </div>
-                        </div>
-                    })}
-
-                    // 不足項目入力フォーム
-                    {move || {
-                        let fields = missing_fields.get();
-                        (!fields.is_empty()).then(|| view! {
-                            <div class="missing-fields-section">
-                                <h4>"不足項目"</h4>
-                                {fields.into_iter().enumerate().map(|(idx, field)| {
-                                    let field_name = field.field_name.clone();
-                                    let field_type = field.field_type.clone();
-                                    view! {
-                                        <div class="missing-field">
-                                            <label>{field_name}</label>
-                                            {if field_type == "date" {
-                                                view! {
-                                                    <input type="date"
-                                                        on:input=move |ev| {
-                                                            missing_fields.update(|fields| {
-                                                                if let Some(f) = fields.get_mut(idx) {
-                                                                    f.value = event_target_value(&ev);
-                                                                }
-                                                            });
-                                                        }
-                                                    />
-                                                }.into_view()
-                                            } else if field_type == "signature" {
-                                                view! {
-                                                    <div class="signature-placeholder">
-                                                        <span>"署名欄（タップして署名）"</span>
-                                                    </div>
-                                                }.into_view()
-                                            } else {
-                                                view! {
-                                                    <input type="text"
-                                                        placeholder="入力してください"
-                                                        on:input=move |ev| {
-                                                            missing_fields.update(|fields| {
-                                                                if let Some(f) = fields.get_mut(idx) {
-                                                                    f.value = event_target_value(&ev);
-                                                                }
-                                                            });
-                                                        }
-                                                    />
-                                                }.into_view()
-                                            }}
-                                        </div>
-                                    }
-                                }).collect_view()}
-                            </div>
-                        })
-                    }}
-
-                    // GEMINIチェック結果
-                    {move || gemini_check_result.get().map(|result| view! {
-                        <div class="gemini-result-section">
-                            <h4>"GEMINIチェック結果"</h4>
-                            <div class="gemini-text">
-                                <pre>{result}</pre>
-                            </div>
-                        </div>
-                    })}
-
-                    // PDF出力ボタン
-                    <div class="export-section">
-                        <button class="control-button export-btn" on:click=on_export_click>
-                            "PDF出力"
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
     }
 }
 
@@ -1783,11 +1632,6 @@ fn App() -> impl IntoView {
     let (edit_mode, set_edit_mode) = create_signal(false);
     let (view_mode, set_view_mode) = create_signal(ViewMode::Dashboard);
 
-    // PDFビューワ用の追加状態
-    let (pdf_viewer_url, set_pdf_viewer_url) = create_signal(String::new());
-    let (pdf_viewer_doc_name, set_pdf_viewer_doc_name) = create_signal(String::new());
-    let (pdf_viewer_contractor, set_pdf_viewer_contractor) = create_signal(String::new());
-
     // OCRビュー用の状態
     let (ocr_documents, set_ocr_documents) = create_signal(Vec::<OcrDocument>::new());
     let (current_doc_index, set_current_doc_index) = create_signal(0usize);
@@ -1823,9 +1667,6 @@ fn App() -> impl IntoView {
         set_edit_mode,
         view_mode,
         set_view_mode,
-        set_pdf_viewer_url,
-        set_pdf_viewer_doc_name,
-        set_pdf_viewer_contractor,
     };
     provide_context(ctx.clone());
 
@@ -2131,34 +1972,38 @@ fn App() -> impl IntoView {
                 </div>
             </header>
 
-            <main class="container">
-                {move || {
-                    match view_mode.get() {
-                        ViewMode::Dashboard => view! {
-                            <>
-                                <Dashboard />
-                                <CheckResultsPanel />
-                            </>
-                        }.into_view(),
-                        ViewMode::PdfViewer(_) => {
-                            let url = pdf_viewer_url.get();
-                            let doc_name = pdf_viewer_doc_name.get();
-                            let contractor = pdf_viewer_contractor.get();
-                            view! {
-                                <PdfViewer
-                                    pdf_url=url
-                                    doc_name=doc_name
-                                    contractor_name=contractor
-                                    on_close=move || set_view_mode.set(ViewMode::Dashboard)
-                                />
-                            }.into_view()
-                        },
-                        ViewMode::OcrViewer => view! {
+            {move || {
+                match view_mode.get() {
+                    ViewMode::Dashboard => view! {
+                        <main class="container">
+                            <Dashboard />
+                            <CheckResultsPanel />
+                        </main>
+                    }.into_view(),
+
+                    ViewMode::OcrViewer => view! {
+                        <main class="container">
                             <OcrViewer />
-                        }.into_view(),
-                    }
-                }}
-            </main>
+                        </main>
+                    }.into_view(),
+
+                    ViewMode::PdfViewer { contractor, doc_type, url } => view! {
+                        <PdfViewer
+                            contractor=contractor
+                            doc_type=doc_type
+                            url=url
+                        />
+                    }.into_view(),
+
+                    ViewMode::SpreadsheetViewer { contractor, doc_type, url } => view! {
+                        <SpreadsheetViewer
+                            contractor=contractor
+                            doc_type=doc_type
+                            url=url
+                        />
+                    }.into_view(),
+                }
+            }}
         </div>
     }
 }
