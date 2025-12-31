@@ -2490,8 +2490,14 @@ fn PdfEditor(
                         on:change=move |ev| {
                             let val: i32 = event_target_value(&ev).parse().unwrap_or(12);
                             set_font_size.set(val);
+                            // 選択中のテキストがあれば、そのフォントサイズも変更
+                            if has_selection.get() {
+                                call_js_editor_with_args("updateSelectedFontSize", &[
+                                    wasm_bindgen::JsValue::from_f64(val as f64)
+                                ]);
+                            }
                         }
-                        disabled=move || !pdf_loaded.get() || edit_mode.get() != "add"
+                        disabled=move || !pdf_loaded.get()
                     >
                         <option value="10">"10pt"</option>
                         <option value="12" selected>"12pt"</option>
@@ -2504,9 +2510,16 @@ fn PdfEditor(
                     <select
                         class="font-family-select"
                         on:change=move |ev| {
-                            set_font_family.set(event_target_value(&ev));
+                            let val = event_target_value(&ev);
+                            set_font_family.set(val.clone());
+                            // 選択中のテキストがあれば、そのフォントファミリーも変更
+                            if has_selection.get() {
+                                call_js_editor_with_args("updateSelectedFontFamily", &[
+                                    wasm_bindgen::JsValue::from_str(&val)
+                                ]);
+                            }
                         }
-                        disabled=move || !pdf_loaded.get() || edit_mode.get() != "add"
+                        disabled=move || !pdf_loaded.get()
                     >
                         <option value="mincho" selected>"明朝"</option>
                         <option value="gothic">"ゴシック"</option>

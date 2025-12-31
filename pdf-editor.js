@@ -266,6 +266,40 @@ window.PdfEditor = (function() {
     }
 
     /**
+     * 選択中の注釈のフォントサイズを変更
+     */
+    function updateSelectedFontSize(newSize) {
+        if (!selectedId) return false;
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        if (!ann) return false;
+
+        ann.fontSize = newSize;
+        // 幅を再計算
+        const dims = measureText(ann.text, newSize, ann.fontFamily);
+        ann.width = dims.width;
+        ann.height = dims.height;
+        redrawAnnotations();
+        return true;
+    }
+
+    /**
+     * 選択中の注釈のフォントファミリーを変更
+     */
+    function updateSelectedFontFamily(newFamily) {
+        if (!selectedId) return false;
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        if (!ann) return false;
+
+        ann.fontFamily = newFamily;
+        // 幅を再計算
+        const dims = measureText(ann.text, ann.fontSize, newFamily);
+        ann.width = dims.width;
+        ann.height = dims.height;
+        redrawAnnotations();
+        return true;
+    }
+
+    /**
      * ドラッグ開始
      */
     function startDrag(screenX, screenY) {
@@ -534,6 +568,8 @@ window.PdfEditor = (function() {
         nudgeSelected,
         getSelectedText,
         updateSelectedText,
+        updateSelectedFontSize,
+        updateSelectedFontFamily,
         startDrag,
         updateDrag,
         endDrag,
