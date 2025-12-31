@@ -295,6 +295,31 @@ fn ProjectView(project: ProjectData) -> impl IntoView {
                     }).collect_view()}
                 </div>
             </div>
+
+            // 契約書類セクション
+            {(!project.contracts.is_empty()).then(|| view! {
+                <div class="contracts-section">
+                    <h4>"契約書類"</h4>
+                    <div class="contracts-list">
+                        {project.contracts.into_iter().map(|c| view! {
+                            <div class="contract-item">
+                                {if let Some(url) = c.url {
+                                    view! {
+                                        <a class="contract-link" href=url target="_blank" rel="noopener">{c.name}</a>
+                                    }.into_view()
+                                } else {
+                                    view! {
+                                        <span class="contract-name">{c.name}</span>
+                                    }.into_view()
+                                }}
+                                {c.contractor.map(|contractor| view! {
+                                    <span class="contract-contractor">{contractor}</span>
+                                })}
+                            </div>
+                        }).collect_view()}
+                    </div>
+                </div>
+            })}
         </div>
     }
 }
