@@ -2,6 +2,7 @@
 Document AI OCRでPDFからテキストと座標を抽出
 """
 import json
+import re
 from pathlib import Path
 from typing import Optional
 from google.cloud import documentai_v1 as documentai
@@ -198,7 +199,6 @@ def process_pdf_from_drive(file_id: str, temp_dir: Path = None) -> dict:
 
 def extract_file_id(url: str) -> Optional[str]:
     """URLからGoogle DriveファイルIDを抽出"""
-    import re
     patterns = [
         r'/file/d/([a-zA-Z0-9-_]+)',
         r'/d/([a-zA-Z0-9-_]+)',
