@@ -24,6 +24,7 @@ Rust/WASMからの呼び出し用APIサーバー
         サポートする書類タイプ一覧
 """
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -33,10 +34,17 @@ sys.path.insert(0, str(Path(__file__).parent))
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from gemini_checker import check_pdf_image, check_spreadsheet, check_multiple_pages
+from document_prompts import UnknownDocTypeError
+from gemini_checker import (
+    check_pdf_image,
+    check_spreadsheet,
+    check_multiple_pages,
+    check_image_base64,
+)
 
 app = Flask(__name__)
 CORS(app)  # CORS有効化（WASMからのアクセス用）
+logging.basicConfig(level=logging.INFO)
 
 # サポートする書類タイプ
 DOC_TYPES = [
@@ -84,9 +92,6 @@ def check_pdf():
         if not doc_type or not contractor:
             return jsonify({"error": "doc_type と contractor は必須です"}), 400
 
-        if doc_type not in DOC_TYPES:
-            return jsonify({"error": f"無効な書類タイプ: {doc_type}", "valid_types": DOC_TYPES}), 400
-
         # 複数ファイルまたは単一ファイル
         image_paths = data.get('image_paths', [])
         image_path = data.get('image_path')
@@ -111,7 +116,11 @@ def check_pdf():
 
         return jsonify(result)
 
+    except UnknownDocTypeError as e:
+        app.logger.warning(f"Unknown doc type: {e}")
+        return jsonify({"error": str(e), "valid_types": DOC_TYPES}), 400
     except Exception as e:
+        app.logger.error(f"Check failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -142,50 +151,21 @@ def check_pdf_base64():
             return jsonify({"error": "image_data は必須です"}), 400
         if not doc_type or not contractor:
             return jsonify({"error": "doc_type と contractor は必須です"}), 400
-        if doc_type not in DOC_TYPES:
-            return jsonify({"error": f"無効な書類タイプ: {doc_type}", "valid_types": DOC_TYPES}), 400
 
-        # GEMINI API直接呼び出し
-        import google.generativeai as genai
-        from gemini_checker import init_gemini
-        from document_prompts import get_check_prompt
-        import json
-
-        model = init_gemini()
-        prompt = get_check_prompt(doc_type, contractor)
-
-        response = model.generate_content([
-            prompt,
-            {
-                "mime_type": mime_type,
-                "data": image_data
-            }
-        ])
-
-        # レスポンスをパース
-        try:
-            text = response.text
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0]
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0]
-            result = json.loads(text.strip())
-        except json.JSONDecodeError:
-            result = {
-                "status": "error",
-                "summary": "レスポンスの解析に失敗",
-                "items": [{"type": "info", "message": response.text}],
-                "missing_fields": []
-            }
-
+        # 共通関数を使用（重複排除）
+        result = check_image_base64(image_data, doc_type, contractor, mime_type)
         return jsonify(result)
 
+    except UnknownDocTypeError as e:
+        app.logger.warning(f"Unknown doc type: {e}")
+        return jsonify({"error": str(e), "valid_types": DOC_TYPES}), 400
     except Exception as e:
+        app.logger.error(f"Check failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/check/spreadsheet', methods=['POST'])
-def check_ss():
+def check_spreadsheet_endpoint():
     """
     スプレッドシートをチェック
 
@@ -211,13 +191,15 @@ def check_ss():
             return jsonify({"error": "spreadsheet_id は必須です"}), 400
         if not doc_type or not contractor:
             return jsonify({"error": "doc_type と contractor は必須です"}), 400
-        if doc_type not in DOC_TYPES:
-            return jsonify({"error": f"無効な書類タイプ: {doc_type}", "valid_types": DOC_TYPES}), 400
 
         result = check_spreadsheet(spreadsheet_id, doc_type, contractor, sheet_name)
         return jsonify(result)
 
+    except UnknownDocTypeError as e:
+        app.logger.warning(f"Unknown doc type: {e}")
+        return jsonify({"error": str(e), "valid_types": DOC_TYPES}), 400
     except Exception as e:
+        app.logger.error(f"Spreadsheet check failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
