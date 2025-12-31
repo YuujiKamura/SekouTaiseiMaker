@@ -124,6 +124,37 @@ pub struct Contractor {
     pub docs: HashMap<String, DocStatus>,
 }
 
+/// AIチェック結果データ
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CheckResultData {
+    /// "ok" | "warning" | "error"
+    #[serde(default)]
+    pub status: String,
+    /// 1行サマリー
+    #[serde(default)]
+    pub summary: String,
+    /// 詳細チェック項目
+    #[serde(default)]
+    pub items: Vec<CheckItem>,
+    /// 未記入フィールド
+    #[serde(default)]
+    pub missing_fields: Vec<CheckMissingField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckItem {
+    /// "ok" | "warning" | "error" | "info"
+    #[serde(rename = "type")]
+    pub item_type: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckMissingField {
+    pub field: String,
+    pub location: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocStatus {
     pub status: bool,
@@ -137,6 +168,12 @@ pub struct DocStatus {
     pub valid_from: Option<String>,  // 有効期間開始 (YYYY-MM-DD)
     #[serde(default)]
     pub valid_until: Option<String>, // 有効期限 (YYYY-MM-DD)
+    /// AIチェック結果
+    #[serde(default)]
+    pub check_result: Option<CheckResultData>,
+    /// 最終チェック日時 (ISO8601形式)
+    #[serde(default)]
+    pub last_checked: Option<String>,
 }
 
 // ============================================
@@ -989,6 +1026,8 @@ where
                                                     note: Some("要依頼".to_string()),
                                                     valid_from: None,
                                                     valid_until: None,
+                                                    check_result: None,
+                                                    last_checked: None,
                                                 });
                                                 break;
                                             }
@@ -1085,6 +1124,9 @@ where
         note: if note.get().is_empty() { None } else { Some(note.get()) },
         valid_from: None,
         valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+        // 既存の値を保持（編集時に消えないように）
+        check_result: None,  // TODO: 既存値を保持する場合は引数から受け取る
+        last_checked: None,
     };
 
     view! {
