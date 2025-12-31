@@ -1659,3 +1659,216 @@ button:disabled {
         max-height: 150px;
     }
 }
+
+/* ============================================
+   チェック結果パネル - 拡張版 (T5)
+   ============================================ */
+
+.check-result-panel {
+    margin: 0.75rem;
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 4px solid;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.check-result-panel.status-ok {
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+    border-color: #4CAF50;
+}
+
+.check-result-panel.status-warning {
+    background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+    border-color: #ff9800;
+}
+
+.check-result-panel.status-error {
+    background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+    border-color: #f44336;
+}
+
+.check-result-panel.status-unknown {
+    background: linear-gradient(135deg, #fafafa 0%, #eeeeee 100%);
+    border-color: #9e9e9e;
+}
+
+/* ヘッダー */
+.check-result-panel .result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.result-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.7);
+}
+
+.result-status-badge .status-icon {
+    font-size: 1.2rem;
+}
+
+.result-status-badge .status-label {
+    font-weight: bold;
+}
+
+.check-result-panel .close-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    opacity: 0.6;
+    padding: 0 0.5rem;
+    color: inherit;
+}
+
+.check-result-panel .close-btn:hover {
+    opacity: 1;
+}
+
+/* サマリー */
+.check-result-panel .result-summary {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem;
+    background: rgba(255,255,255,0.5);
+    border-radius: 4px;
+}
+
+/* 統計バー */
+.check-result-panel .result-stats {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.check-result-panel .stat {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.check-result-panel .stat-ok {
+    background: #c8e6c9;
+    color: #2e7d32;
+}
+
+.check-result-panel .stat-warning {
+    background: #ffe0b2;
+    color: #ef6c00;
+}
+
+.check-result-panel .stat-error {
+    background: #ffcdd2;
+    color: #c62828;
+}
+
+/* 折りたたみ詳細 */
+.result-details,
+.missing-fields-details {
+    margin-top: 0.5rem;
+}
+
+.result-details summary,
+.missing-fields-details summary {
+    cursor: pointer;
+    font-weight: bold;
+    padding: 0.5rem;
+    background: rgba(255,255,255,0.5);
+    border-radius: 4px;
+    user-select: none;
+}
+
+.result-details summary:hover,
+.missing-fields-details summary:hover {
+    background: rgba(255,255,255,0.7);
+}
+
+/* チェック項目リスト */
+.result-items-list,
+.check-result-panel .missing-fields-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0 0;
+}
+
+.check-result-panel .result-item,
+.check-result-panel .missing-field-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    margin: 0.25rem 0;
+    background: rgba(255,255,255,0.5);
+    border-radius: 4px;
+}
+
+.check-result-panel .item-icon,
+.check-result-panel .field-icon {
+    flex-shrink: 0;
+    width: 1.5rem;
+    text-align: center;
+}
+
+.check-result-panel .item-message,
+.check-result-panel .field-name {
+    flex: 1;
+}
+
+.check-result-panel .field-location {
+    color: #666;
+    font-size: 0.85rem;
+}
+
+/* アイテムタイプ別の色 */
+.item-ok .item-icon {
+    color: #4CAF50;
+}
+
+.item-warning .item-icon {
+    color: #ff9800;
+}
+
+.item-error .item-icon {
+    color: #f44336;
+}
+
+.item-info .item-icon {
+    color: #2196F3;
+}
+
+/* 未記入ヘッダー強調 */
+.missing-header {
+    color: #c62828;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+    .check-result-panel {
+        margin: 0.5rem;
+        padding: 0.75rem;
+        max-height: 50vh;
+    }
+
+    .check-result-panel .result-stats {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .check-result-panel .result-item,
+    .check-result-panel .missing-field-item {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .check-result-panel .field-location {
+        margin-left: 1.5rem;
+    }
+}

@@ -331,6 +331,33 @@ pub enum CheckStatus {
     Error,
 }
 
+// ============================================
+// 拡張チェック結果データ構造 (T5)
+// ============================================
+
+/// チェック結果項目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckResultItem {
+    pub item_type: String,  // "ok", "warning", "error", "info"
+    pub message: String,
+}
+
+/// 未記入フィールド情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MissingFieldInfo {
+    pub field: String,
+    pub location: String,
+}
+
+/// 拡張チェック結果データ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckResultData {
+    pub status: String,  // "ok", "warning", "error"
+    pub summary: String,
+    pub items: Vec<CheckResultItem>,
+    pub missing_fields: Vec<MissingFieldInfo>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contract {
     pub id: String,
@@ -1302,7 +1329,120 @@ fn SpreadsheetViewer(
 }
 
 // ============================================
-// チェック結果パネル
+// チェック結果パネル (拡張版 T5)
+// ============================================
+
+/// 拡張版チェック結果パネルコンポーネント
+#[component]
+fn CheckResultPanel(
+    result: CheckResultData,
+    #[prop(optional)] on_close: Option<Callback<()>>,
+) -> impl IntoView {
+    let status_class = match result.status.as_str() {
+        "ok" => "status-ok",
+        "warning" => "status-warning",
+        "error" => "status-error",
+        _ => "status-unknown",
+    };
+
+    let status_icon = match result.status.as_str() {
+        "ok" => "✓",
+        "warning" => "⚠",
+        "error" => "✗",
+        _ => "?",
+    };
+
+    let status_label = match result.status.as_str() {
+        "ok" => "問題なし",
+        "warning" => "要確認",
+        "error" => "要対応",
+        _ => "不明",
+    };
+
+    // 統計
+    let ok_count = result.items.iter().filter(|i| i.item_type == "ok").count();
+    let warning_count = result.items.iter().filter(|i| i.item_type == "warning").count();
+    let error_count = result.items.iter().filter(|i| i.item_type == "error").count();
+
+    view! {
+        <div class=format!("check-result-panel {}", status_class)>
+            // ヘッダー
+            <div class="result-header">
+                <div class="result-status-badge">
+                    <span class="status-icon">{status_icon}</span>
+                    <span class="status-label">{status_label}</span>
+                </div>
+
+                {on_close.map(|cb| view! {
+                    <button class="close-btn" on:click=move |_| cb.call(())>"×"</button>
+                })}
+            </div>
+
+            // サマリー
+            <div class="result-summary">
+                {result.summary.clone()}
+            </div>
+
+            // 統計バー
+            <div class="result-stats">
+                <span class="stat stat-ok">"OK: " {ok_count}</span>
+                <span class="stat stat-warning">"警告: " {warning_count}</span>
+                <span class="stat stat-error">"エラー: " {error_count}</span>
+            </div>
+
+            // チェック項目（折りたたみ可能）
+            {(!result.items.is_empty()).then(|| {
+                let items = result.items.clone();
+                view! {
+                    <details class="result-details" open>
+                        <summary>"チェック項目 (" {items.len()} "件)"</summary>
+                        <ul class="result-items-list">
+                            {items.into_iter().map(|item| {
+                                let icon = match item.item_type.as_str() {
+                                    "ok" => "✓",
+                                    "warning" => "⚠",
+                                    "error" => "✗",
+                                    "info" => "ℹ",
+                                    _ => "•",
+                                };
+                                view! {
+                                    <li class=format!("result-item item-{}", item.item_type)>
+                                        <span class="item-icon">{icon}</span>
+                                        <span class="item-message">{item.message}</span>
+                                    </li>
+                                }
+                            }).collect_view()}
+                        </ul>
+                    </details>
+                }
+            })}
+
+            // 未記入項目
+            {(!result.missing_fields.is_empty()).then(|| {
+                let fields = result.missing_fields.clone();
+                view! {
+                    <details class="missing-fields-details" open>
+                        <summary class="missing-header">
+                            "未記入項目 (" {fields.len()} "件)"
+                        </summary>
+                        <ul class="missing-fields-list">
+                            {fields.into_iter().map(|field| view! {
+                                <li class="missing-field-item">
+                                    <span class="field-icon">"□"</span>
+                                    <span class="field-name">{field.field}</span>
+                                    <span class="field-location">"（"{field.location}"）"</span>
+                                </li>
+                            }).collect_view()}
+                        </ul>
+                    </details>
+                }
+            })}
+        </div>
+    }
+}
+
+// ============================================
+// 既存チェック結果パネル
 // ============================================
 
 #[component]
