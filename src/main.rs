@@ -679,6 +679,13 @@ fn detect_missing_fields(ocr_result: &OcrResult) -> Vec<MissingField> {
 
 /// サーバーのヘルスチェック
 async fn check_api_health() -> Result<bool, String> {
+    // 本番環境（GitHub Pages等）ではローカルAPIサーバーは存在しないのでスキップ
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let hostname = window.location().hostname().unwrap_or_default();
+    if hostname != "localhost" && hostname != "127.0.0.1" {
+        return Ok(false);
+    }
+
     let url = format!("{}/health", API_BASE_URL);
 
     let opts = RequestInit::new();
