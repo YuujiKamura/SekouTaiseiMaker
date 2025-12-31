@@ -191,6 +191,74 @@ fn detect_file_type(url: &str) -> DocFileType {
     }
 }
 
+// ============================================
+// Google Drive/Sheets URL解析ヘルパー関数
+// ============================================
+
+/// Google Drive URLからファイルIDを抽出
+/// パターン: /d/{file_id}/ または /d/{file_id}
+fn extract_drive_file_id(url: &str) -> Option<String> {
+    if let Some(start) = url.find("/d/") {
+        let after_d = &url[start + 3..];
+        let end = after_d.find('/').unwrap_or(after_d.len());
+        let file_id = &after_d[..end];
+        // クエリパラメータを除去
+        let file_id = file_id.split('?').next().unwrap_or(file_id);
+        if !file_id.is_empty() {
+            return Some(file_id.to_string());
+        }
+    }
+    None
+}
+
+/// Google DriveファイルIDからプレビューURLを構築
+fn build_drive_preview_url(file_id: &str) -> String {
+    format!("https://drive.google.com/file/d/{}/preview", file_id)
+}
+
+/// Google Sheets URLからスプレッドシートIDとgidを抽出
+/// パターン: /spreadsheets/d/{spreadsheet_id}/
+fn extract_spreadsheet_info(url: &str) -> Option<(String, Option<String>)> {
+    if let Some(start) = url.find("/d/") {
+        let after_d = &url[start + 3..];
+        let end = after_d.find('/').unwrap_or(after_d.len());
+        let spreadsheet_id = &after_d[..end];
+
+        // gidを抽出（あれば）- URLパラメータまたはハッシュから
+        let gid = if let Some(pos) = url.find("gid=") {
+            let after_gid = &url[pos + 4..];
+            // gidの終端を探す（&か#か文字列終端）
+            let end = after_gid.find(|c| c == '&' || c == '#').unwrap_or(after_gid.len());
+            Some(after_gid[..end].to_string())
+        } else if let Some(pos) = url.find("#gid=") {
+            let after_gid = &url[pos + 5..];
+            let end = after_gid.find('&').unwrap_or(after_gid.len());
+            Some(after_gid[..end].to_string())
+        } else {
+            None
+        };
+
+        if !spreadsheet_id.is_empty() {
+            return Some((spreadsheet_id.to_string(), gid));
+        }
+    }
+    None
+}
+
+/// Google Sheets埋め込みURLを構築
+fn build_sheets_embed_url(spreadsheet_id: &str, gid: Option<&str>) -> String {
+    match gid {
+        Some(g) => format!(
+            "https://docs.google.com/spreadsheets/d/{}/htmlembed?gid={}",
+            spreadsheet_id, g
+        ),
+        None => format!(
+            "https://docs.google.com/spreadsheets/d/{}/htmlembed",
+            spreadsheet_id
+        ),
+    }
+}
+
 // チェック結果
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckMode {
@@ -969,12 +1037,11 @@ fn PdfViewer(
         ctx.set_view_mode.set(ViewMode::Dashboard);
     };
 
-    // Google Drive URLをプレビュー用に変換
-    let preview_url = if url.contains("drive.google.com/file/d/") {
-        // drive.google.com/file/d/FILE_ID/view -> drive.google.com/file/d/FILE_ID/preview
-        url.replace("/view", "/preview")
-    } else if url.contains("drive.google.com") && !url.contains("/preview") {
-        format!("{}/preview", url.trim_end_matches('/'))
+    // Google Drive URLをプレビュー用に変換（堅牢なID抽出方式）
+    let preview_url = if url.contains("drive.google.com") {
+        extract_drive_file_id(&url)
+            .map(|id| build_drive_preview_url(&id))
+            .unwrap_or_else(|| url.clone())
     } else {
         url.clone()
     };
@@ -1020,20 +1087,11 @@ fn SpreadsheetViewer(
         ctx.set_view_mode.set(ViewMode::Dashboard);
     };
 
-    // Google Sheets URLを埋め込み用に変換
+    // Google Sheets URLを埋め込み用に変換（堅牢なID抽出方式）
     let embed_url = if url.contains("docs.google.com/spreadsheets") {
-        // /edit や /view を /htmlembed に変換
-        let base_url = url
-            .replace("/edit", "")
-            .replace("/view", "")
-            .replace("#gid=", "/htmlembed?gid=");
-        if base_url.contains("/htmlembed") {
-            base_url
-        } else if base_url.contains("?") {
-            format!("{}&embedded=true", base_url)
-        } else {
-            format!("{}?embedded=true", base_url)
-        }
+        extract_spreadsheet_info(&url)
+            .map(|(id, gid)| build_sheets_embed_url(&id, gid.as_deref()))
+            .unwrap_or_else(|| url.clone())
     } else {
         url.clone()
     };
