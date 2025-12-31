@@ -599,6 +599,11 @@ window.PdfEditor = (function() {
         const { PDFDocument, rgb } = PDFLib;
         const pdfDocLib = await PDFDocument.load(pdfBytes);
 
+        // fontkitを登録（カスタムフォント埋め込みに必要）
+        if (typeof fontkit !== 'undefined') {
+            pdfDocLib.registerFontkit(fontkit);
+        }
+
         // 使用するフォントファミリーを収集
         const usedFamilies = new Set(textAnnotations.map(a => a.fontFamily || 'gothic'));
 
