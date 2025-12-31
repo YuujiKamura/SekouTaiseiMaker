@@ -57,6 +57,8 @@ pub struct ProjectData {
     #[serde(default)]
     pub period: String,
     pub contractors: Vec<Contractor>,
+    #[serde(default)]
+    pub contracts: Vec<Contract>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +75,19 @@ pub struct DocStatus {
     #[serde(default)]
     pub file: Option<String>,
     #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
     pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Contract {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub contractor: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 // ============================================
@@ -284,6 +298,32 @@ fn ProjectView(project: ProjectData) -> impl IntoView {
                     <ContractorCard contractor=c />
                 }).collect_view()}
             </div>
+
+            {(!project.contracts.is_empty()).then(|| view! {
+                <div class="contracts-section">
+                    <h4>"契約書類"</h4>
+                    <div class="contracts-list">
+                        {project.contracts.into_iter().map(|c| view! {
+                            <div class="contract-item">
+                                {if let Some(url) = c.url {
+                                    view! {
+                                        <a class="contract-link" href=url target="_blank" rel="noopener">
+                                            {c.name.clone()}
+                                        </a>
+                                    }.into_view()
+                                } else {
+                                    view! {
+                                        <span class="contract-name">{c.name.clone()}</span>
+                                    }.into_view()
+                                }}
+                                {c.contractor.map(|ct| view! {
+                                    <span class="contract-contractor">{ct}</span>
+                                })}
+                            </div>
+                        }).collect_view()}
+                    </div>
+                </div>
+            })}
         </div>
     }
 }
@@ -310,10 +350,23 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                 {docs.into_iter().map(|(key, status)| {
                     let label = key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
                     let label = label.trim_start_matches('_').to_string();
+                    let has_url = status.url.is_some();
+                    let url = status.url.clone();
                     view! {
-                        <div class=format!("doc-item {}", if status.status { "ok" } else { "missing" })>
+                        <div class=format!("doc-item {} {}",
+                            if status.status { "ok" } else { "missing" },
+                            if has_url { "has-link" } else { "" }
+                        )>
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
-                            <span class="doc-name">{label}</span>
+                            {if let Some(u) = url {
+                                view! {
+                                    <a class="doc-name doc-link" href=u target="_blank" rel="noopener">{label}</a>
+                                }.into_view()
+                            } else {
+                                view! {
+                                    <span class="doc-name">{label}</span>
+                                }.into_view()
+                            }}
                             {status.note.map(|n| view! {
                                 <span class="doc-note">{n}</span>
                             })}

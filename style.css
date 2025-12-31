@@ -274,6 +274,79 @@ body {
     color: #333;
 }
 
+.doc-link {
+    color: #1976D2;
+    text-decoration: none;
+    flex: 1;
+}
+
+.doc-link:hover {
+    text-decoration: underline;
+}
+
+.doc-item.has-link::after {
+    content: "↗";
+    font-size: 10px;
+    color: #1976D2;
+    margin-left: 4px;
+}
+
+/* 契約書セクション */
+.contracts-section {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.contracts-section h4 {
+    font-size: 1rem;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.contracts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.contract-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #f5f5f5;
+    border-radius: 6px;
+}
+
+.contract-link {
+    color: #1976D2;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.contract-link:hover {
+    text-decoration: underline;
+}
+
+.contract-link::after {
+    content: " ↗";
+    font-size: 11px;
+}
+
+.contract-name {
+    color: #333;
+    font-weight: 500;
+}
+
+.contract-contractor {
+    font-size: 12px;
+    color: #666;
+    background: #e0e0e0;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
 .doc-note {
     font-size: 11px;
     color: #f44336;
