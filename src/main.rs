@@ -166,7 +166,24 @@ pub struct ProjectContext {
     pub set_check_mode: WriteSignal<CheckMode>,
     pub check_results: ReadSignal<Vec<CheckResult>>,
     pub set_check_results: WriteSignal<Vec<CheckResult>>,
+    pub edit_mode: ReadSignal<bool>,
+    pub set_edit_mode: WriteSignal<bool>,
 }
+
+// 標準的な書類リスト
+const STANDARD_DOCS: &[(&str, &str)] = &[
+    ("01_建設業許可", "建設業許可"),
+    ("02_事業所番号", "事業所番号"),
+    ("03_労働保険番号", "労働保険番号"),
+    ("041_現場代理人資格", "現場代理人資格"),
+    ("042_現場代理人在籍", "現場代理人在籍"),
+    ("051_主任技術者資格", "主任技術者資格"),
+    ("052_主任技術者在籍", "主任技術者在籍"),
+    ("06_法定外労災", "法定外労災"),
+    ("07_建退共", "建退共"),
+    ("08_作業員名簿", "作業員名簿"),
+    ("09_暴対法誓約書", "暴対法誓約書"),
+];
 
 #[component]
 fn Dashboard() -> impl IntoView {
@@ -178,14 +195,21 @@ fn Dashboard() -> impl IntoView {
                 <p class="status error">{e}</p>
             })}
 
-            {move || ctx.project.get().map(|p| view! {
-                <ProjectView project=p />
-            })}
+            {move || {
+                let edit_mode = ctx.edit_mode.get();
+                ctx.project.get().map(|p| {
+                    if edit_mode {
+                        view! { <ProjectEditor project=p /> }.into_view()
+                    } else {
+                        view! { <ProjectView project=p /> }.into_view()
+                    }
+                })
+            }}
 
             {move || ctx.project.get().is_none().then(|| view! {
                 <div class="empty-state">
                     <p>"プロジェクトデータがありません"</p>
-                    <p class="hint">"右上のメニューからJSONを読み込んでください"</p>
+                    <p class="hint">"右上のメニューから新規作成またはJSONを読み込んでください"</p>
                 </div>
             })}
         </div>
@@ -298,6 +322,363 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         </div>
                     }
                 }).collect_view()}
+            </div>
+        </div>
+    }
+}
+
+// ============================================
+// 編集コンポーネント
+// ============================================
+
+#[component]
+fn ProjectEditor(project: ProjectData) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+
+    // ローカルで編集可能な状態を作成
+    let (project_name, set_project_name) = create_signal(project.project_name.clone());
+    let (client, set_client) = create_signal(project.client.clone());
+    let (period, set_period) = create_signal(project.period.clone());
+    let (contractors, set_contractors) = create_signal(project.contractors.clone());
+    let (contracts, _set_contracts) = create_signal(project.contracts.clone());
+
+    // 変更を保存
+    let save_changes = move |_| {
+        let updated = ProjectData {
+            project_name: project_name.get(),
+            client: client.get(),
+            period: period.get(),
+            contractors: contractors.get(),
+            contracts: contracts.get(),
+        };
+        ctx.set_project.set(Some(updated));
+    };
+
+    // 業者追加
+    let add_contractor = move |_| {
+        set_contractors.update(|cs| {
+            let new_id = format!("contractor_{}", cs.len() + 1);
+            cs.push(Contractor {
+                id: new_id,
+                name: "新規業者".to_string(),
+                role: "".to_string(),
+                docs: HashMap::new(),
+            });
+        });
+    };
+
+    // 業者削除
+    let delete_contractor = move |idx: usize| {
+        set_contractors.update(|cs| {
+            if idx < cs.len() {
+                cs.remove(idx);
+            }
+        });
+    };
+
+    // 業者更新
+    let update_contractor = move |idx: usize, updated: Contractor| {
+        set_contractors.update(|cs| {
+            if idx < cs.len() {
+                cs[idx] = updated;
+            }
+        });
+    };
+
+    view! {
+        <div class="project-editor">
+            <div class="editor-header">
+                <h2>"プロジェクト編集"</h2>
+                <button class="save-btn" on:click=save_changes>"変更を保存"</button>
+            </div>
+
+            <div class="editor-section">
+                <h3>"基本情報"</h3>
+                <div class="form-group">
+                    <label>"工事名"</label>
+                    <input type="text"
+                        prop:value=move || project_name.get()
+                        on:input=move |ev| set_project_name.set(event_target_value(&ev))
+                    />
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>"発注者"</label>
+                        <input type="text"
+                            prop:value=move || client.get()
+                            on:input=move |ev| set_client.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"工期"</label>
+                        <input type="text"
+                            prop:value=move || period.get()
+                            on:input=move |ev| set_period.set(event_target_value(&ev))
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-section">
+                <div class="section-header">
+                    <h3>"業者一覧"</h3>
+                    <button class="add-btn" on:click=add_contractor>"+ 業者追加"</button>
+                </div>
+
+                <div class="contractors-editor">
+                    {move || contractors.get().into_iter().enumerate().map(|(idx, c)| {
+                        let update_fn = move |updated: Contractor| update_contractor(idx, updated);
+                        let delete_fn = move |_| delete_contractor(idx);
+                        view! {
+                            <ContractorEditor
+                                contractor=c
+                                on_update=update_fn
+                                on_delete=delete_fn
+                            />
+                        }
+                    }).collect_view()}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn ContractorEditor<F, D>(
+    contractor: Contractor,
+    on_update: F,
+    on_delete: D,
+) -> impl IntoView
+where
+    F: Fn(Contractor) + 'static + Clone,
+    D: Fn(()) + 'static,
+{
+    let (name, set_name) = create_signal(contractor.name.clone());
+    let (role, set_role) = create_signal(contractor.role.clone());
+    let (docs, set_docs) = create_signal(contractor.docs.clone());
+    let (expanded, set_expanded) = create_signal(false);
+
+    let contractor_id = contractor.id.clone();
+    let contractor_id_2 = contractor_id.clone();
+    let contractor_id_3 = contractor_id.clone();
+
+    let on_update_1 = on_update.clone();
+    let on_update_2 = on_update.clone();
+    let on_update_3 = on_update.clone();
+
+    view! {
+        <div class="contractor-editor">
+            <div class="contractor-editor-header" on:click=move |_| set_expanded.update(|e| *e = !*e)>
+                <span class="expand-icon">{move || if expanded.get() { "▼" } else { "▶" }}</span>
+                <input type="text" class="name-input"
+                    prop:value=move || name.get()
+                    on:input={
+                        let contractor_id = contractor_id.clone();
+                        let on_update = on_update_1.clone();
+                        move |ev| {
+                            set_name.set(event_target_value(&ev));
+                            on_update(Contractor {
+                                id: contractor_id.clone(),
+                                name: name.get(),
+                                role: role.get(),
+                                docs: docs.get(),
+                            });
+                        }
+                    }
+                    on:click=move |ev| ev.stop_propagation()
+                />
+                <input type="text" class="role-input" placeholder="役割"
+                    prop:value=move || role.get()
+                    on:input={
+                        let contractor_id = contractor_id_2.clone();
+                        let on_update = on_update_2.clone();
+                        move |ev| {
+                            set_role.set(event_target_value(&ev));
+                            on_update(Contractor {
+                                id: contractor_id.clone(),
+                                name: name.get(),
+                                role: role.get(),
+                                docs: docs.get(),
+                            });
+                        }
+                    }
+                    on:click=move |ev| ev.stop_propagation()
+                />
+                <button class="delete-btn" on:click=move |ev| {
+                    ev.stop_propagation();
+                    on_delete(());
+                }>"削除"</button>
+            </div>
+
+            {move || {
+                let is_expanded = expanded.get();
+                let on_update = on_update_3.clone();
+                let contractor_id = contractor_id_3.clone();
+
+                is_expanded.then(|| {
+                    let mut doc_list: Vec<_> = docs.get().into_iter().collect();
+                    doc_list.sort_by(|a, b| a.0.cmp(&b.0));
+
+                    let on_update_add = on_update.clone();
+                    let contractor_id_add = contractor_id.clone();
+
+                    view! {
+                        <div class="docs-editor">
+                            <div class="docs-header">
+                                <span>"書類一覧"</span>
+                                <button class="add-btn small" on:click=move |_| {
+                                    set_docs.update(|d| {
+                                        for (key, _) in STANDARD_DOCS {
+                                            if !d.contains_key(*key) {
+                                                d.insert(key.to_string(), DocStatus {
+                                                    status: false,
+                                                    file: None,
+                                                    url: None,
+                                                    note: Some("要依頼".to_string()),
+                                                    valid_from: None,
+                                                    valid_until: None,
+                                                });
+                                                break;
+                                            }
+                                        }
+                                    });
+                                    on_update_add(Contractor {
+                                        id: contractor_id_add.clone(),
+                                        name: name.get(),
+                                        role: role.get(),
+                                        docs: docs.get(),
+                                    });
+                                }>"+ 書類追加"</button>
+                            </div>
+                            {doc_list.into_iter().map(|(key, status)| {
+                                let key_clone = key.clone();
+                                let key_for_delete = key.clone();
+                                let on_update_doc = on_update.clone();
+                                let on_update_del = on_update.clone();
+                                let contractor_id_doc = contractor_id.clone();
+                                let contractor_id_del = contractor_id.clone();
+
+                                let update_doc = move |updated_status: DocStatus| {
+                                    set_docs.update(|d| {
+                                        d.insert(key_clone.clone(), updated_status);
+                                    });
+                                    on_update_doc(Contractor {
+                                        id: contractor_id_doc.clone(),
+                                        name: name.get(),
+                                        role: role.get(),
+                                        docs: docs.get(),
+                                    });
+                                };
+
+                                let delete_doc = move |_| {
+                                    set_docs.update(|d| {
+                                        d.remove(&key_for_delete);
+                                    });
+                                    on_update_del(Contractor {
+                                        id: contractor_id_del.clone(),
+                                        name: name.get(),
+                                        role: role.get(),
+                                        docs: docs.get(),
+                                    });
+                                };
+
+                                view! {
+                                    <DocEditor
+                                        doc_key=key
+                                        status=status
+                                        on_update=update_doc
+                                        on_delete=delete_doc
+                                    />
+                                }
+                            }).collect_view()}
+                        </div>
+                    }
+                })
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn DocEditor<F, D>(
+    doc_key: String,
+    status: DocStatus,
+    on_update: F,
+    on_delete: D,
+) -> impl IntoView
+where
+    F: Fn(DocStatus) + 'static + Clone,
+    D: Fn(()) + 'static,
+{
+    let (doc_status, set_doc_status) = create_signal(status.status);
+    let (file, set_file) = create_signal(status.file.clone().unwrap_or_default());
+    let (url, set_url) = create_signal(status.url.clone().unwrap_or_default());
+    let (valid_until, set_valid_until) = create_signal(status.valid_until.clone().unwrap_or_default());
+    let (note, set_note) = create_signal(status.note.clone().unwrap_or_default());
+
+    let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+    let label = label.trim_start_matches('_').to_string();
+
+    // 各イベント用にon_updateをクローン
+    let on_update_1 = on_update.clone();
+    let on_update_2 = on_update.clone();
+    let on_update_3 = on_update.clone();
+    let on_update_4 = on_update.clone();
+    let on_update_5 = on_update;
+
+    let make_status = move || DocStatus {
+        status: doc_status.get(),
+        file: if file.get().is_empty() { None } else { Some(file.get()) },
+        url: if url.get().is_empty() { None } else { Some(url.get()) },
+        note: if note.get().is_empty() { None } else { Some(note.get()) },
+        valid_from: None,
+        valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+    };
+
+    view! {
+        <div class=format!("doc-editor {}", if doc_status.get() { "complete" } else { "incomplete" })>
+            <div class="doc-editor-row">
+                <label class="checkbox-label">
+                    <input type="checkbox"
+                        prop:checked=move || doc_status.get()
+                        on:change=move |ev| {
+                            set_doc_status.set(event_target_checked(&ev));
+                            on_update_1(make_status());
+                        }
+                    />
+                    <span class="doc-label">{label}</span>
+                </label>
+                <button class="delete-btn small" on:click=move |_| on_delete(())>"✕"</button>
+            </div>
+            <div class="doc-editor-fields">
+                <input type="text" placeholder="ファイル名"
+                    prop:value=move || file.get()
+                    on:input=move |ev| {
+                        set_file.set(event_target_value(&ev));
+                        on_update_2(make_status());
+                    }
+                />
+                <input type="text" placeholder="URL"
+                    prop:value=move || url.get()
+                    on:input=move |ev| {
+                        set_url.set(event_target_value(&ev));
+                        on_update_3(make_status());
+                    }
+                />
+                <input type="date" placeholder="有効期限"
+                    prop:value=move || valid_until.get()
+                    on:input=move |ev| {
+                        set_valid_until.set(event_target_value(&ev));
+                        on_update_4(make_status());
+                    }
+                />
+                <input type="text" placeholder="備考"
+                    prop:value=move || note.get()
+                    on:input=move |ev| {
+                        set_note.set(event_target_value(&ev));
+                        on_update_5(make_status());
+                    }
+                />
             </div>
         </div>
     }
@@ -513,6 +894,35 @@ fn get_today() -> String {
     format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
+// JSONダウンロード用関数
+fn download_json(project: &ProjectData) {
+    if let Ok(json) = serde_json::to_string_pretty(project) {
+        if let Some(window) = web_sys::window() {
+            if let Some(document) = window.document() {
+                // Blobを作成
+                let blob_parts = js_sys::Array::new();
+                blob_parts.push(&JsValue::from_str(&json));
+                let options = web_sys::BlobPropertyBag::new();
+                options.set_type("application/json");
+
+                if let Ok(blob) = web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &options) {
+                    if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
+                        if let Ok(a) = document.create_element("a") {
+                            let _ = a.set_attribute("href", &url);
+                            let filename = format!("{}.json", project.project_name.replace(" ", "_"));
+                            let _ = a.set_attribute("download", &filename);
+                            if let Some(element) = a.dyn_ref::<web_sys::HtmlElement>() {
+                                element.click();
+                            }
+                            let _ = web_sys::Url::revoke_object_url(&url);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 fn App() -> impl IntoView {
     let (menu_open, set_menu_open) = create_signal(false);
@@ -524,6 +934,7 @@ fn App() -> impl IntoView {
     let (error_msg, set_error_msg) = create_signal(None::<String>);
     let (check_mode, set_check_mode) = create_signal(CheckMode::None);
     let (check_results, set_check_results) = create_signal(Vec::<CheckResult>::new());
+    let (edit_mode, set_edit_mode) = create_signal(false);
 
     // コンテキスト提供
     let ctx = ProjectContext {
@@ -537,6 +948,8 @@ fn App() -> impl IntoView {
         set_check_mode,
         check_results,
         set_check_results,
+        edit_mode,
+        set_edit_mode,
     };
     provide_context(ctx.clone());
 
@@ -663,10 +1076,50 @@ fn App() -> impl IntoView {
         set_check_results.set(Vec::new());
     };
 
+    // 新規プロジェクト作成
+    let on_new_project = move |_| {
+        set_menu_open.set(false);
+        let new_project = ProjectData {
+            project_name: "新規工事".to_string(),
+            client: "".to_string(),
+            period: "".to_string(),
+            contractors: vec![
+                Contractor {
+                    id: "prime".to_string(),
+                    name: "元請業者".to_string(),
+                    role: "元請".to_string(),
+                    docs: HashMap::new(),
+                }
+            ],
+            contracts: Vec::new(),
+        };
+        set_project.set(Some(new_project));
+        set_edit_mode.set(true);
+    };
+
+    // 編集モード切り替え
+    let toggle_edit_mode = move |_| {
+        set_menu_open.set(false);
+        set_edit_mode.update(|e| *e = !*e);
+    };
+
+    // JSONエクスポート
+    let on_export_json = move |_| {
+        set_menu_open.set(false);
+        if let Some(p) = project.get() {
+            download_json(&p);
+        }
+    };
+
     view! {
         <div class="app">
             <header class="app-header">
                 <h1>"施工体制チェッカー"</h1>
+
+                // 編集モード表示
+                {move || edit_mode.get().then(|| view! {
+                    <span class="edit-mode-badge">"編集中"</span>
+                })}
 
                 // チェックモード表示
                 {move || {
@@ -692,6 +1145,9 @@ fn App() -> impl IntoView {
                     </button>
                     {move || menu_open.get().then(|| view! {
                         <div class="menu-dropdown">
+                            <button class="menu-item" on:click=on_new_project>
+                                "新規作成"
+                            </button>
                             <label class="menu-item file-input-label">
                                 "JSONを読み込む"
                                 <input type="file" accept=".json" on:change=on_file_change style="display:none" />
@@ -700,13 +1156,20 @@ fn App() -> impl IntoView {
                                 {move || if loading.get() { "読込中..." } else { "サンプル読込" }}
                             </button>
                             <hr class="menu-divider" />
-                            <button class="menu-item" on:click=on_existence_check disabled=move || project.get().is_none()>
+                            <button class="menu-item" on:click=toggle_edit_mode disabled=move || project.get().is_none()>
+                                {move || if edit_mode.get() { "編集を終了" } else { "編集モード" }}
+                            </button>
+                            <hr class="menu-divider" />
+                            <button class="menu-item" on:click=on_existence_check disabled=move || project.get().is_none() || edit_mode.get()>
                                 "書類存在チェック"
                             </button>
-                            <button class="menu-item" on:click=on_date_check disabled=move || project.get().is_none()>
+                            <button class="menu-item" on:click=on_date_check disabled=move || project.get().is_none() || edit_mode.get()>
                                 "日付チェック"
                             </button>
                             <hr class="menu-divider" />
+                            <button class="menu-item" on:click=on_export_json disabled=move || project.get().is_none()>
+                                "JSONエクスポート"
+                            </button>
                             <button class="menu-item" on:click=generate_share_url disabled=move || project.get().is_none()>
                                 {move || if copy_success.get() { "URLをコピーしました!" } else { "共有URLを生成" }}
                             </button>
