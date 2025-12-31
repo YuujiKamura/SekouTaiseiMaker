@@ -587,7 +587,9 @@ window.PdfEditor = (function() {
      * PDFを保存（テキスト追加済み）
      */
     async function savePdf() {
+        console.log('savePdf called, annotations:', textAnnotations.length, textAnnotations);
         if (!pdfBytes || textAnnotations.length === 0) {
+            console.log('No pdfBytes or no annotations, returning original');
             return pdfBytes;
         }
 
@@ -630,6 +632,7 @@ window.PdfEditor = (function() {
                 const fontFamily = annotation.fontFamily || 'gothic';
                 const font = embeddedFonts[fontFamily];
 
+                console.log('Drawing text:', annotation.text, 'at', annotation.x, pdfY, 'size:', annotation.fontSize);
                 page.drawText(annotation.text, {
                     x: annotation.x,
                     y: pdfY,
