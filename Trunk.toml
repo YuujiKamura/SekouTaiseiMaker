@@ -7,3 +7,9 @@ ignore = ["dist"]
 
 [serve]
 port = 8080
+
+# データフォルダをコピー
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "mkdir -p dist/data/pdf_images && cp -r data/*.json dist/data/ 2>/dev/null || true && cp -r data/pdf_images/*.png dist/data/pdf_images/ 2>/dev/null || true"]

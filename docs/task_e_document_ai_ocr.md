@@ -1,65 +1,60 @@
+# Task E: Document AI OCR実行スクリプト
+
+## 目的
+Google Document AI を使ってPDFからテキストと座標を抽出するスクリプトを作成する。
+
+## 技術スタック
+- Python 3.x
+- google-cloud-documentai
+- PyMuPDF (PDF→画像変換)
+
+## 既存の認証情報
+```
+プロジェクトID: visionapi-437405
+ロケーション: us (またはeu)
+プロセッサID: 既存のOCRプロセッサを使用
+認証ファイル: C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\visionapi-437405-734d18d13418.json
+```
+
+## ファイル構成
+
+```
+SekouTaiseiMaker/
+├── scripts/
+│   ├── document_ai_ocr.py     # メインOCR処理
+│   └── run_ocr.py             # CLIエントリポイント
+```
+
+## 実装
+
+### 1. document_ai_ocr.py
+
+```python
 """
 Document AI OCRでPDFからテキストと座標を抽出
-
-環境変数:
-    GOOGLE_APPLICATION_CREDENTIALS: サービスアカウントJSONファイルのパス
-    DOCUMENT_AI_PROJECT_ID: Google CloudプロジェクトID
-    DOCUMENT_AI_LOCATION: プロセッサのロケーション (us または eu)
-    DOCUMENT_AI_PROCESSOR_ID: Document AIプロセッサID
-    GMAIL_TOKEN_PATH: Gmail/Drive API用トークンファイルのパス (オプション)
 """
 import json
-import os
-import re
-import tempfile
 from pathlib import Path
 from typing import Optional
 from google.cloud import documentai_v1 as documentai
 from google.oauth2 import service_account
 
-
-def get_config():
-    """環境変数から設定を取得"""
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not credentials_path:
-        raise ValueError(
-            "環境変数 GOOGLE_APPLICATION_CREDENTIALS が設定されていません。"
-            "サービスアカウントJSONファイルのパスを設定してください。"
-        )
-
-    project_id = os.environ.get("DOCUMENT_AI_PROJECT_ID")
-    if not project_id:
-        raise ValueError(
-            "環境変数 DOCUMENT_AI_PROJECT_ID が設定されていません。"
-        )
-
-    processor_id = os.environ.get("DOCUMENT_AI_PROCESSOR_ID")
-    if not processor_id:
-        raise ValueError(
-            "環境変数 DOCUMENT_AI_PROCESSOR_ID が設定されていません。"
-        )
-
-    location = os.environ.get("DOCUMENT_AI_LOCATION", "us")
-
-    return {
-        "credentials_path": Path(credentials_path),
-        "project_id": project_id,
-        "location": location,
-        "processor_id": processor_id,
-    }
-
+# 設定
+CREDENTIALS_PATH = Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\visionapi-437405-734d18d13418.json")
+PROJECT_ID = "visionapi-437405"
+LOCATION = "us"  # または "eu"
+PROCESSOR_ID = "YOUR_PROCESSOR_ID"  # Document AI コンソールで確認
 
 def get_documentai_client():
     """Document AIクライアントを取得"""
-    config = get_config()
     credentials = service_account.Credentials.from_service_account_file(
-        str(config["credentials_path"])
+        str(CREDENTIALS_PATH)
     )
     client = documentai.DocumentProcessorServiceClient(
         credentials=credentials,
-        client_options={"api_endpoint": f"{config['location']}-documentai.googleapis.com"}
+        client_options={"api_endpoint": f"{LOCATION}-documentai.googleapis.com"}
     )
-    return client, config
+    return client
 
 
 def process_pdf(pdf_path: Path) -> dict:
@@ -99,14 +94,10 @@ def process_pdf(pdf_path: Path) -> dict:
             ]
         }
     """
-    client, config = get_documentai_client()
+    client = get_documentai_client()
 
     # プロセッサ名
-    processor_name = client.processor_path(
-        config["project_id"],
-        config["location"],
-        config["processor_id"]
-    )
+    processor_name = client.processor_path(PROJECT_ID, LOCATION, PROCESSOR_ID)
 
     # PDFを読み込み
     with open(pdf_path, "rb") as f:
@@ -192,32 +183,24 @@ def get_text_from_layout(layout, full_text: str) -> str:
     return text.strip()
 
 
-def process_pdf_from_drive(file_id: str) -> dict:
+def process_pdf_from_drive(file_id: str, temp_dir: Path = None) -> dict:
     """
     Google DriveのPDFをOCR処理
 
     Args:
         file_id: Google DriveのファイルID
+        temp_dir: 一時ファイル保存先
 
     Returns:
         process_pdfと同じ形式
-
-    環境変数:
-        GMAIL_TOKEN_PATH: Gmail/Drive API用トークンファイルのパス
     """
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     import googleapiclient.discovery
 
-    # 環境変数からトークンパスを取得
-    token_path = os.environ.get("GMAIL_TOKEN_PATH")
-    if not token_path:
-        raise ValueError(
-            "環境変数 GMAIL_TOKEN_PATH が設定されていません。"
-            "Gmail/Drive API用トークンファイルのパスを設定してください。"
-        )
-
-    creds = Credentials.from_authorized_user_file(token_path)
+    # Gmail tokenでDrive API認証
+    token_path = Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\gmail_token.json")
+    creds = Credentials.from_authorized_user_file(str(token_path))
 
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
@@ -228,10 +211,13 @@ def process_pdf_from_drive(file_id: str) -> dict:
     request = drive_service.files().get_media(fileId=file_id)
     pdf_content = request.execute()
 
-    # 安全な一時ファイルを使用
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
-        temp_pdf = Path(temp_file.name)
-        temp_file.write(pdf_content)
+    # 一時ファイルに保存
+    if temp_dir is None:
+        temp_dir = Path.cwd() / "temp"
+    temp_dir.mkdir(exist_ok=True)
+
+    temp_pdf = temp_dir / f"{file_id}.pdf"
+    temp_pdf.write_bytes(pdf_content)
 
     try:
         result = process_pdf(temp_pdf)
@@ -243,6 +229,7 @@ def process_pdf_from_drive(file_id: str) -> dict:
 
 def extract_file_id(url: str) -> Optional[str]:
     """URLからGoogle DriveファイルIDを抽出"""
+    import re
     patterns = [
         r'/file/d/([a-zA-Z0-9-_]+)',
         r'/d/([a-zA-Z0-9-_]+)',
@@ -253,3 +240,136 @@ def extract_file_id(url: str) -> Optional[str]:
         if match:
             return match.group(1)
     return None
+```
+
+### 2. run_ocr.py
+
+```python
+"""
+CLIからOCRを実行
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from document_ai_ocr import process_pdf, process_pdf_from_drive, extract_file_id
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Document AI OCR')
+    parser.add_argument('--pdf', help='ローカルPDFファイルのパス')
+    parser.add_argument('--url', help='Google Drive URL')
+    parser.add_argument('--file-id', help='Google DriveファイルID')
+    parser.add_argument('--output', '-o', help='出力JSONファイル')
+    parser.add_argument('--pretty', action='store_true', help='整形出力')
+
+    args = parser.parse_args()
+
+    # 入力ソース判定
+    if args.pdf:
+        result = process_pdf(Path(args.pdf))
+    elif args.url:
+        file_id = extract_file_id(args.url)
+        if not file_id:
+            print(f"URLからファイルIDを抽出できません: {args.url}", file=sys.stderr)
+            sys.exit(1)
+        result = process_pdf_from_drive(file_id)
+    elif args.file_id:
+        result = process_pdf_from_drive(args.file_id)
+    else:
+        print("--pdf, --url, --file-id のいずれかを指定してください", file=sys.stderr)
+        sys.exit(1)
+
+    # 出力
+    indent = 2 if args.pretty else None
+    output_text = json.dumps(result, ensure_ascii=False, indent=indent)
+
+    if args.output:
+        Path(args.output).write_text(output_text, encoding='utf-8')
+        print(f"保存: {args.output}")
+    else:
+        print(output_text)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+## 使用例
+
+```bash
+# ローカルPDFをOCR
+python run_ocr.py --pdf "path/to/document.pdf" -o result.json --pretty
+
+# Google DriveのPDFをOCR
+python run_ocr.py --url "https://drive.google.com/file/d/xxx/view" -o result.json
+
+# ファイルIDを直接指定
+python run_ocr.py --file-id "1abc123xyz" -o result.json
+```
+
+## 出力JSON形式
+
+```json
+{
+  "page_count": 1,
+  "pages": [
+    {
+      "page_number": 1,
+      "width": 1681,
+      "height": 2378,
+      "tokens": [
+        {
+          "text": "御中",
+          "confidence": 0.98,
+          "normalized": {
+            "x": 0.42,
+            "y": 0.23,
+            "width": 0.05,
+            "height": 0.02
+          },
+          "pixels": {
+            "x": 708,
+            "y": 541,
+            "width": 82,
+            "height": 39
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Rust側との連携
+
+Webアプリから呼び出す場合、HTTPサーバー経由で:
+
+```python
+# ocr_server.py に追加
+@app.route('/ocr', methods=['POST'])
+def run_ocr():
+    data = request.json
+    if 'url' in data:
+        file_id = extract_file_id(data['url'])
+        result = process_pdf_from_drive(file_id)
+    elif 'file_id' in data:
+        result = process_pdf_from_drive(data['file_id'])
+    else:
+        return jsonify({"error": "url or file_id required"}), 400
+
+    return jsonify(result)
+```
+
+## 必要なパッケージ
+
+```bash
+pip install google-cloud-documentai google-auth google-api-python-client
+```
+
+## 注意事項
+
+1. **プロセッサID**: Document AIコンソールで確認して設定
+2. **料金**: Document AIは1000ページ/月まで無料、それ以降は課金
+3. **ファイルサイズ**: 20MB以下のPDFのみ対応
