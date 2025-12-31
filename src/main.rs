@@ -338,49 +338,6 @@ pub enum CheckStatus {
     Error,
 }
 
-// ============================================
-// API通信用データ構造
-// ============================================
-
-/// APIサーバーにチェックリクエストを送信
-async fn call_check_api(request: CheckRequest) -> Result<CheckResultData, String> {
-    let opts = RequestInit::new();
-    opts.set_method("POST");
-
-    let body = serde_json::to_string(&request)
-        .map_err(|e| format!("リクエストのシリアライズ失敗: {}", e))?;
-    opts.set_body(&JsValue::from_str(&body));
-
-    let headers = web_sys::Headers::new()
-        .map_err(|_| "ヘッダー作成失敗")?;
-    headers.set("Content-Type", "application/json")
-        .map_err(|_| "Content-Type設定失敗")?;
-    opts.set_headers(&headers);
-
-    let url = "http://localhost:8000/api/check";
-    let request_obj = Request::new_with_str_and_init(url, &opts)
-        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
-
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request_obj))
-        .await
-        .map_err(|e| format!("fetch失敗: {:?}", e))?;
-
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
-
-    if !resp.ok() {
-        return Err(format!("APIエラー: {}", resp.status()));
-    }
-
-    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
-        .await
-        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
-
-    serde_wasm_bindgen::from_value(json)
-        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contract {
     pub id: String,
@@ -476,29 +433,6 @@ impl Default for OcrResult {
     }
 }
 
-// ============================================
-// APIチェック結果データ構造
-// ============================================
-
-/// チェック項目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckItem {
-    pub name: String,
-    pub status: String,
-    pub message: String,
-}
-
-/// チェック結果データ
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResultData {
-    pub status: String,
-    pub summary: String,
-    #[serde(default)]
-    pub items: Vec<CheckItem>,
-    #[serde(default)]
-    pub missing_fields: Vec<MissingField>,
-}
-
 /// チェックAPIリクエスト
 #[derive(Debug, Clone, Serialize)]
 pub struct CheckRequest {
@@ -515,7 +449,7 @@ pub struct CheckResponse {
     #[serde(default)]
     pub items: Vec<CheckItem>,
     #[serde(default)]
-    pub missing_fields: Vec<MissingField>,
+    pub missing_fields: Vec<CheckMissingField>,
 }
 
 /// APIエラーレスポンス
