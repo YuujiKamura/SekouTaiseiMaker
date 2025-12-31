@@ -1,30 +1,65 @@
 """
 Document AI OCRでPDFからテキストと座標を抽出
+
+環境変数:
+    GOOGLE_APPLICATION_CREDENTIALS: サービスアカウントJSONファイルのパス
+    DOCUMENT_AI_PROJECT_ID: Google CloudプロジェクトID
+    DOCUMENT_AI_LOCATION: プロセッサのロケーション (us または eu)
+    DOCUMENT_AI_PROCESSOR_ID: Document AIプロセッサID
+    GMAIL_TOKEN_PATH: Gmail/Drive API用トークンファイルのパス (オプション)
 """
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Optional
 from google.cloud import documentai_v1 as documentai
 from google.oauth2 import service_account
 
-# 設定
-CREDENTIALS_PATH = Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\visionapi-437405-734d18d13418.json")
-PROJECT_ID = "visionapi-437405"
-LOCATION = "us"  # または "eu"
-PROCESSOR_ID = "YOUR_PROCESSOR_ID"  # Document AI コンソールで確認
+
+def get_config():
+    """環境変数から設定を取得"""
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not credentials_path:
+        raise ValueError(
+            "環境変数 GOOGLE_APPLICATION_CREDENTIALS が設定されていません。"
+            "サービスアカウントJSONファイルのパスを設定してください。"
+        )
+
+    project_id = os.environ.get("DOCUMENT_AI_PROJECT_ID")
+    if not project_id:
+        raise ValueError(
+            "環境変数 DOCUMENT_AI_PROJECT_ID が設定されていません。"
+        )
+
+    processor_id = os.environ.get("DOCUMENT_AI_PROCESSOR_ID")
+    if not processor_id:
+        raise ValueError(
+            "環境変数 DOCUMENT_AI_PROCESSOR_ID が設定されていません。"
+        )
+
+    location = os.environ.get("DOCUMENT_AI_LOCATION", "us")
+
+    return {
+        "credentials_path": Path(credentials_path),
+        "project_id": project_id,
+        "location": location,
+        "processor_id": processor_id,
+    }
 
 
 def get_documentai_client():
     """Document AIクライアントを取得"""
+    config = get_config()
     credentials = service_account.Credentials.from_service_account_file(
-        str(CREDENTIALS_PATH)
+        str(config["credentials_path"])
     )
     client = documentai.DocumentProcessorServiceClient(
         credentials=credentials,
-        client_options={"api_endpoint": f"{LOCATION}-documentai.googleapis.com"}
+        client_options={"api_endpoint": f"{config['location']}-documentai.googleapis.com"}
     )
-    return client
+    return client, config
 
 
 def process_pdf(pdf_path: Path) -> dict:
@@ -64,10 +99,14 @@ def process_pdf(pdf_path: Path) -> dict:
             ]
         }
     """
-    client = get_documentai_client()
+    client, config = get_documentai_client()
 
     # プロセッサ名
-    processor_name = client.processor_path(PROJECT_ID, LOCATION, PROCESSOR_ID)
+    processor_name = client.processor_path(
+        config["project_id"],
+        config["location"],
+        config["processor_id"]
+    )
 
     # PDFを読み込み
     with open(pdf_path, "rb") as f:
@@ -153,24 +192,32 @@ def get_text_from_layout(layout, full_text: str) -> str:
     return text.strip()
 
 
-def process_pdf_from_drive(file_id: str, temp_dir: Path = None) -> dict:
+def process_pdf_from_drive(file_id: str) -> dict:
     """
     Google DriveのPDFをOCR処理
 
     Args:
         file_id: Google DriveのファイルID
-        temp_dir: 一時ファイル保存先
 
     Returns:
         process_pdfと同じ形式
+
+    環境変数:
+        GMAIL_TOKEN_PATH: Gmail/Drive API用トークンファイルのパス
     """
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     import googleapiclient.discovery
 
-    # Gmail tokenでDrive API認証
-    token_path = Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\gmail_token.json")
-    creds = Credentials.from_authorized_user_file(str(token_path))
+    # 環境変数からトークンパスを取得
+    token_path = os.environ.get("GMAIL_TOKEN_PATH")
+    if not token_path:
+        raise ValueError(
+            "環境変数 GMAIL_TOKEN_PATH が設定されていません。"
+            "Gmail/Drive API用トークンファイルのパスを設定してください。"
+        )
+
+    creds = Credentials.from_authorized_user_file(token_path)
 
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
@@ -181,13 +228,10 @@ def process_pdf_from_drive(file_id: str, temp_dir: Path = None) -> dict:
     request = drive_service.files().get_media(fileId=file_id)
     pdf_content = request.execute()
 
-    # 一時ファイルに保存
-    if temp_dir is None:
-        temp_dir = Path.cwd() / "temp"
-    temp_dir.mkdir(exist_ok=True)
-
-    temp_pdf = temp_dir / f"{file_id}.pdf"
-    temp_pdf.write_bytes(pdf_content)
+    # 安全な一時ファイルを使用
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
+        temp_pdf = Path(temp_file.name)
+        temp_file.write(pdf_content)
 
     try:
         result = process_pdf(temp_pdf)
