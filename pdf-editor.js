@@ -621,8 +621,25 @@ window.PdfEditor = (function() {
         for (const annotation of textAnnotations) {
             if (annotation.page <= pages.length) {
                 const page = pages[annotation.page - 1];
-                const { height } = page.getSize();
-                const pdfY = height - annotation.y;
+                const { width, height } = page.getSize();
+                const rotation = page.getRotation().angle;
+
+                // ページ回転を考慮した座標変換
+                let pdfX, pdfY;
+                if (rotation === 90) {
+                    pdfX = annotation.y;
+                    pdfY = annotation.x;
+                } else if (rotation === 180) {
+                    pdfX = width - annotation.x;
+                    pdfY = annotation.y;
+                } else if (rotation === 270) {
+                    pdfX = height - annotation.y;
+                    pdfY = width - annotation.x;
+                } else {
+                    // 0度または回転なし
+                    pdfX = annotation.x;
+                    pdfY = height - annotation.y;
+                }
 
                 const colorHex = annotation.color.replace('#', '');
                 const r = parseInt(colorHex.substr(0, 2), 16) / 255;
@@ -632,9 +649,9 @@ window.PdfEditor = (function() {
                 const fontFamily = annotation.fontFamily || 'gothic';
                 const font = embeddedFonts[fontFamily];
 
-                console.log('Drawing text:', annotation.text, 'at', annotation.x, pdfY, 'size:', annotation.fontSize);
+                console.log('Drawing text:', annotation.text, 'at', pdfX, pdfY, 'rotation:', rotation);
                 page.drawText(annotation.text, {
-                    x: annotation.x,
+                    x: pdfX,
                     y: pdfY,
                     size: annotation.fontSize,
                     font: font,
