@@ -2265,3 +2265,194 @@ button:disabled {
         font-size: 12px;
     }
 }
+
+/* ============================================
+   PDFエディタ
+   ============================================ */
+
+.pdf-editor-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 40px);
+    background: #f0f0f0;
+}
+
+.editor-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: #1a1a2e;
+    color: white;
+}
+
+.editor-toolbar .doc-info {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.editor-toolbar .page-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.editor-toolbar .page-nav button {
+    background: #2a2a4e;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.editor-toolbar .page-nav button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.editor-toolbar .external-link {
+    color: #88aaff;
+    font-size: 13px;
+}
+
+.editor-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    flex-wrap: wrap;
+}
+
+.file-upload-btn {
+    background: #2196F3;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.file-upload-btn:hover {
+    background: #1976D2;
+}
+
+.text-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.text-controls .text-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.text-controls .font-size-select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background: white;
+}
+
+.text-controls .undo-btn {
+    background: #757575;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.text-controls .undo-btn:hover {
+    background: #616161;
+}
+
+.text-controls .save-btn {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.text-controls .save-btn:hover {
+    background: #43A047;
+}
+
+.status-message {
+    padding: 8px 16px;
+    background: #e3f2fd;
+    color: #1565C0;
+    font-size: 13px;
+}
+
+.pdf-canvas-container {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+}
+
+.pdf-canvas {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: white;
+}
+
+.pdf-overlay {
+    position: absolute;
+    cursor: crosshair;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pdf-placeholder {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #666;
+}
+
+.pdf-placeholder p {
+    margin: 8px 0;
+}
+
+.pdf-placeholder .hint {
+    font-size: 13px;
+    color: #999;
+}
+
+/* 編集ボタン（ビューワ用） */
+.edit-btn {
+    background: #FF9800;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.edit-btn:hover {
+    background: #F57C00;
+}

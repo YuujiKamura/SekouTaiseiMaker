@@ -370,6 +370,7 @@ pub enum ViewMode {
     OcrViewer,
     PdfViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
     SpreadsheetViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
+    PdfEditor { contractor: String, doc_type: String, original_url: String },
 }
 
 impl Default for ViewMode {
@@ -1579,6 +1580,19 @@ fn PdfViewer(
         ctx.set_view_mode.set(ViewMode::Dashboard);
     };
 
+    // 編集モードへ遷移
+    let contractor_for_edit = contractor.clone();
+    let doc_type_for_edit = doc_type.clone();
+    let url_for_edit = url.clone();
+
+    let on_edit = move |_| {
+        ctx.set_view_mode.set(ViewMode::PdfEditor {
+            contractor: contractor_for_edit.clone(),
+            doc_type: doc_type_for_edit.clone(),
+            original_url: url_for_edit.clone(),
+        });
+    };
+
     // チェック実行
     let url_for_check = url.clone();
     let doc_type_for_check = doc_type.clone();
@@ -1642,6 +1656,9 @@ fn PdfViewer(
 
             // アクションバー
             <div class="viewer-actions">
+                <button class="edit-btn" on:click=on_edit>
+                    "編集"
+                </button>
                 <button
                     class="action-btn check-btn"
                     on:click=on_check
@@ -1866,6 +1883,298 @@ fn SpreadsheetViewer(
                     class="spreadsheet-frame"
                 ></iframe>
             </div>
+        </div>
+    }
+}
+
+// ============================================
+// PDFエディタ
+// ============================================
+
+#[component]
+fn PdfEditor(
+    contractor: String,
+    doc_type: String,
+    original_url: String,
+) -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext必須");
+
+    let (pdf_loaded, set_pdf_loaded) = create_signal(false);
+    let (current_page, set_current_page) = create_signal(1);
+    let (total_pages, set_total_pages) = create_signal(0);
+    let (font_size, set_font_size) = create_signal(12);
+    let (input_text, set_input_text) = create_signal(String::new());
+    let (status_message, set_status_message) = create_signal(None::<String>);
+
+    let contractor_display = contractor.clone();
+    let doc_type_display = doc_type.clone();
+
+    // 戻るボタン
+    let on_back = move |_| {
+        ctx.set_view_mode.set(ViewMode::Dashboard);
+    };
+
+    // PDFファイル読み込み
+    let on_file_load = move |ev: web_sys::Event| {
+        let input: web_sys::HtmlInputElement = event_target(&ev);
+        if let Some(files) = input.files() {
+            if let Some(file) = files.get(0) {
+                set_status_message.set(Some("読み込み中...".to_string()));
+
+                let file_clone = file.clone();
+                spawn_local(async move {
+                    let js_file = wasm_bindgen::JsValue::from(file_clone);
+
+                    let result = js_sys::Reflect::get(
+                        &js_sys::global(),
+                        &wasm_bindgen::JsValue::from_str("PdfEditor")
+                    );
+
+                    if let Ok(editor) = result {
+                        let load_fn = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("loadPdf")).ok();
+                        if let Some(func) = load_fn {
+                            let func = func.dyn_into::<js_sys::Function>().ok();
+                            if let Some(f) = func {
+                                let promise = f.call1(&editor, &js_file);
+                                if let Ok(p) = promise {
+                                    let promise = p.dyn_into::<js_sys::Promise>().ok();
+                                    if let Some(promise) = promise {
+                                        let result = wasm_bindgen_futures::JsFuture::from(promise).await;
+                                        if let Ok(res) = result {
+                                            let pages = js_sys::Reflect::get(&res, &wasm_bindgen::JsValue::from_str("totalPages"))
+                                                .ok()
+                                                .and_then(|v| v.as_f64())
+                                                .map(|v| v as i32)
+                                                .unwrap_or(0);
+                                            set_total_pages.set(pages);
+                                            set_current_page.set(1);
+                                            set_pdf_loaded.set(true);
+                                            set_status_message.set(Some(format!("読み込み完了: {}ページ", pages)));
+
+                                            // 最初のページをレンダリング
+                                            render_current_page(1).await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    };
+
+    // ページレンダリング用関数
+    async fn render_current_page(page: i32) {
+        let result = js_sys::Reflect::get(
+            &js_sys::global(),
+            &wasm_bindgen::JsValue::from_str("PdfEditor")
+        );
+
+        if let Ok(editor) = result {
+            let render_fn = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("renderPage")).ok();
+            if let Some(func) = render_fn {
+                let func = func.dyn_into::<js_sys::Function>().ok();
+                if let Some(f) = func {
+                    let promise = f.call3(
+                        &editor,
+                        &wasm_bindgen::JsValue::from_f64(page as f64),
+                        &wasm_bindgen::JsValue::from_str("pdf-canvas"),
+                        &wasm_bindgen::JsValue::from_str("pdf-overlay")
+                    );
+                    if let Ok(p) = promise {
+                        if let Ok(promise) = p.dyn_into::<js_sys::Promise>() {
+                            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // キャンバスクリック時のテキスト追加
+    let on_canvas_click = move |ev: web_sys::MouseEvent| {
+        if !pdf_loaded.get() || input_text.get().is_empty() {
+            return;
+        }
+
+        let target = ev.target().and_then(|t| t.dyn_into::<web_sys::HtmlCanvasElement>().ok());
+        if let Some(canvas) = target {
+            let rect = canvas.get_bounding_client_rect();
+            let x = ev.client_x() as f64 - rect.left();
+            let y = ev.client_y() as f64 - rect.top();
+
+            let text = input_text.get();
+            let size = font_size.get();
+
+            // JavaScript側でテキスト追加
+            if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
+                // フォントサイズを設定
+                if let Ok(set_size_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("setFontSize")) {
+                    if let Ok(f) = set_size_fn.dyn_into::<js_sys::Function>() {
+                        let _ = f.call1(&editor, &wasm_bindgen::JsValue::from_f64(size as f64));
+                    }
+                }
+
+                // テキスト追加
+                if let Ok(add_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("addTextAnnotation")) {
+                    if let Ok(f) = add_fn.dyn_into::<js_sys::Function>() {
+                        let _ = f.call3(
+                            &editor,
+                            &wasm_bindgen::JsValue::from_f64(x),
+                            &wasm_bindgen::JsValue::from_f64(y),
+                            &wasm_bindgen::JsValue::from_str(&text)
+                        );
+                    }
+                }
+            }
+
+            set_input_text.set(String::new());
+            set_status_message.set(Some("テキストを追加しました".to_string()));
+        }
+    };
+
+    // 元に戻す
+    let on_undo = move |_| {
+        if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
+            if let Ok(undo_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("undoLastAnnotation")) {
+                if let Ok(f) = undo_fn.dyn_into::<js_sys::Function>() {
+                    let _ = f.call0(&editor);
+                    set_status_message.set(Some("取り消しました".to_string()));
+                }
+            }
+        }
+    };
+
+    // PDF保存
+    let on_save = {
+        let doc_type_for_save = doc_type.clone();
+        move |_| {
+            let filename = format!("{}_edited.pdf", doc_type_for_save);
+
+            spawn_local(async move {
+            if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
+                if let Ok(download_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("downloadPdf")) {
+                    if let Ok(f) = download_fn.dyn_into::<js_sys::Function>() {
+                        let promise = f.call1(&editor, &wasm_bindgen::JsValue::from_str(&filename));
+                        if let Ok(p) = promise {
+                            if let Ok(promise) = p.dyn_into::<js_sys::Promise>() {
+                                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                            }
+                        }
+                    }
+                }
+            }
+            set_status_message.set(Some("PDFを保存しました".to_string()));
+        });
+        }
+    };
+
+    // ページ移動
+    let on_prev_page = move |_| {
+        let page = current_page.get();
+        if page > 1 {
+            let new_page = page - 1;
+            set_current_page.set(new_page);
+            spawn_local(async move {
+                render_current_page(new_page).await;
+            });
+        }
+    };
+
+    let on_next_page = move |_| {
+        let page = current_page.get();
+        let total = total_pages.get();
+        if page < total {
+            let new_page = page + 1;
+            set_current_page.set(new_page);
+            spawn_local(async move {
+                render_current_page(new_page).await;
+            });
+        }
+    };
+
+    view! {
+        <div class="pdf-editor-container">
+            <div class="editor-toolbar">
+                <div class="toolbar-left">
+                    <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
+                </div>
+                <div class="toolbar-center">
+                    {move || if pdf_loaded.get() {
+                        view! {
+                            <div class="page-nav">
+                                <button on:click=on_prev_page disabled=move || current_page.get() <= 1>"◀"</button>
+                                <span>{move || format!("{} / {}", current_page.get(), total_pages.get())}</span>
+                                <button on:click=on_next_page disabled=move || current_page.get() >= total_pages.get()>"▶"</button>
+                            </div>
+                        }.into_view()
+                    } else {
+                        view! { <span></span> }.into_view()
+                    }}
+                </div>
+                <div class="toolbar-right">
+                    <a class="external-link" href=original_url.clone() target="_blank" rel="noopener">
+                        "元ファイルを開く ↗"
+                    </a>
+                </div>
+            </div>
+
+            <div class="editor-controls">
+                <label class="file-upload-btn">
+                    "PDFを読み込む"
+                    <input type="file" accept=".pdf" on:change=on_file_load style="display:none" />
+                </label>
+
+                <div class="text-controls">
+                    <input
+                        type="text"
+                        placeholder="追加するテキスト"
+                        class="text-input"
+                        prop:value=move || input_text.get()
+                        on:input=move |ev| set_input_text.set(event_target_value(&ev))
+                        disabled=move || !pdf_loaded.get()
+                    />
+                    <select
+                        class="font-size-select"
+                        on:change=move |ev| {
+                            let val: i32 = event_target_value(&ev).parse().unwrap_or(12);
+                            set_font_size.set(val);
+                        }
+                        disabled=move || !pdf_loaded.get()
+                    >
+                        <option value="10">"10pt"</option>
+                        <option value="12" selected>"12pt"</option>
+                        <option value="14">"14pt"</option>
+                        <option value="16">"16pt"</option>
+                        <option value="18">"18pt"</option>
+                        <option value="20">"20pt"</option>
+                        <option value="24">"24pt"</option>
+                    </select>
+                    <button class="undo-btn" on:click=on_undo disabled=move || !pdf_loaded.get()>"取消"</button>
+                    <button class="save-btn" on:click=on_save disabled=move || !pdf_loaded.get()>"保存"</button>
+                </div>
+            </div>
+
+            {move || status_message.get().map(|msg| view! {
+                <div class="status-message">{msg}</div>
+            })}
+
+            <div class="pdf-canvas-container">
+                <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
+                <canvas id="pdf-overlay" class="pdf-overlay" on:click=on_canvas_click></canvas>
+
+                {move || (!pdf_loaded.get()).then(|| view! {
+                    <div class="pdf-placeholder">
+                        <p>"PDFファイルをアップロードしてください"</p>
+                        <p class="hint">"Google DriveからダウンロードしたPDFを編集できます"</p>
+                    </div>
+                })}
+            </div>
+
+            <button class="back-button-float" on:click=on_back>
+                "← 戻る"
+            </button>
         </div>
     }
 }
@@ -3080,6 +3389,14 @@ fn App() -> impl IntoView {
                             url=url
                             doc_key=doc_key
                             contractor_id=contractor_id
+                        />
+                    }.into_view(),
+
+                    ViewMode::PdfEditor { contractor, doc_type, original_url } => view! {
+                        <PdfEditor
+                            contractor=contractor
+                            doc_type=doc_type
+                            original_url=original_url
                         />
                     }.into_view(),
                 }
