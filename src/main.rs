@@ -224,6 +224,127 @@ pub struct Contract {
     pub url: Option<String>,
 }
 
+// ============================================
+// フィールドタイプとMissingField定義
+// ============================================
+
+/// 入力フィールドのタイプ
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldType {
+    /// 日付入力
+    Date,
+    /// テキスト入力
+    Text,
+    /// 署名
+    Signature,
+    /// 選択肢
+    Select,
+    /// チェックボックス
+    Checkbox,
+}
+
+impl FieldType {
+    /// HTML input typeを取得
+    pub fn input_type(&self) -> &'static str {
+        match self {
+            FieldType::Date => "date",
+            FieldType::Text => "text",
+            FieldType::Signature => "text", // 署名は別途処理
+            FieldType::Select => "text",
+            FieldType::Checkbox => "checkbox",
+        }
+    }
+
+    /// プレースホルダーテキストを取得
+    pub fn placeholder(&self) -> &'static str {
+        match self {
+            FieldType::Date => "YYYY-MM-DD",
+            FieldType::Text => "入力してください",
+            FieldType::Signature => "署名",
+            FieldType::Select => "選択してください",
+            FieldType::Checkbox => "",
+        }
+    }
+}
+
+/// フィールドの位置情報（OCRで検出した座標）
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FieldPosition {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// 不足フィールド情報
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MissingField {
+    pub field_name: String,
+    pub field_type: FieldType,
+    pub value: String,
+    pub position: Option<FieldPosition>,
+}
+
+/// OCR結果（簡易版）
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OcrResult {
+    pub text: String,
+    pub pages: Vec<OcrPage>,
+}
+
+/// OCRページ情報
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OcrPage {
+    pub page_number: u32,
+    pub text: String,
+}
+
+impl Default for OcrResult {
+    fn default() -> Self {
+        OcrResult {
+            text: String::new(),
+            pages: Vec::new(),
+        }
+    }
+}
+
+/// OCR結果から不足フィールドを検出
+fn detect_missing_fields(ocr_result: &OcrResult) -> Vec<MissingField> {
+    let mut missing = Vec::new();
+
+    // 日付フィールドのチェック
+    if !ocr_result.text.contains("令和") {
+        missing.push(MissingField {
+            field_name: "日付".to_string(),
+            field_type: FieldType::Date,
+            value: String::new(),
+            position: None,
+        });
+    }
+
+    // 署名フィールドのチェック
+    if !ocr_result.text.contains("印") {
+        missing.push(MissingField {
+            field_name: "代表者印".to_string(),
+            field_type: FieldType::Signature,
+            value: String::new(),
+            position: None,
+        });
+    }
+
+    // 会社名フィールドのチェック
+    if !ocr_result.text.contains("株式会社") && !ocr_result.text.contains("有限会社") {
+        missing.push(MissingField {
+            field_name: "会社名".to_string(),
+            field_type: FieldType::Text,
+            value: String::new(),
+            position: None,
+        });
+    }
+
+    missing
+}
 
 // ============================================
 // ダッシュボードコンポーネント
