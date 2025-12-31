@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from document_prompts import UnknownDocTypeError
+from document_prompts import UnknownDocTypeError, DOC_TYPES
 from gemini_checker import (
     check_pdf_image,
     check_spreadsheet,
@@ -45,15 +45,6 @@ from gemini_checker import (
 app = Flask(__name__)
 CORS(app)  # CORS有効化（WASMからのアクセス用）
 logging.basicConfig(level=logging.INFO)
-
-# サポートする書類タイプ
-DOC_TYPES = [
-    "暴対法誓約書",
-    "作業員名簿",
-    "下請負契約書",
-    "施工体制台帳",
-    "再下請負通知書",
-]
 
 
 @app.route('/health', methods=['GET'])

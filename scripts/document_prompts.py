@@ -198,3 +198,7 @@ def get_spreadsheet_check_prompt(doc_type: str, contractor_name: str, sheet_data
 {data_text}
 ```
 """
+
+
+# サポートする書類タイプ一覧（PROMPTSから自動生成）
+DOC_TYPES = list(PROMPTS.keys())

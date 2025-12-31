@@ -33,16 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from gemini_checker import check_pdf_image, check_spreadsheet, check_multiple_pages
-
-
-# サポートする書類タイプ
-DOC_TYPES = [
-    "暴対法誓約書",
-    "作業員名簿",
-    "下請負契約書",
-    "施工体制台帳",
-    "再下請負通知書",
-]
+from document_prompts import DOC_TYPES
 
 
 def print_result(result: dict, color: bool = True) -> None:

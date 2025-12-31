@@ -12,6 +12,9 @@ from googleapiclient.discovery import build
 
 from document_prompts import get_check_prompt, get_spreadsheet_check_prompt
 
+# Geminiモデル名（モデル変更時はここを更新）
+GEMINI_MODEL_NAME = 'gemini-2.0-flash-exp'
+
 # APIキーのパス設定
 # Windows環境: C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\gemini_api_key.txt
 # Linux環境: 環境変数 GEMINI_API_KEY または カレントディレクトリの credentials/gemini_api_key.txt
@@ -49,7 +52,7 @@ def get_gemini_model() -> genai.GenerativeModel:
     if _model is None:
         api_key = get_api_key()
         genai.configure(api_key=api_key)
-        _model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        _model = genai.GenerativeModel(GEMINI_MODEL_NAME)
     return _model
 
 
