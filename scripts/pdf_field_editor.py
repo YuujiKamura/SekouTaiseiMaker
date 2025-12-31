@@ -161,7 +161,7 @@ class PDFFieldEditor(QMainWindow):
         dest_text_layout = QHBoxLayout()
         dest_text_layout.addWidget(QLabel("テキスト:"))
         self.dest_input = QLineEdit()
-        self.dest_input.setPlaceholderText("例: 三雄建設株式会社")
+        self.dest_input.setPlaceholderText("例: サンプル建設株式会社")
         self.dest_input.textChanged.connect(self.update_preview)
         dest_text_layout.addWidget(self.dest_input)
         dest_layout.addLayout(dest_text_layout)

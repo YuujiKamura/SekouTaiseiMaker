@@ -25,7 +25,7 @@ def main():
 
     for tokens_file in SEKOU_TAISEI_PATH.glob("debug_tokens_*.json"):
         # ファイル名から業者名と書類タイプを抽出
-        # debug_tokens_ユナイト_09_暴対法誓約書.json
+        # debug_tokens_下請A_09_暴対法誓約書.json
         name_parts = tokens_file.stem.replace("debug_tokens_", "").split("_", 1)
         if len(name_parts) >= 2:
             contractor = name_parts[0]
