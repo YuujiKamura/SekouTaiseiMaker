@@ -146,6 +146,102 @@ pub enum CheckMode {
     Date,       // 日付チェック
 }
 
+// ============================================
+// ビューモード
+// ============================================
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewMode {
+    Dashboard,
+    OcrViewer,
+    PdfViewer(String),
+    SpreadsheetViewer(String), // contractor_name_doc_type
+}
+
+impl Default for ViewMode {
+    fn default() -> Self {
+        ViewMode::Dashboard
+    }
+}
+
+// ============================================
+// スプレッドシートビューア
+// ============================================
+
+#[derive(Clone, PartialEq)]
+pub enum SpreadsheetType {
+    GoogleSpreadsheet,
+    Excel,
+    Unknown,
+}
+
+#[derive(Clone)]
+pub struct SpreadsheetViewerContext {
+    pub doc_url: RwSignal<String>,
+    pub doc_type: RwSignal<SpreadsheetType>,
+    pub gemini_check_result: RwSignal<Option<GeminiCheckResult>>,
+    pub is_checking: RwSignal<bool>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GeminiCheckResult {
+    pub status: GeminiCheckStatus,
+    pub messages: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GeminiCheckStatus {
+    Ok,
+    Warning,
+    Error,
+}
+
+fn detect_spreadsheet_type(url: &str) -> SpreadsheetType {
+    if url.contains("docs.google.com/spreadsheets") {
+        SpreadsheetType::GoogleSpreadsheet
+    } else if url.ends_with(".xlsx") || url.ends_with(".xls") {
+        SpreadsheetType::Excel
+    } else {
+        SpreadsheetType::Unknown
+    }
+}
+
+fn open_in_browser(url: &str) {
+    if let Some(window) = web_sys::window() {
+        let _ = window.open_with_url_and_target(url, "_blank");
+    }
+}
+
+// ダミーのGEMINI確認関数（Task Dで実装）
+async fn check_with_gemini(_spreadsheet_id: &str, check_type: &str) -> GeminiCheckResult {
+    // TODO: Task Dで実際のAPI呼び出しを実装
+    // 今はダミーデータを返す
+    gloo::timers::future::TimeoutFuture::new(1000).await;
+
+    match check_type {
+        "作業員名簿" => GeminiCheckResult {
+            status: GeminiCheckStatus::Warning,
+            messages: vec![
+                "✓ 作業員名簿の必須項目がすべて入力されています".to_string(),
+                "⚠ 資格欄に記載漏れの可能性があります".to_string(),
+            ],
+        },
+        "暴対法誓約書" => GeminiCheckResult {
+            status: GeminiCheckStatus::Ok,
+            messages: vec![
+                "✓ 誓約書の形式は適切です".to_string(),
+                "✓ 必要な署名が確認できます".to_string(),
+            ],
+        },
+        _ => GeminiCheckResult {
+            status: GeminiCheckStatus::Ok,
+            messages: vec![
+                "✓ 書類の内容を確認しました".to_string(),
+            ],
+        },
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CheckResult {
     pub contractor_name: String,
@@ -191,6 +287,15 @@ pub struct ProjectContext {
     pub set_check_results: WriteSignal<Vec<CheckResult>>,
     pub edit_mode: ReadSignal<bool>,
     pub set_edit_mode: WriteSignal<bool>,
+    pub view_mode: ReadSignal<ViewMode>,
+    pub set_view_mode: WriteSignal<ViewMode>,
+}
+
+// スプレッドシートビューア用データ
+#[derive(Clone, Default)]
+pub struct SpreadsheetViewerData {
+    pub doc_name: String,
+    pub doc_url: String,
 }
 
 // 標準的な書類リスト
@@ -934,6 +1039,109 @@ fn CheckResultsPanel() -> impl IntoView {
 }
 
 // ============================================
+// スプレッドシートビューアコンポーネント
+// ============================================
+
+#[component]
+fn SpreadsheetViewer(
+    doc_name: String,
+    doc_url: String,
+    on_back: Callback<()>,
+) -> impl IntoView {
+    let doc_type = detect_spreadsheet_type(&doc_url);
+    let (is_checking, set_is_checking) = create_signal(false);
+    let (check_result, set_check_result) = create_signal(None::<GeminiCheckResult>);
+
+    let url_for_open = doc_url.clone();
+    let doc_name_for_check = doc_name.clone();
+    let url_for_check = doc_url.clone();
+
+    let on_open_click = move |_| {
+        open_in_browser(&url_for_open);
+    };
+
+    let on_check_click = move |_| {
+        let doc_name = doc_name_for_check.clone();
+        let url = url_for_check.clone();
+        set_is_checking.set(true);
+        spawn_local(async move {
+            // スプレッドシートIDを抽出（Google Spreadsheetsの場合）
+            let spreadsheet_id = if url.contains("docs.google.com/spreadsheets") {
+                url.split("/d/")
+                    .nth(1)
+                    .and_then(|s| s.split('/').next())
+                    .unwrap_or(&url)
+            } else {
+                &url
+            };
+            let result = check_with_gemini(spreadsheet_id, &doc_name).await;
+            set_check_result.set(Some(result));
+            set_is_checking.set(false);
+        });
+    };
+
+    let type_icon = match doc_type {
+        SpreadsheetType::GoogleSpreadsheet => "📊",
+        SpreadsheetType::Excel => "📗",
+        SpreadsheetType::Unknown => "📄",
+    };
+
+    let type_message = match doc_type {
+        SpreadsheetType::GoogleSpreadsheet => "このファイルはGoogle スプレッドシートです",
+        SpreadsheetType::Excel => "このファイルはExcelファイルです",
+        SpreadsheetType::Unknown => "このファイルはスプレッドシートです",
+    };
+
+    view! {
+        <div class="spreadsheet-viewer">
+            <div class="spreadsheet-header">
+                <button class="back-btn" on:click=move |_| on_back.call(())>"← 戻る"</button>
+                <span class="spreadsheet-doc-name">"書類名: " {doc_name.clone()}</span>
+                <button class="close-btn" on:click=move |_| on_back.call(())>"✕"</button>
+            </div>
+
+            <div class="spreadsheet-content">
+                <span class="spreadsheet-icon">{type_icon}</span>
+                <p class="spreadsheet-message">{type_message}</p>
+
+                <button class="open-button" on:click=on_open_click>
+                    "ブラウザで開く"
+                </button>
+
+                <div class="gemini-section">
+                    <h4>"--- GEMINI確認 ---"</h4>
+                    <button
+                        class="check-button"
+                        on:click=on_check_click
+                        disabled=move || is_checking.get()
+                    >
+                        {move || if is_checking.get() { "確認中..." } else { "内容をチェック" }}
+                    </button>
+
+                    {move || check_result.get().map(|result| {
+                        let status_class = match result.status {
+                            GeminiCheckStatus::Ok => "ok",
+                            GeminiCheckStatus::Warning => "warning",
+                            GeminiCheckStatus::Error => "error",
+                        };
+                        view! {
+                            <div class="check-result-container">
+                                <p class="check-result-label">"確認結果:"</p>
+                                <div class=format!("check-result {}", status_class)>
+                                    {result.messages.into_iter().map(|msg| view! {
+                                        <p class="check-result-message">{msg}</p>
+                                    }).collect_view()}
+                                </div>
+                            </div>
+                        }
+                    })}
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ============================================
 // メインアプリ
 // ============================================
 
@@ -1080,6 +1288,8 @@ fn App() -> impl IntoView {
     let (check_mode, set_check_mode) = create_signal(CheckMode::None);
     let (check_results, set_check_results) = create_signal(Vec::<CheckResult>::new());
     let (edit_mode, set_edit_mode) = create_signal(false);
+    let (view_mode, set_view_mode) = create_signal(ViewMode::Dashboard);
+    let (spreadsheet_data, _set_spreadsheet_data) = create_signal(SpreadsheetViewerData::default());
 
     // コンテキスト提供
     let ctx = ProjectContext {
@@ -1095,6 +1305,8 @@ fn App() -> impl IntoView {
         set_check_results,
         edit_mode,
         set_edit_mode,
+        view_mode,
+        set_view_mode,
     };
     provide_context(ctx.clone());
 
@@ -1336,8 +1548,32 @@ fn App() -> impl IntoView {
             </header>
 
             <main class="container">
-                <Dashboard />
-                <CheckResultsPanel />
+                {move || {
+                    match view_mode.get() {
+                        ViewMode::Dashboard => view! {
+                            <>
+                                <Dashboard />
+                                <CheckResultsPanel />
+                            </>
+                        }.into_view(),
+                        ViewMode::SpreadsheetViewer(ref _id) => {
+                            let data = spreadsheet_data.get();
+                            let on_back = Callback::new(move |_| {
+                                set_view_mode.set(ViewMode::Dashboard);
+                            });
+                            view! {
+                                <SpreadsheetViewer
+                                    doc_name=data.doc_name.clone()
+                                    doc_url=data.doc_url.clone()
+                                    on_back=on_back
+                                />
+                            }.into_view()
+                        },
+                        _ => view! {
+                            <Dashboard />
+                        }.into_view(),
+                    }
+                }}
             </main>
         </div>
     }
