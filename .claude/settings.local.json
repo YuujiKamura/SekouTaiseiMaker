@@ -16,7 +16,10 @@
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(gh run list:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(pyftsubset:*)"
     ]
   }
 }

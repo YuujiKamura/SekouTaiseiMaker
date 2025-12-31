@@ -12,4 +12,4 @@ port = 8080
 [[hooks]]
 stage = "post_build"
 command = "sh"
-command_arguments = ["-c", "mkdir -p dist/data/pdf_images && cp -r data/*.json dist/data/ 2>/dev/null || true && cp -r data/pdf_images/*.png dist/data/pdf_images/ 2>/dev/null || true"]
+command_arguments = ["-c", "mkdir -p dist/data/pdf_images dist/fonts && cp -r data/*.json dist/data/ 2>/dev/null || true && cp -r data/pdf_images/*.png dist/data/pdf_images/ 2>/dev/null || true && cp -r fonts/*.ttf dist/fonts/ 2>/dev/null || true"]
