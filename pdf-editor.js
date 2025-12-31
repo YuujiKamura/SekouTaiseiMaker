@@ -649,13 +649,17 @@ window.PdfEditor = (function() {
                 const fontFamily = annotation.fontFamily || 'gothic';
                 const font = embeddedFonts[fontFamily];
 
-                console.log('Drawing text:', annotation.text, 'at', pdfX, pdfY, 'rotation:', rotation);
+                // テキストの回転角度（ページ回転の逆方向）
+                const textRotation = rotation ? (360 - rotation) * Math.PI / 180 : 0;
+
+                console.log('Drawing text:', annotation.text, 'at', pdfX, pdfY, 'rotation:', rotation, 'textRotation:', textRotation);
                 page.drawText(annotation.text, {
                     x: pdfX,
                     y: pdfY,
                     size: annotation.fontSize,
                     font: font,
-                    color: rgb(r, g, b)
+                    color: rgb(r, g, b),
+                    rotate: PDFLib.degrees(-rotation)
                 });
             }
         }
