@@ -2381,6 +2381,48 @@ button:disabled {
     cursor: not-allowed;
 }
 
+/* 編集ボタン */
+.text-controls .edit-text-btn {
+    background: #FF9800;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.text-controls .edit-text-btn:hover {
+    background: #F57C00;
+}
+
+.text-controls .edit-text-btn:disabled {
+    background: #ccc;
+    color: #666;
+    cursor: not-allowed;
+}
+
+/* 更新ボタン */
+.text-controls .update-text-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.text-controls .update-text-btn:hover {
+    background: #1976D2;
+}
+
+.text-controls .update-text-btn:disabled {
+    background: #ccc;
+    color: #666;
+    cursor: not-allowed;
+}
+
 /* 削除ボタン */
 .text-controls .delete-btn {
     background: #f44336;
@@ -2475,6 +2517,12 @@ button:disabled {
     justify-content: center;
     align-items: flex-start;
     padding: 20px;
+    outline: none;
+}
+
+.pdf-canvas-container:focus {
+    outline: 2px solid #2196F3;
+    outline-offset: -2px;
 }
 
 .pdf-canvas {

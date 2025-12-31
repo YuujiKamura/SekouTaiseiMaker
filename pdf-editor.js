@@ -213,6 +213,47 @@ window.PdfEditor = (function() {
     }
 
     /**
+     * 選択中の注釈を矢印キーで移動
+     */
+    function nudgeSelected(dx, dy) {
+        if (!selectedId) return false;
+
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        if (!ann) return false;
+
+        ann.x += dx;
+        ann.y += dy;
+        redrawAnnotations();
+        return true;
+    }
+
+    /**
+     * 選択中の注釈のテキストを取得
+     */
+    function getSelectedText() {
+        if (!selectedId) return null;
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        return ann ? ann.text : null;
+    }
+
+    /**
+     * 選択中の注釈のテキストを更新
+     */
+    function updateSelectedText(newText) {
+        if (!selectedId) return false;
+        const ann = textAnnotations.find(a => a.id === selectedId);
+        if (!ann) return false;
+
+        ann.text = newText;
+        // 幅を再計算
+        const dims = measureText(newText, ann.fontSize);
+        ann.width = dims.width;
+        ann.height = dims.height;
+        redrawAnnotations();
+        return true;
+    }
+
+    /**
      * ドラッグ開始
      */
     function startDrag(screenX, screenY) {
@@ -477,6 +518,9 @@ window.PdfEditor = (function() {
         selectAnnotation,
         deselectAll,
         deleteSelected,
+        nudgeSelected,
+        getSelectedText,
+        updateSelectedText,
         startDrag,
         updateDrag,
         endDrag,

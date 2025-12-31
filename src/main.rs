@@ -2128,6 +2128,73 @@ fn PdfEditor(
         set_status_message.set(Some("削除しました".to_string()));
     };
 
+    // 編集（選択中テキストを入力欄に読み込み）
+    let on_edit_text = move |_| {
+        if let Some(text) = call_js_editor("getSelectedText") {
+            if let Some(text_str) = text.as_string() {
+                set_input_text.set(text_str);
+                set_edit_mode.set("add".to_string()); // 追加モードに切り替え
+                call_js_editor_with_args("setEditMode", &[wasm_bindgen::JsValue::from_str("add")]);
+                set_status_message.set(Some("テキストを編集中...入力欄を修正して「更新」をクリック".to_string()));
+            }
+        }
+    };
+
+    // 更新（選択中テキストを入力欄の内容で更新）
+    let on_update_text = move |_| {
+        let text = input_text.get();
+        if text.is_empty() {
+            return;
+        }
+        call_js_editor_with_args("updateSelectedText", &[wasm_bindgen::JsValue::from_str(&text)]);
+        set_status_message.set(Some("テキストを更新しました".to_string()));
+    };
+
+    // キーボードイベント（矢印キーで微調整、Deleteで削除）
+    let on_keydown = move |ev: web_sys::KeyboardEvent| {
+        if !has_selection.get() {
+            return;
+        }
+
+        let key = ev.key();
+        match key.as_str() {
+            "ArrowUp" => {
+                ev.prevent_default();
+                call_js_editor_with_args("nudgeSelected", &[
+                    wasm_bindgen::JsValue::from_f64(0.0),
+                    wasm_bindgen::JsValue::from_f64(-1.0)
+                ]);
+            }
+            "ArrowDown" => {
+                ev.prevent_default();
+                call_js_editor_with_args("nudgeSelected", &[
+                    wasm_bindgen::JsValue::from_f64(0.0),
+                    wasm_bindgen::JsValue::from_f64(1.0)
+                ]);
+            }
+            "ArrowLeft" => {
+                ev.prevent_default();
+                call_js_editor_with_args("nudgeSelected", &[
+                    wasm_bindgen::JsValue::from_f64(-1.0),
+                    wasm_bindgen::JsValue::from_f64(0.0)
+                ]);
+            }
+            "ArrowRight" => {
+                ev.prevent_default();
+                call_js_editor_with_args("nudgeSelected", &[
+                    wasm_bindgen::JsValue::from_f64(1.0),
+                    wasm_bindgen::JsValue::from_f64(0.0)
+                ]);
+            }
+            "Delete" => {
+                call_js_editor("deleteSelected");
+                set_has_selection.set(false);
+                set_status_message.set(Some("削除しました".to_string()));
+            }
+            _ => {}
+        }
+    };
+
     // PDFファイル読み込み
     let on_file_load = move |ev: web_sys::Event| {
         let input: web_sys::HtmlInputElement = event_target(&ev);
@@ -2233,7 +2300,7 @@ fn PdfEditor(
                     wasm_bindgen::JsValue::from_str(&text)
                 ]);
 
-                set_input_text.set(String::new());
+                // テキストはクリアしない（同じテキストを連続配置できるように）
                 set_status_message.set(Some("テキストを追加しました".to_string()));
             } else {
                 // 選択モード: クリック位置の注釈を取得
@@ -2433,6 +2500,20 @@ fn PdfEditor(
                     </select>
                     <button class="undo-btn" on:click=on_undo disabled=move || !pdf_loaded.get()>"取消"</button>
                     <button
+                        class="edit-text-btn"
+                        on:click=on_edit_text
+                        disabled=move || !pdf_loaded.get() || !has_selection.get()
+                    >
+                        "編集"
+                    </button>
+                    <button
+                        class="update-text-btn"
+                        on:click=on_update_text
+                        disabled=move || !pdf_loaded.get() || !has_selection.get()
+                    >
+                        "更新"
+                    </button>
+                    <button
                         class="delete-btn"
                         on:click=on_delete
                         disabled=move || !pdf_loaded.get() || !has_selection.get()
@@ -2447,7 +2528,11 @@ fn PdfEditor(
                 <div class="status-message">{msg}</div>
             })}
 
-            <div class="pdf-canvas-container">
+            <div
+                class="pdf-canvas-container"
+                tabindex="0"
+                on:keydown=on_keydown
+            >
                 <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
                 <canvas
                     id="pdf-overlay"
