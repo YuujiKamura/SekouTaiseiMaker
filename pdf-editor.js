@@ -31,6 +31,79 @@ window.PdfEditor = (function() {
     let dragOffsetY = 0;
     let annotationIdCounter = 0;
 
+    // PDF識別用
+    let currentPdfId = null;
+    const STORAGE_PREFIX = 'pdfEditor_annotations_';
+
+    /**
+     * PDFのユニークIDを生成（サイズ + 先頭バイトのハッシュ）
+     */
+    function generatePdfId(bytes) {
+        const size = bytes.length;
+        // 先頭1024バイトの簡易ハッシュ
+        let hash = 0;
+        const sampleSize = Math.min(1024, bytes.length);
+        for (let i = 0; i < sampleSize; i++) {
+            hash = ((hash << 5) - hash) + bytes[i];
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return `pdf_${size}_${Math.abs(hash)}`;
+    }
+
+    /**
+     * 注釈をlocalStorageに保存
+     */
+    function saveAnnotationsToStorage() {
+        if (!currentPdfId) return;
+        try {
+            const data = {
+                annotations: textAnnotations,
+                annotationIdCounter: annotationIdCounter,
+                savedAt: Date.now()
+            };
+            localStorage.setItem(STORAGE_PREFIX + currentPdfId, JSON.stringify(data));
+        } catch (e) {
+            console.warn('Failed to save annotations to localStorage:', e);
+        }
+    }
+
+    /**
+     * localStorageから注釈を読み込み
+     */
+    function loadAnnotationsFromStorage() {
+        if (!currentPdfId) return false;
+        try {
+            const stored = localStorage.getItem(STORAGE_PREFIX + currentPdfId);
+            if (stored) {
+                const data = JSON.parse(stored);
+                textAnnotations = data.annotations || [];
+                annotationIdCounter = data.annotationIdCounter || textAnnotations.length;
+                return true;
+            }
+        } catch (e) {
+            console.warn('Failed to load annotations from localStorage:', e);
+        }
+        return false;
+    }
+
+    /**
+     * 現在のPDFの注釈をクリア（localStorageからも削除）
+     */
+    function clearAnnotations() {
+        textAnnotations = [];
+        selectedId = null;
+        hoveredId = null;
+        annotationIdCounter = 0;
+        if (currentPdfId) {
+            try {
+                localStorage.removeItem(STORAGE_PREFIX + currentPdfId);
+            } catch (e) {
+                console.warn('Failed to clear annotations from localStorage:', e);
+            }
+        }
+        redrawAnnotations();
+    }
+
     // PDF.js worker設定
     if (typeof pdfjsLib !== 'undefined') {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -49,11 +122,17 @@ window.PdfEditor = (function() {
                     pdfDoc = await loadingTask.promise;
                     totalPages = pdfDoc.numPages;
                     currentPage = 1;
-                    textAnnotations = [];
                     selectedId = null;
                     hoveredId = null;
-                    annotationIdCounter = 0;
-                    resolve({ totalPages: totalPages });
+
+                    // PDF IDを生成し、保存済み注釈があれば読み込む
+                    currentPdfId = generatePdfId(pdfBytes);
+                    if (!loadAnnotationsFromStorage()) {
+                        textAnnotations = [];
+                        annotationIdCounter = 0;
+                    }
+
+                    resolve({ totalPages: totalPages, annotationsRestored: textAnnotations.length > 0 });
                 } catch (err) {
                     reject(err);
                 }
@@ -80,12 +159,17 @@ window.PdfEditor = (function() {
             pdfDoc = await loadingTask.promise;
             totalPages = pdfDoc.numPages;
             currentPage = 1;
-            textAnnotations = [];
             selectedId = null;
             hoveredId = null;
-            annotationIdCounter = 0;
 
-            return { totalPages: totalPages };
+            // PDF IDを生成し、保存済み注釈があれば読み込む
+            currentPdfId = generatePdfId(pdfBytes);
+            if (!loadAnnotationsFromStorage()) {
+                textAnnotations = [];
+                annotationIdCounter = 0;
+            }
+
+            return { totalPages: totalPages, annotationsRestored: textAnnotations.length > 0 };
         } catch (err) {
             throw err;
         }
@@ -176,6 +260,7 @@ window.PdfEditor = (function() {
         };
         textAnnotations.push(annotation);
         redrawAnnotations();
+        saveAnnotationsToStorage();
         return annotation;
     }
 
@@ -233,6 +318,7 @@ window.PdfEditor = (function() {
             textAnnotations.splice(idx, 1);
             selectedId = null;
             redrawAnnotations();
+            saveAnnotationsToStorage();
             return true;
         }
         return false;
@@ -250,6 +336,7 @@ window.PdfEditor = (function() {
         ann.x += dx;
         ann.y += dy;
         redrawAnnotations();
+        saveAnnotationsToStorage();
         return true;
     }
 
@@ -276,6 +363,7 @@ window.PdfEditor = (function() {
         ann.width = dims.width;
         ann.height = dims.height;
         redrawAnnotations();
+        saveAnnotationsToStorage();
         return true;
     }
 
@@ -293,6 +381,7 @@ window.PdfEditor = (function() {
         ann.width = dims.width;
         ann.height = dims.height;
         redrawAnnotations();
+        saveAnnotationsToStorage();
         return true;
     }
 
@@ -310,6 +399,7 @@ window.PdfEditor = (function() {
         ann.width = dims.width;
         ann.height = dims.height;
         redrawAnnotations();
+        saveAnnotationsToStorage();
         return true;
     }
 
@@ -348,6 +438,9 @@ window.PdfEditor = (function() {
      * ドラッグ終了
      */
     function endDrag() {
+        if (isDragging) {
+            saveAnnotationsToStorage();
+        }
         isDragging = false;
     }
 
@@ -438,6 +531,7 @@ window.PdfEditor = (function() {
                 selectedId = null;
             }
             redrawAnnotations();
+            saveAnnotationsToStorage();
         }
     }
 
@@ -608,6 +702,7 @@ window.PdfEditor = (function() {
         renderPage,
         addTextAnnotation,
         undoLastAnnotation,
+        clearAnnotations,
         savePdf,
         downloadPdf,
         uploadPdfToDrive,
