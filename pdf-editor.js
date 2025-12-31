@@ -496,6 +496,50 @@ window.PdfEditor = (function() {
     }
 
     /**
+     * PDFをGoogle Driveにアップロード
+     * @param {string} gasUrl - GASのWebアプリURL
+     * @param {string} originalFileId - 元ファイルのID
+     * @param {string} newFileName - 新しいファイル名（別名保存時）
+     * @param {boolean} overwrite - 上書きするかどうか
+     * @returns {Promise<Object>} アップロード結果
+     */
+    async function uploadPdfToDrive(gasUrl, originalFileId, newFileName, overwrite) {
+        const pdfBytesModified = await savePdf();
+        if (!pdfBytesModified) {
+            throw new Error('PDF data is empty');
+        }
+
+        // Uint8ArrayをBase64に変換
+        let binary = '';
+        const bytes = new Uint8Array(pdfBytesModified);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+
+        // GASにPOSTリクエスト
+        const response = await fetch(gasUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'uploadPdf',
+                base64: base64,
+                originalFileId: originalFileId,
+                newFileName: newFileName,
+                overwrite: overwrite
+            })
+        });
+
+        const result = await response.json();
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        return result;
+    }
+
+    /**
      * 設定変更
      */
     function setFontSize(size) {
@@ -566,6 +610,7 @@ window.PdfEditor = (function() {
         undoLastAnnotation,
         savePdf,
         downloadPdf,
+        uploadPdfToDrive,
         setFontSize,
         setFontFamily,
         setColor,

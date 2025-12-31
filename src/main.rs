@@ -1957,6 +1957,11 @@ fn PdfEditor(
     let (edit_mode, set_edit_mode) = create_signal("add".to_string()); // "add" | "select"
     let (has_selection, set_has_selection) = create_signal(false);
     let (is_loading, set_is_loading) = create_signal(false);
+    let (show_save_dialog, set_show_save_dialog) = create_signal(false);
+    let (save_as_name, set_save_as_name) = create_signal(String::new());
+    let (is_saving, set_is_saving) = create_signal(false);
+    let (original_file_id, set_original_file_id) = create_signal(None::<String>);
+    let (original_file_name, set_original_file_name) = create_signal(String::new());
 
     let contractor_display = contractor.clone();
     let doc_type_display = doc_type.clone();
@@ -1968,6 +1973,9 @@ fn PdfEditor(
         if let (Some(gas_url), Some(file_id)) = (get_gas_url(), extract_file_id(&url_for_auto_load)) {
             set_is_loading.set(true);
             set_status_message.set(Some("PDFを読み込み中...".to_string()));
+
+            // ファイルIDを保存
+            set_original_file_id.set(Some(file_id.clone()));
 
             let fetch_url = format!("{}?action=fetchPdf&fileId={}", gas_url, file_id);
 
@@ -2034,6 +2042,20 @@ fn PdfEditor(
                 let base64 = js_sys::Reflect::get(&json, &wasm_bindgen::JsValue::from_str("base64"))
                     .ok()
                     .and_then(|v| v.as_string());
+
+                // ファイル名を取得して保存
+                let file_name = js_sys::Reflect::get(&json, &wasm_bindgen::JsValue::from_str("fileName"))
+                    .ok()
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_else(|| "document.pdf".to_string());
+                set_original_file_name.set(file_name.clone());
+                // 別名保存用のデフォルト名を設定
+                let save_name = if file_name.ends_with(".pdf") {
+                    file_name.replace(".pdf", "_edited.pdf")
+                } else {
+                    format!("{}_edited.pdf", file_name)
+                };
+                set_save_as_name.set(save_name);
 
                 if let Some(base64_data) = base64 {
                     // PdfEditor.loadPdfFromBase64を呼び出し
@@ -2378,13 +2400,124 @@ fn PdfEditor(
         }
     };
 
-    // PDF保存
-    let on_save = {
-        let doc_type_for_save = doc_type.clone();
-        move |_| {
-            let filename = format!("{}_edited.pdf", doc_type_for_save);
+    // PDF保存ダイアログを表示
+    let on_save = move |_| {
+        set_show_save_dialog.set(true);
+    };
+
+    // ダイアログを閉じる
+    let on_cancel_save = move |_| {
+        set_show_save_dialog.set(false);
+    };
+
+    // 上書き保存
+    let on_overwrite_save = move |_| {
+        if let (Some(gas_url), Some(file_id)) = (get_gas_url(), original_file_id.get()) {
+            set_is_saving.set(true);
+            set_status_message.set(Some("上書き保存中...".to_string()));
+            let file_name = original_file_name.get();
 
             spawn_local(async move {
+                if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
+                    if let Ok(upload_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("uploadPdfToDrive")) {
+                        if let Ok(f) = upload_fn.dyn_into::<js_sys::Function>() {
+                            let promise = f.call4(
+                                &editor,
+                                &wasm_bindgen::JsValue::from_str(&gas_url),
+                                &wasm_bindgen::JsValue::from_str(&file_id),
+                                &wasm_bindgen::JsValue::from_str(&file_name),
+                                &wasm_bindgen::JsValue::from_bool(true)  // overwrite = true
+                            );
+                            if let Ok(p) = promise {
+                                if let Ok(promise) = p.dyn_into::<js_sys::Promise>() {
+                                    match wasm_bindgen_futures::JsFuture::from(promise).await {
+                                        Ok(_result) => {
+                                            set_status_message.set(Some("Driveに上書き保存しました".to_string()));
+                                        }
+                                        Err(e) => {
+                                            let error_msg = js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("message"))
+                                                .ok()
+                                                .and_then(|v| v.as_string())
+                                                .unwrap_or_else(|| "保存に失敗しました".to_string());
+                                            set_status_message.set(Some(format!("エラー: {}", error_msg)));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                set_is_saving.set(false);
+                set_show_save_dialog.set(false);
+            });
+        } else {
+            set_status_message.set(Some("GAS未設定またはファイルID不明".to_string()));
+        }
+    };
+
+    // 別名保存
+    let on_save_as = move |_| {
+        if let (Some(gas_url), Some(file_id)) = (get_gas_url(), original_file_id.get()) {
+            let new_name = save_as_name.get();
+            if new_name.is_empty() {
+                set_status_message.set(Some("ファイル名を入力してください".to_string()));
+                return;
+            }
+
+            set_is_saving.set(true);
+            set_status_message.set(Some("別名で保存中...".to_string()));
+
+            spawn_local(async move {
+                if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
+                    if let Ok(upload_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("uploadPdfToDrive")) {
+                        if let Ok(f) = upload_fn.dyn_into::<js_sys::Function>() {
+                            let promise = f.call4(
+                                &editor,
+                                &wasm_bindgen::JsValue::from_str(&gas_url),
+                                &wasm_bindgen::JsValue::from_str(&file_id),
+                                &wasm_bindgen::JsValue::from_str(&new_name),
+                                &wasm_bindgen::JsValue::from_bool(false)  // overwrite = false
+                            );
+                            if let Ok(p) = promise {
+                                if let Ok(promise) = p.dyn_into::<js_sys::Promise>() {
+                                    match wasm_bindgen_futures::JsFuture::from(promise).await {
+                                        Ok(_result) => {
+                                            set_status_message.set(Some(format!("「{}」として保存しました", new_name)));
+                                        }
+                                        Err(e) => {
+                                            let error_msg = js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("message"))
+                                                .ok()
+                                                .and_then(|v| v.as_string())
+                                                .unwrap_or_else(|| "保存に失敗しました".to_string());
+                                            set_status_message.set(Some(format!("エラー: {}", error_msg)));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                set_is_saving.set(false);
+                set_show_save_dialog.set(false);
+            });
+        } else {
+            set_status_message.set(Some("GAS未設定またはファイルID不明".to_string()));
+        }
+    };
+
+    // ローカルダウンロード（フォールバック）
+    let on_download_local = move |_| {
+        // 保存済みのファイル名から取得（original_file_nameがあれば使う）
+        let original = original_file_name.get();
+        let filename = if original.is_empty() {
+            "document_edited.pdf".to_string()
+        } else if original.ends_with(".pdf") {
+            original.replace(".pdf", "_edited.pdf")
+        } else {
+            format!("{}_edited.pdf", original)
+        };
+
+        spawn_local(async move {
             if let Ok(editor) = js_sys::Reflect::get(&js_sys::global(), &wasm_bindgen::JsValue::from_str("PdfEditor")) {
                 if let Ok(download_fn) = js_sys::Reflect::get(&editor, &wasm_bindgen::JsValue::from_str("downloadPdf")) {
                     if let Ok(f) = download_fn.dyn_into::<js_sys::Function>() {
@@ -2397,9 +2530,9 @@ fn PdfEditor(
                     }
                 }
             }
-            set_status_message.set(Some("PDFを保存しました".to_string()));
+            set_status_message.set(Some("ローカルに保存しました".to_string()));
+            set_show_save_dialog.set(false);
         });
-        }
     };
 
     // ページ移動
@@ -2614,6 +2747,86 @@ fn PdfEditor(
             <button class="back-button-float" on:click=on_back>
                 "← 戻る"
             </button>
+
+            // 保存ダイアログ
+            <Show when=move || show_save_dialog.get() fallback=|| ()>
+                <div class="save-dialog-overlay">
+                    <div class="save-dialog">
+                        <h3>"PDFを保存"</h3>
+
+                        <div class="save-dialog-info">
+                            <p><strong>"元ファイル: "</strong>{move || original_file_name.get()}</p>
+                        </div>
+
+                        <div class="save-dialog-options">
+                            // 上書き保存
+                            <div class="save-option">
+                                <button
+                                    class="save-option-btn overwrite"
+                                    on:click=on_overwrite_save
+                                    disabled=move || is_saving.get() || original_file_id.get().is_none()
+                                >
+                                    "上書き保存"
+                                </button>
+                                <p class="save-option-desc">"元のファイルを編集内容で置き換えます"</p>
+                            </div>
+
+                            // 別名保存
+                            <div class="save-option">
+                                <div class="save-as-row">
+                                    <input
+                                        type="text"
+                                        class="save-as-input"
+                                        placeholder="新しいファイル名.pdf"
+                                        prop:value=move || save_as_name.get()
+                                        on:input=move |ev| set_save_as_name.set(event_target_value(&ev))
+                                        disabled=move || is_saving.get()
+                                    />
+                                    <button
+                                        class="save-option-btn save-as"
+                                        on:click=on_save_as
+                                        disabled=move || is_saving.get() || original_file_id.get().is_none()
+                                    >
+                                        "別名保存"
+                                    </button>
+                                </div>
+                                <p class="save-option-desc">"同じフォルダに新しいファイルとして保存"</p>
+                            </div>
+
+                            <hr class="save-dialog-divider" />
+
+                            // ローカルダウンロード
+                            <div class="save-option">
+                                <button
+                                    class="save-option-btn local"
+                                    on:click=on_download_local
+                                    disabled=move || is_saving.get()
+                                >
+                                    "ローカルにダウンロード"
+                                </button>
+                                <p class="save-option-desc">"このデバイスに保存（Driveには保存されません）"</p>
+                            </div>
+                        </div>
+
+                        <div class="save-dialog-footer">
+                            <button
+                                class="cancel-btn"
+                                on:click=on_cancel_save
+                                disabled=move || is_saving.get()
+                            >
+                                "キャンセル"
+                            </button>
+                        </div>
+
+                        <Show when=move || is_saving.get() fallback=|| ()>
+                            <div class="save-dialog-saving">
+                                <div class="loading-spinner"></div>
+                                <span>"保存中..."</span>
+                            </div>
+                        </Show>
+                    </div>
+                </div>
+            </Show>
         </div>
     }
 }

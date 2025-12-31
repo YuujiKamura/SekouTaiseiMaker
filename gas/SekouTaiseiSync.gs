@@ -27,6 +27,12 @@ function doPost(e) {
       return jsonResponse(result);
     }
 
+    // PDF アップロード（上書き or 別名保存）
+    if (data.action === 'uploadPdf') {
+      const result = uploadPdfToDrive(data);
+      return jsonResponse(result);
+    }
+
     return jsonResponse({ error: 'Unknown action' });
   } catch (err) {
     return jsonResponse({ error: err.message });
@@ -51,6 +57,16 @@ function doGet(e) {
         return jsonResponse({ error: 'fileId is required' });
       }
       const result = fetchPdfAsBase64(fileId);
+      return jsonResponse(result);
+    }
+
+    // ファイル情報取得（フォルダID等）
+    if (action === 'getFileInfo') {
+      const fileId = e.parameter.fileId;
+      if (!fileId) {
+        return jsonResponse({ error: 'fileId is required' });
+      }
+      const result = getFileInfo(fileId);
       return jsonResponse(result);
     }
 
@@ -95,6 +111,73 @@ function fetchPdfAsBase64(fileId) {
     };
   } catch (err) {
     return { error: 'Failed to fetch PDF: ' + err.message };
+  }
+}
+
+// ファイル情報取得（フォルダID、ファイル名）
+function getFileInfo(fileId) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const parents = file.getParents();
+    let folderId = null;
+    if (parents.hasNext()) {
+      folderId = parents.next().getId();
+    }
+    return {
+      success: true,
+      fileId: fileId,
+      fileName: file.getName(),
+      folderId: folderId
+    };
+  } catch (err) {
+    return { error: 'Failed to get file info: ' + err.message };
+  }
+}
+
+// PDFをGoogle Driveにアップロード
+function uploadPdfToDrive(data) {
+  try {
+    const base64 = data.base64;
+    const originalFileId = data.originalFileId;
+    const newFileName = data.newFileName;
+    const overwrite = data.overwrite;
+
+    // Base64をBlobに変換
+    const decoded = Utilities.base64Decode(base64);
+    const blob = Utilities.newBlob(decoded, 'application/pdf', newFileName);
+
+    // 元ファイルのフォルダを取得
+    const originalFile = DriveApp.getFileById(originalFileId);
+    const parents = originalFile.getParents();
+    let folder = null;
+    if (parents.hasNext()) {
+      folder = parents.next();
+    } else {
+      folder = DriveApp.getRootFolder();
+    }
+
+    let savedFile;
+    if (overwrite) {
+      // 上書き: 元ファイルの内容を置き換え
+      // Drive APIでは直接上書きできないため、削除→新規作成
+      const originalName = originalFile.getName();
+      originalFile.setTrashed(true);
+      savedFile = folder.createFile(blob);
+      savedFile.setName(originalName);
+    } else {
+      // 別名保存: 同じフォルダに新規作成
+      savedFile = folder.createFile(blob);
+      savedFile.setName(newFileName);
+    }
+
+    return {
+      success: true,
+      fileId: savedFile.getId(),
+      fileName: savedFile.getName(),
+      fileUrl: savedFile.getUrl()
+    };
+  } catch (err) {
+    return { error: 'Failed to upload PDF: ' + err.message };
   }
 }
 
