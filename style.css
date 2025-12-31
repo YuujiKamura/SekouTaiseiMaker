@@ -149,6 +149,33 @@ body {
     min-width: 100px;
 }
 
+/* 共有セクション */
+.share-section {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+}
+
+.share-btn {
+    background: #2196F3;
+    white-space: nowrap;
+}
+
+.share-btn:hover {
+    background: #1976D2;
+}
+
+.share-url {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #666;
+    background: #f9f9f9;
+}
+
 /* 業者グリッド */
 .contractors-grid {
     display: grid;

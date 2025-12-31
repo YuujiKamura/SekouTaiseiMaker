@@ -5,6 +5,46 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, RequestMode, Response};
 use std::collections::HashMap;
 
+// Base64エンコード/デコード（web_sys経由）
+fn encode_base64(data: &str) -> Option<String> {
+    let window = web_sys::window()?;
+    window.btoa(data).ok()
+}
+
+fn decode_base64(data: &str) -> Option<String> {
+    let window = web_sys::window()?;
+    window.atob(data).ok()
+}
+
+// URLハッシュからデータを取得
+fn get_hash_data() -> Option<ProjectData> {
+    let window = web_sys::window()?;
+    let hash = window.location().hash().ok()?;
+    if hash.starts_with("#data=") {
+        let encoded = &hash[6..];
+        let json = decode_base64(encoded)?;
+        serde_json::from_str(&json).ok()
+    } else {
+        None
+    }
+}
+
+// URLハッシュにデータを設定
+fn set_hash_data(project: &ProjectData) -> Option<String> {
+    let json = serde_json::to_string(project).ok()?;
+    let encoded = encode_base64(&json)?;
+    let window = web_sys::window()?;
+    let location = window.location();
+    let base_url = format!(
+        "{}//{}{}",
+        location.protocol().ok()?,
+        location.host().ok()?,
+        location.pathname().ok()?
+    );
+    let share_url = format!("{}#data={}", base_url, encoded);
+    Some(share_url)
+}
+
 // ============================================
 // 施工体制ダッシュボード用データ構造
 // ============================================
@@ -100,6 +140,17 @@ fn Dashboard() -> impl IntoView {
     let (project, set_project) = create_signal(None::<ProjectData>);
     let (loading, set_loading) = create_signal(false);
     let (error_msg, set_error_msg) = create_signal(None::<String>);
+    let (share_url, set_share_url) = create_signal(None::<String>);
+    let (copy_success, set_copy_success) = create_signal(false);
+
+    // ページ読み込み時にURLハッシュからデータを取得
+    create_effect(move |_| {
+        if project.get().is_none() {
+            if let Some(data) = get_hash_data() {
+                set_project.set(Some(data));
+            }
+        }
+    });
 
     // JSONファイル読み込み
     let on_file_change = move |ev: web_sys::Event| {
@@ -149,6 +200,26 @@ fn Dashboard() -> impl IntoView {
         });
     };
 
+    // 共有URL生成
+    let generate_share_url = move |_| {
+        if let Some(p) = project.get() {
+            if let Some(url) = set_hash_data(&p) {
+                set_share_url.set(Some(url.clone()));
+                // クリップボードにコピー
+                if let Some(window) = web_sys::window() {
+                    let clipboard = window.navigator().clipboard();
+                    let _ = clipboard.write_text(&url);
+                    set_copy_success.set(true);
+                    // 2秒後にリセット
+                    spawn_local(async move {
+                        gloo::timers::future::TimeoutFuture::new(2000).await;
+                        set_copy_success.set(false);
+                    });
+                }
+            }
+        }
+    };
+
     view! {
         <div class="dashboard">
             <h2>"施工体制ダッシュボード"</h2>
@@ -168,6 +239,14 @@ fn Dashboard() -> impl IntoView {
             })}
 
             {move || project.get().map(|p| view! {
+                <div class="share-section">
+                    <button on:click=generate_share_url class="share-btn">
+                        {move || if copy_success.get() { "コピーしました!" } else { "共有URLを生成" }}
+                    </button>
+                    {move || share_url.get().map(|url| view! {
+                        <input type="text" class="share-url" readonly value=url />
+                    })}
+                </div>
                 <ProjectView project=p />
             })}
         </div>
