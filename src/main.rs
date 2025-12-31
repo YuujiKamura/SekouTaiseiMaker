@@ -46,6 +46,37 @@ fn set_hash_data(project: &ProjectData) -> Option<String> {
 }
 
 // ============================================
+// LocalStorageキャッシュ
+// ============================================
+
+const CACHE_KEY: &str = "sekou_taisei_cache";
+
+fn save_to_cache(project: &ProjectData) {
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            if let Ok(json) = serde_json::to_string(project) {
+                let _ = storage.set_item(CACHE_KEY, &json);
+            }
+        }
+    }
+}
+
+fn load_from_cache() -> Option<ProjectData> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    let json = storage.get_item(CACHE_KEY).ok()??;
+    serde_json::from_str(&json).ok()
+}
+
+fn clear_cache() {
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            let _ = storage.remove_item(CACHE_KEY);
+        }
+    }
+}
+
+// ============================================
 // 施工体制ダッシュボード用データ構造
 // ============================================
 
@@ -149,82 +180,32 @@ pub struct SheetData {
 // ダッシュボードコンポーネント
 // ============================================
 
+// グローバルなプロジェクトデータ用Context
+#[derive(Clone)]
+pub struct ProjectContext {
+    pub project: ReadSignal<Option<ProjectData>>,
+    pub set_project: WriteSignal<Option<ProjectData>>,
+    pub loading: ReadSignal<bool>,
+    pub set_loading: WriteSignal<bool>,
+    pub error_msg: ReadSignal<Option<String>>,
+    pub set_error_msg: WriteSignal<Option<String>>,
+}
+
 #[component]
 fn Dashboard() -> impl IntoView {
-    let (project, set_project) = create_signal(None::<ProjectData>);
-    let (loading, set_loading) = create_signal(false);
-    let (error_msg, set_error_msg) = create_signal(None::<String>);
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
     let (share_url, set_share_url) = create_signal(None::<String>);
     let (copy_success, set_copy_success) = create_signal(false);
 
-    // ページ読み込み時にURLハッシュからデータを取得
-    create_effect(move |_| {
-        if project.get().is_none() {
-            if let Some(data) = get_hash_data() {
-                set_project.set(Some(data));
-            }
-        }
-    });
-
-    // JSONファイル読み込み
-    let on_file_change = move |ev: web_sys::Event| {
-        let input: HtmlInputElement = event_target(&ev);
-        if let Some(files) = input.files() {
-            if let Some(file) = files.get(0) {
-                let reader = FileReader::new().unwrap();
-                let reader_clone = reader.clone();
-
-                let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                    if let Ok(result) = reader_clone.result() {
-                        if let Some(text) = result.as_string() {
-                            match serde_json::from_str::<ProjectData>(&text) {
-                                Ok(data) => {
-                                    set_project.set(Some(data));
-                                    set_error_msg.set(None);
-                                }
-                                Err(e) => {
-                                    set_error_msg.set(Some(format!("JSON解析エラー: {}", e)));
-                                }
-                            }
-                        }
-                    }
-                }) as Box<dyn FnMut(_)>);
-
-                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
-                onload.forget();
-                let _ = reader.read_as_text(&file);
-            }
-        }
-    };
-
-    // サンプルデータ読み込み
-    let load_sample = move |_| {
-        spawn_local(async move {
-            set_loading.set(true);
-            match fetch_json("data/sample_project.json").await {
-                Ok(data) => {
-                    set_project.set(Some(data));
-                    set_error_msg.set(None);
-                }
-                Err(e) => {
-                    set_error_msg.set(Some(e));
-                }
-            }
-            set_loading.set(false);
-        });
-    };
-
     // 共有URL生成
     let generate_share_url = move |_| {
-        if let Some(p) = project.get() {
+        if let Some(p) = ctx.project.get() {
             if let Some(url) = set_hash_data(&p) {
                 set_share_url.set(Some(url.clone()));
-                // クリップボードにコピー
                 if let Some(window) = web_sys::window() {
                     let clipboard = window.navigator().clipboard();
                     let _ = clipboard.write_text(&url);
                     set_copy_success.set(true);
-                    // 2秒後にリセット
                     spawn_local(async move {
                         gloo::timers::future::TimeoutFuture::new(2000).await;
                         set_copy_success.set(false);
@@ -236,23 +217,11 @@ fn Dashboard() -> impl IntoView {
 
     view! {
         <div class="dashboard">
-            <h2>"施工体制ダッシュボード"</h2>
-
-            <div class="load-section">
-                <div class="upload-area">
-                    <h3>"プロジェクトJSON"</h3>
-                    <input type="file" accept=".json" on:change=on_file_change />
-                </div>
-                <button on:click=load_sample disabled=move || loading.get()>
-                    {move || if loading.get() { "読込中..." } else { "サンプル読込" }}
-                </button>
-            </div>
-
-            {move || error_msg.get().map(|e| view! {
+            {move || ctx.error_msg.get().map(|e| view! {
                 <p class="status error">{e}</p>
             })}
 
-            {move || project.get().map(|p| view! {
+            {move || ctx.project.get().map(|p| view! {
                 <div class="share-section">
                     <button on:click=generate_share_url class="share-btn">
                         {move || if copy_success.get() { "コピーしました!" } else { "共有URLを生成" }}
@@ -262,6 +231,13 @@ fn Dashboard() -> impl IntoView {
                     })}
                 </div>
                 <ProjectView project=p />
+            })}
+
+            {move || ctx.project.get().is_none().then(|| view! {
+                <div class="empty-state">
+                    <p>"プロジェクトデータがありません"</p>
+                    <p class="hint">"右上のメニューからJSONを読み込んでください"</p>
+                </div>
             })}
         </div>
     }
@@ -415,6 +391,99 @@ enum Tab {
 #[component]
 fn App() -> impl IntoView {
     let (current_tab, set_current_tab) = create_signal(Tab::Dashboard);
+    let (menu_open, set_menu_open) = create_signal(false);
+
+    // プロジェクトデータのグローバル状態
+    let (project, set_project) = create_signal(None::<ProjectData>);
+    let (loading, set_loading) = create_signal(false);
+    let (error_msg, set_error_msg) = create_signal(None::<String>);
+
+    // コンテキスト提供
+    let ctx = ProjectContext {
+        project,
+        set_project,
+        loading,
+        set_loading,
+        error_msg,
+        set_error_msg,
+    };
+    provide_context(ctx.clone());
+
+    // 初期読み込み: URLハッシュ → キャッシュ の順で試行
+    create_effect(move |_| {
+        if project.get().is_none() {
+            if let Some(data) = get_hash_data() {
+                set_project.set(Some(data.clone()));
+                save_to_cache(&data);
+            } else if let Some(data) = load_from_cache() {
+                set_project.set(Some(data));
+            }
+        }
+    });
+
+    // プロジェクトが更新されたらキャッシュに保存
+    create_effect(move |_| {
+        if let Some(p) = project.get() {
+            save_to_cache(&p);
+        }
+    });
+
+    // JSONファイル読み込み
+    let on_file_change = move |ev: web_sys::Event| {
+        let input: HtmlInputElement = event_target(&ev);
+        if let Some(files) = input.files() {
+            if let Some(file) = files.get(0) {
+                let reader = FileReader::new().unwrap();
+                let reader_clone = reader.clone();
+
+                let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
+                    if let Ok(result) = reader_clone.result() {
+                        if let Some(text) = result.as_string() {
+                            match serde_json::from_str::<ProjectData>(&text) {
+                                Ok(data) => {
+                                    set_project.set(Some(data));
+                                    set_error_msg.set(None);
+                                }
+                                Err(e) => {
+                                    set_error_msg.set(Some(format!("JSON解析エラー: {}", e)));
+                                }
+                            }
+                        }
+                    }
+                }) as Box<dyn FnMut(_)>);
+
+                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+                onload.forget();
+                let _ = reader.read_as_text(&file);
+            }
+        }
+        set_menu_open.set(false);
+    };
+
+    // サンプルデータ読み込み
+    let load_sample = move |_| {
+        set_menu_open.set(false);
+        spawn_local(async move {
+            set_loading.set(true);
+            match fetch_json("data/sample_project.json").await {
+                Ok(data) => {
+                    set_project.set(Some(data));
+                    set_error_msg.set(None);
+                }
+                Err(e) => {
+                    set_error_msg.set(Some(e));
+                }
+            }
+            set_loading.set(false);
+        });
+    };
+
+    // キャッシュクリア
+    let on_clear_cache = move |_| {
+        clear_cache();
+        set_project.set(None);
+        set_menu_open.set(false);
+    };
 
     view! {
         <div class="app">
@@ -434,6 +503,28 @@ fn App() -> impl IntoView {
                         "シート解析"
                     </button>
                 </nav>
+
+                // 三点メニュー
+                <div class="menu-container">
+                    <button class="menu-btn" on:click=move |_| set_menu_open.update(|v| *v = !*v)>
+                        "⋮"
+                    </button>
+                    {move || menu_open.get().then(|| view! {
+                        <div class="menu-dropdown">
+                            <label class="menu-item file-input-label">
+                                "JSONを読み込む"
+                                <input type="file" accept=".json" on:change=on_file_change style="display:none" />
+                            </label>
+                            <button class="menu-item" on:click=load_sample disabled=move || loading.get()>
+                                {move || if loading.get() { "読込中..." } else { "サンプル読込" }}
+                            </button>
+                            <hr class="menu-divider" />
+                            <button class="menu-item danger" on:click=on_clear_cache>
+                                "キャッシュクリア"
+                            </button>
+                        </div>
+                    })}
+                </div>
             </header>
 
             <main class="container">
