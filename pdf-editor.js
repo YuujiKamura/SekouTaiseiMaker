@@ -536,11 +536,26 @@ window.PdfEditor = (function() {
     }
 
     /**
+     * PDFが有効かチェック（%PDF-で始まるか）
+     */
+    function isValidPdf(bytes) {
+        if (!bytes || bytes.length < 5) return false;
+        // Check for PDF magic bytes: %PDF-
+        return bytes[0] === 0x25 && bytes[1] === 0x50 &&
+               bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2D;
+    }
+
+    /**
      * PDFを保存（テキスト追加済み）
      */
     async function savePdf() {
         if (!pdfBytes || textAnnotations.length === 0) {
             return pdfBytes;
+        }
+
+        // PDFが有効かチェック
+        if (!isValidPdf(pdfBytes)) {
+            throw new Error('PDFが読み込まれていないか、無効なPDFです。ページをリロードしてPDFを再度開いてください。');
         }
 
         const { PDFDocument, rgb, StandardFonts } = PDFLib;
