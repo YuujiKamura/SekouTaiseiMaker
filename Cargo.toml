@@ -13,7 +13,9 @@ web-sys = { version = "0.3", features = [
     "Window", "Document", "HtmlInputElement", "HtmlElement", "FileReader", "File", "FileList",
     "Blob", "BlobPropertyBag", "Url",
     "Request", "RequestInit", "RequestMode", "Response", "Headers",
-    "Navigator", "Clipboard", "Location", "Storage"
+    "Navigator", "Clipboard", "Location", "Storage",
+    "HtmlCanvasElement", "CanvasRenderingContext2d", "HtmlImageElement",
+    "MouseEvent", "DomRect"
 ] }
 js-sys = "0.3"
 serde = { version = "1.0", features = ["derive"] }
