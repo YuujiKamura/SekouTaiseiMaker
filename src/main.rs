@@ -499,12 +499,18 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                                         url: u.clone(),
                                     });
                                 }
-                                DocFileType::GoogleSpreadsheet | DocFileType::Excel => {
+                                DocFileType::GoogleSpreadsheet => {
                                     set_view_mode.set(ViewMode::SpreadsheetViewer {
                                         contractor: contractor_name_click.clone(),
                                         doc_type: label_click.clone(),
                                         url: u.clone(),
                                     });
+                                }
+                                DocFileType::Excel => {
+                                    // Excelは新規タブで開く（ローカルファイルのため埋め込み不可）
+                                    if let Some(window) = web_sys::window() {
+                                        let _ = window.open_with_url_and_target(u, "_blank");
+                                    }
                                 }
                                 _ => {
                                     // 不明な場合はURLを新規タブで開く
