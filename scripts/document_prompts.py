@@ -2,6 +2,12 @@
 書類タイプ別のチェックプロンプト
 """
 
+
+class UnknownDocTypeError(Exception):
+    """未知の書類タイプエラー"""
+    pass
+
+
 PROMPTS = {
     "暴対法誓約書": """
 あなたは建設業の書類チェック専門家です。
@@ -141,8 +147,37 @@ PROMPTS = {
 
 
 def get_check_prompt(doc_type: str, contractor_name: str) -> str:
-    """書類タイプに応じたプロンプトを取得"""
-    template = PROMPTS.get(doc_type, PROMPTS.get("暴対法誓約書"))
+    """
+    書類タイプに応じたプロンプトを取得
+
+    Args:
+        doc_type: 書類タイプ
+        contractor_name: 業者名
+
+    Raises:
+        UnknownDocTypeError: 未知の書類タイプの場合
+    """
+    if doc_type not in PROMPTS:
+        raise UnknownDocTypeError(
+            f"未知の書類タイプ: {doc_type}. "
+            f"対応タイプ: {list(PROMPTS.keys())}"
+        )
+    template = PROMPTS[doc_type]
+    return template.format(contractor_name=contractor_name)
+
+
+def get_check_prompt_safe(doc_type: str, contractor_name: str, default: str = "暴対法誓約書") -> str:
+    """
+    書類タイプに応じたプロンプトを取得（フォールバックあり）
+
+    明示的にフォールバックが必要な場合のみ使用
+
+    Args:
+        doc_type: 書類タイプ
+        contractor_name: 業者名
+        default: フォールバック先の書類タイプ
+    """
+    template = PROMPTS.get(doc_type, PROMPTS[default])
     return template.format(contractor_name=contractor_name)
 
 

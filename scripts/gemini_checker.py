@@ -10,6 +10,8 @@ from typing import Optional
 import google.generativeai as genai
 from googleapiclient.discovery import build
 
+from document_prompts import get_check_prompt, get_spreadsheet_check_prompt
+
 # APIキーのパス設定
 # Windows環境: C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\gemini_api_key.txt
 # Linux環境: 環境変数 GEMINI_API_KEY または カレントディレクトリの credentials/gemini_api_key.txt
@@ -18,6 +20,9 @@ API_KEY_PATHS = [
     Path.home() / "credentials" / "gemini_api_key.txt",
     Path(__file__).parent.parent / "credentials" / "gemini_api_key.txt",
 ]
+
+# モジュールレベルでモデルをキャッシュ（シングルトン）
+_model: Optional[genai.GenerativeModel] = None
 
 
 def get_api_key() -> str:
@@ -38,11 +43,19 @@ def get_api_key() -> str:
     )
 
 
+def get_gemini_model() -> genai.GenerativeModel:
+    """Geminiモデルのシングルトンインスタンスを取得"""
+    global _model
+    if _model is None:
+        api_key = get_api_key()
+        genai.configure(api_key=api_key)
+        _model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    return _model
+
+
 def init_gemini():
-    """GEMINI APIを初期化"""
-    api_key = get_api_key()
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-2.0-flash-exp')
+    """GEMINI APIを初期化（後方互換性のため残す）"""
+    return get_gemini_model()
 
 
 def image_to_base64(image_path: Path) -> str:
@@ -63,6 +76,34 @@ def get_mime_type(image_path: Path) -> str:
         '.pdf': 'application/pdf',
     }
     return mime_types.get(ext, 'image/png')
+
+
+def parse_gemini_response(response_text: str) -> dict:
+    """
+    Geminiレスポンスをパース
+
+    Args:
+        response_text: Geminiからのレスポンステキスト
+
+    Returns:
+        パース済みの結果辞書
+    """
+    # JSONブロックを抽出（```json ... ``` 形式に対応）
+    text = response_text
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+
+    try:
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        return {
+            "status": "error",
+            "summary": "レスポンスの解析に失敗",
+            "items": [{"type": "info", "message": response_text[:500]}],
+            "missing_fields": []
+        }
 
 
 def check_pdf_image(
@@ -93,10 +134,7 @@ def check_pdf_image(
             ]
         }
     """
-    model = init_gemini()
-
-    # 書類タイプに応じたプロンプトを取得
-    from document_prompts import get_check_prompt
+    model = get_gemini_model()
     prompt = get_check_prompt(doc_type, contractor_name)
 
     # 画像を読み込み
@@ -112,24 +150,7 @@ def check_pdf_image(
         }
     ])
 
-    # レスポンスをパース
-    try:
-        # JSONブロックを抽出（```json ... ``` 形式に対応）
-        text = response.text
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-        result = json.loads(text.strip())
-    except json.JSONDecodeError:
-        result = {
-            "status": "error",
-            "summary": "レスポンスの解析に失敗",
-            "items": [{"type": "info", "message": response.text}],
-            "missing_fields": []
-        }
-
-    return result
+    return parse_gemini_response(response.text)
 
 
 def read_sheet_data(spreadsheet_id: str, sheet_name: Optional[str] = None) -> list:
@@ -186,30 +207,12 @@ def check_spreadsheet(
     # Sheets APIでデータ取得
     sheet_data = read_sheet_data(spreadsheet_id, sheet_name)
 
-    model = init_gemini()
-
-    from document_prompts import get_spreadsheet_check_prompt
+    model = get_gemini_model()
     prompt = get_spreadsheet_check_prompt(doc_type, contractor_name, sheet_data)
 
     response = model.generate_content(prompt)
 
-    try:
-        # JSONブロックを抽出（```json ... ``` 形式に対応）
-        text = response.text
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-        result = json.loads(text.strip())
-    except json.JSONDecodeError:
-        result = {
-            "status": "error",
-            "summary": "レスポンスの解析に失敗",
-            "items": [{"type": "info", "message": response.text}],
-            "missing_fields": []
-        }
-
-    return result
+    return parse_gemini_response(response.text)
 
 
 def check_multiple_pages(
@@ -228,15 +231,13 @@ def check_multiple_pages(
     Returns:
         check_pdf_imageと同じ形式（全ページを統合）
     """
-    model = init_gemini()
-
-    from document_prompts import get_check_prompt
+    model = get_gemini_model()
     prompt = get_check_prompt(doc_type, contractor_name)
 
     # 全ページの画像を準備
     content = [prompt + f"\n\n※この書類は{len(image_paths)}ページあります。全ページを確認してください。"]
 
-    for i, image_path in enumerate(image_paths, 1):
+    for image_path in image_paths:
         image_data = image_to_base64(image_path)
         mime_type = get_mime_type(image_path)
         content.append({
@@ -247,22 +248,39 @@ def check_multiple_pages(
     # GEMINI API呼び出し
     response = model.generate_content(content)
 
-    try:
-        text = response.text
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-        result = json.loads(text.strip())
-    except json.JSONDecodeError:
-        result = {
-            "status": "error",
-            "summary": "レスポンスの解析に失敗",
-            "items": [{"type": "info", "message": response.text}],
-            "missing_fields": []
-        }
+    return parse_gemini_response(response.text)
 
-    return result
+
+def check_image_base64(
+    image_data: str,
+    doc_type: str,
+    contractor_name: str,
+    mime_type: str = 'image/png'
+) -> dict:
+    """
+    Base64エンコードされた画像をGEMINIでチェック
+
+    Args:
+        image_data: Base64エンコードされた画像データ
+        doc_type: 書類タイプ
+        contractor_name: 業者名
+        mime_type: MIMEタイプ（デフォルト: image/png）
+
+    Returns:
+        check_pdf_imageと同じ形式
+    """
+    model = get_gemini_model()
+    prompt = get_check_prompt(doc_type, contractor_name)
+
+    response = model.generate_content([
+        prompt,
+        {
+            "mime_type": mime_type,
+            "data": image_data
+        }
+    ])
+
+    return parse_gemini_response(response.text)
 
 
 if __name__ == '__main__':
