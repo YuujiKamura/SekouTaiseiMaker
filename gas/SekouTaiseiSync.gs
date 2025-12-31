@@ -288,3 +288,46 @@ function testLoad() {
   const result = loadProject();
   console.log(result);
 }
+
+// Drive権限テスト用（初回実行で権限付与ダイアログが表示される）
+function testDriveAccess() {
+  try {
+    // ルートフォルダにアクセスして権限を確認
+    const rootFolder = DriveApp.getRootFolder();
+    console.log('Drive権限OK: ルートフォルダ名 = ' + rootFolder.getName());
+
+    // ファイル作成・削除テスト
+    const testFile = rootFolder.createFile('test_permission.txt', 'テスト');
+    console.log('ファイル作成OK: ' + testFile.getId());
+    testFile.setTrashed(true);
+    console.log('ファイル削除OK');
+
+    return { success: true, message: 'Drive権限が正常に付与されています' };
+  } catch (err) {
+    console.log('Drive権限エラー: ' + err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// PDFアップロードテスト（ファイルIDを指定）
+function testUpload(fileId) {
+  if (!fileId) {
+    console.log('使い方: testUpload("ファイルID")');
+    return;
+  }
+
+  try {
+    const file = DriveApp.getFileById(fileId);
+    console.log('ファイル取得OK: ' + file.getName());
+
+    const parents = file.getParents();
+    if (parents.hasNext()) {
+      console.log('親フォルダ: ' + parents.next().getName());
+    }
+
+    return { success: true, fileName: file.getName() };
+  } catch (err) {
+    console.log('エラー: ' + err.message);
+    return { success: false, error: err.message };
+  }
+}
