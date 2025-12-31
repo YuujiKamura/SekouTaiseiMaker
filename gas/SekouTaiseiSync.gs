@@ -19,6 +19,7 @@ const CONFIG = {
 // POSTリクエスト処理（データ保存）
 function doPost(e) {
   try {
+    // CORSヘッダー付きレスポンス用
     const data = JSON.parse(e.postData.contents);
 
     if (data.action === 'save') {
@@ -30,6 +31,12 @@ function doPost(e) {
   } catch (err) {
     return jsonResponse({ error: err.message });
   }
+}
+
+// OPTIONSリクエスト処理（CORSプリフライト対応）
+function doOptions(e) {
+  return ContentService.createTextOutput('')
+    .setMimeType(ContentService.MimeType.TEXT);
 }
 
 // GETリクエスト処理（データ取得）

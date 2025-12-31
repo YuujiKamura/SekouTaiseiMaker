@@ -207,12 +207,15 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
         project,
     }).map_err(|e| format!("JSON変換失敗: {:?}", e))?;
 
+    // GASはCORSプリフライトに対応しないため、text/plainで送信
+    // （Content-Type: application/jsonだとプリフライトが発生する）
     let opts = RequestInit::new();
     opts.set_method("POST");
     opts.set_body(&JsValue::from_str(&body));
+    opts.set_mode(web_sys::RequestMode::Cors);
 
     let headers = web_sys::Headers::new().map_err(|_| "Headers作成失敗")?;
-    headers.set("Content-Type", "application/json").map_err(|_| "Header設定失敗")?;
+    headers.set("Content-Type", "text/plain").map_err(|_| "Header設定失敗")?;
     opts.set_headers(&headers);
 
     let request = Request::new_with_str_and_init(&gas_url, &opts)
