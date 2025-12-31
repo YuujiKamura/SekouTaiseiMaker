@@ -78,6 +78,180 @@ fn clear_cache() {
 }
 
 // ============================================
+// GAS (Google Apps Script) 連携
+// ============================================
+
+const GAS_URL_KEY: &str = "sekou_taisei_gas_url";
+
+/// GAS URLを保存
+fn save_gas_url(url: &str) {
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            let _ = storage.set_item(GAS_URL_KEY, url);
+        }
+    }
+}
+
+/// GAS URLを取得
+fn get_gas_url() -> Option<String> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    let url = storage.get_item(GAS_URL_KEY).ok()??;
+    if url.is_empty() { None } else { Some(url) }
+}
+
+/// GAS URLをクリア
+fn clear_gas_url() {
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            let _ = storage.remove_item(GAS_URL_KEY);
+        }
+    }
+}
+
+/// URLパラメータからGAS URLを読み込む (?gas=xxx)
+fn init_gas_from_url_params() -> Option<String> {
+    let window = web_sys::window()?;
+    let search = window.location().search().ok()?;
+    if search.starts_with("?gas=") {
+        let encoded = &search[5..];
+        // URLデコード
+        let decoded = js_sys::decode_uri_component(encoded).ok()?.as_string()?;
+        save_gas_url(&decoded);
+        // URLからパラメータを削除
+        let pathname = window.location().pathname().ok()?;
+        let hash = window.location().hash().ok().unwrap_or_default();
+        let _ = window.history().unwrap().replace_state_with_url(
+            &JsValue::NULL,
+            "",
+            Some(&format!("{}{}", pathname, hash))
+        );
+        Some(decoded)
+    } else {
+        None
+    }
+}
+
+/// 共有URL生成（GAS URL付き）
+fn generate_gas_share_url() -> Option<String> {
+    let gas_url = get_gas_url()?;
+    let window = web_sys::window()?;
+    let location = window.location();
+    let base_url = format!(
+        "{}//{}{}",
+        location.protocol().ok()?,
+        location.host().ok()?,
+        location.pathname().ok()?
+    );
+    let encoded = js_sys::encode_uri_component(&gas_url).as_string()?;
+    Some(format!("{}?gas={}", base_url, encoded))
+}
+
+/// GASからプロジェクトデータを取得
+async fn fetch_from_gas() -> Result<ProjectData, String> {
+    let gas_url = get_gas_url().ok_or("GAS URLが設定されていません")?;
+
+    let opts = RequestInit::new();
+    opts.set_method("GET");
+
+    let request = Request::new_with_str_and_init(&gas_url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    if !resp.ok() {
+        return Err(format!("APIエラー: {}", resp.status()));
+    }
+
+    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
+
+    // GASレスポンス形式: { project: ProjectData, timestamp: string }
+    #[derive(Deserialize)]
+    struct GasResponse {
+        project: Option<ProjectData>,
+        #[allow(dead_code)]
+        timestamp: Option<String>,
+        error: Option<String>,
+    }
+
+    let response: GasResponse = serde_wasm_bindgen::from_value(json)
+        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
+
+    if let Some(err) = response.error {
+        return Err(err);
+    }
+
+    response.project.ok_or("プロジェクトデータがありません".to_string())
+}
+
+/// GASにプロジェクトデータを保存
+async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
+    let gas_url = get_gas_url().ok_or("GAS URLが設定されていません")?;
+
+    #[derive(Serialize)]
+    struct SaveRequest<'a> {
+        action: &'static str,
+        project: &'a ProjectData,
+    }
+
+    let body = serde_json::to_string(&SaveRequest {
+        action: "save",
+        project,
+    }).map_err(|e| format!("JSON変換失敗: {:?}", e))?;
+
+    let opts = RequestInit::new();
+    opts.set_method("POST");
+    opts.set_body(&JsValue::from_str(&body));
+
+    let headers = web_sys::Headers::new().map_err(|_| "Headers作成失敗")?;
+    headers.set("Content-Type", "application/json").map_err(|_| "Header設定失敗")?;
+    opts.set_headers(&headers);
+
+    let request = Request::new_with_str_and_init(&gas_url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    if !resp.ok() {
+        return Err(format!("APIエラー: {}", resp.status()));
+    }
+
+    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
+
+    #[derive(Deserialize)]
+    struct SaveResponse {
+        success: Option<bool>,
+        timestamp: Option<String>,
+        error: Option<String>,
+    }
+
+    let response: SaveResponse = serde_wasm_bindgen::from_value(json)
+        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
+
+    if let Some(err) = response.error {
+        return Err(err);
+    }
+
+    Ok(response.timestamp.unwrap_or_else(|| "保存完了".to_string()))
+}
+
+// ============================================
 // APIクライアント設定
 // ============================================
 
@@ -2416,6 +2590,13 @@ fn App() -> impl IntoView {
     let (menu_open, set_menu_open) = create_signal(false);
     let (copy_success, set_copy_success) = create_signal(false);
 
+    // GAS設定ダイアログ
+    let (show_gas_dialog, set_show_gas_dialog) = create_signal(false);
+    let (gas_url_input, set_gas_url_input) = create_signal(String::new());
+    let (gas_connected, set_gas_connected) = create_signal(get_gas_url().is_some());
+    let (gas_syncing, set_gas_syncing) = create_signal(false);
+    let (gas_message, set_gas_message) = create_signal(None::<String>);
+
     // プロジェクトデータのグローバル状態
     let (project, set_project) = create_signal(None::<ProjectData>);
     let (loading, set_loading) = create_signal(false);
@@ -2479,6 +2660,26 @@ fn App() -> impl IntoView {
             _ => set_api_connected.set(false),
         }
     });
+
+    // GAS URLパラメータ初期化 (?gas=xxx)
+    if init_gas_from_url_params().is_some() {
+        set_gas_connected.set(true);
+        // GASからデータを取得
+        spawn_local(async move {
+            set_gas_syncing.set(true);
+            match fetch_from_gas().await {
+                Ok(data) => {
+                    set_project.set(Some(data.clone()));
+                    save_to_cache(&data);
+                    set_gas_message.set(Some("シートからデータを読み込みました".to_string()));
+                }
+                Err(e) => {
+                    set_gas_message.set(Some(format!("読み込みエラー: {}", e)));
+                }
+            }
+            set_gas_syncing.set(false);
+        });
+    }
 
     // 初期読み込み: URLハッシュ → キャッシュ の順で試行
     create_effect(move |_| {
@@ -2800,6 +3001,77 @@ fn App() -> impl IntoView {
                                 {move || if copy_success.get() { "URLをコピーしました!" } else { "共有URLを生成" }}
                             </button>
                             <hr class="menu-divider" />
+                            // GAS連携
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                set_gas_url_input.set(get_gas_url().unwrap_or_default());
+                                set_show_gas_dialog.set(true);
+                            }>
+                                {move || if gas_connected.get() { "シート設定 (接続中)" } else { "シート連携設定" }}
+                            </button>
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                if let Some(url) = generate_gas_share_url() {
+                                    if let Some(window) = web_sys::window() {
+                                        let clipboard = window.navigator().clipboard();
+                                        let promise = clipboard.write_text(&url);
+                                        spawn_local(async move {
+                                            match JsFuture::from(promise).await {
+                                                Ok(_) => {
+                                                    set_gas_message.set(Some("共有URLをコピーしました".to_string()));
+                                                }
+                                                Err(_) => {
+                                                    let _ = window.alert_with_message(&format!("共有URL:\n{}", url));
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    set_gas_message.set(Some("シート連携が未設定です".to_string()));
+                                }
+                            } disabled=move || !gas_connected.get()>
+                                "シート共有URLをコピー"
+                            </button>
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                if project.get().is_some() {
+                                    spawn_local(async move {
+                                        set_gas_syncing.set(true);
+                                        let p = project.get().unwrap();
+                                        match sync_to_gas(&p).await {
+                                            Ok(ts) => {
+                                                set_gas_message.set(Some(format!("保存完了: {}", ts)));
+                                            }
+                                            Err(e) => {
+                                                set_gas_message.set(Some(format!("保存エラー: {}", e)));
+                                            }
+                                        }
+                                        set_gas_syncing.set(false);
+                                    });
+                                }
+                            } disabled=move || !gas_connected.get() || project.get().is_none() || gas_syncing.get()>
+                                {move || if gas_syncing.get() { "保存中..." } else { "シートに保存" }}
+                            </button>
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                spawn_local(async move {
+                                    set_gas_syncing.set(true);
+                                    match fetch_from_gas().await {
+                                        Ok(data) => {
+                                            set_project.set(Some(data.clone()));
+                                            save_to_cache(&data);
+                                            set_gas_message.set(Some("シートからデータを読み込みました".to_string()));
+                                        }
+                                        Err(e) => {
+                                            set_gas_message.set(Some(format!("読み込みエラー: {}", e)));
+                                        }
+                                    }
+                                    set_gas_syncing.set(false);
+                                });
+                            } disabled=move || !gas_connected.get() || gas_syncing.get()>
+                                {move || if gas_syncing.get() { "読み込み中..." } else { "シートから読込" }}
+                            </button>
+                            <hr class="menu-divider" />
                             <a class="menu-item" href="https://github.com/YuujiKamura/SekouTaiseiMaker" target="_blank" rel="noopener">
                                 "GitHub リポジトリ ↗"
                             </a>
@@ -2851,6 +3123,88 @@ fn App() -> impl IntoView {
                     }.into_view(),
                 }
             }}
+
+            // GASメッセージ通知
+            {move || gas_message.get().map(|msg| view! {
+                <div class="gas-toast" on:click=move |_| set_gas_message.set(None)>
+                    {msg}
+                </div>
+            })}
+
+            // GAS設定ダイアログ
+            {move || show_gas_dialog.get().then(|| view! {
+                <div class="gas-dialog-overlay" on:click=move |_| set_show_gas_dialog.set(false)>
+                    <div class="gas-dialog" on:click=move |e| e.stop_propagation()>
+                        <div class="gas-dialog-header">
+                            <h3>"シート連携設定"</h3>
+                            <button class="close-btn" on:click=move |_| set_show_gas_dialog.set(false)>"×"</button>
+                        </div>
+                        <div class="gas-dialog-body">
+                            <div class="gas-step">
+                                <span class="step-num">"1"</span>
+                                <div class="step-content">
+                                    <p class="step-title">"Google スプレッドシートを作成"</p>
+                                    <p class="step-desc">"拡張機能 → Apps Script を開く"</p>
+                                </div>
+                            </div>
+                            <div class="gas-step">
+                                <span class="step-num">"2"</span>
+                                <div class="step-content">
+                                    <p class="step-title">"GASコードを貼り付け"</p>
+                                    <a href="https://github.com/YuujiKamura/SekouTaiseiMaker/blob/main/gas/SekouTaiseiSync.gs"
+                                       target="_blank" rel="noopener" class="gas-link">
+                                        "GASコードを開く ↗"
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="gas-step">
+                                <span class="step-num">"3"</span>
+                                <div class="step-content">
+                                    <p class="step-title">"ウェブアプリとしてデプロイ"</p>
+                                    <p class="step-desc">"アクセス: 全員 → デプロイ → URLをコピー"</p>
+                                </div>
+                            </div>
+                            <div class="gas-step">
+                                <span class="step-num">"4"</span>
+                                <div class="step-content">
+                                    <p class="step-title">"URLを貼り付け"</p>
+                                    <input
+                                        type="text"
+                                        class="gas-url-input"
+                                        placeholder="https://script.google.com/macros/s/..."
+                                        prop:value=move || gas_url_input.get()
+                                        on:input=move |ev| {
+                                            let value = event_target_value(&ev);
+                                            set_gas_url_input.set(value);
+                                        }
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="gas-dialog-footer">
+                            {move || gas_connected.get().then(|| view! {
+                                <button class="gas-btn danger" on:click=move |_| {
+                                    clear_gas_url();
+                                    set_gas_connected.set(false);
+                                    set_gas_url_input.set(String::new());
+                                    set_gas_message.set(Some("連携を解除しました".to_string()));
+                                }>"連携解除"</button>
+                            })}
+                            <button class="gas-btn primary" on:click=move |_| {
+                                let url = gas_url_input.get();
+                                if !url.is_empty() && url.starts_with("https://script.google.com/") {
+                                    save_gas_url(&url);
+                                    set_gas_connected.set(true);
+                                    set_show_gas_dialog.set(false);
+                                    set_gas_message.set(Some("シート連携を設定しました".to_string()));
+                                } else {
+                                    set_gas_message.set(Some("正しいGAS URLを入力してください".to_string()));
+                                }
+                            }>"保存"</button>
+                        </div>
+                    </div>
+                </div>
+            })}
         </div>
     }
 }
