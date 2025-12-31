@@ -659,7 +659,7 @@ window.PdfEditor = (function() {
                     size: annotation.fontSize,
                     font: font,
                     color: rgb(r, g, b),
-                    rotate: PDFLib.degrees(-rotation)
+                    rotate: PDFLib.degrees(rotation)
                 });
             }
         }
