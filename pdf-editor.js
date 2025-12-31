@@ -41,10 +41,10 @@ window.PdfEditor = (function() {
         gothic: null
     };
 
-    // 日本語フォントURL (fontsource CDN - 検証済み)
+    // 日本語フォントURL (Google Fonts TTF - pdf-lib互換)
     const FONT_URLS = {
-        gothic: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-jp@5.1.1/files/noto-sans-jp-japanese-400-normal.woff2',
-        mincho: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-jp@5.1.0/files/noto-serif-jp-japanese-400-normal.woff2'
+        gothic: 'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf',
+        mincho: 'https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf'
     };
 
     /**
