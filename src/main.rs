@@ -296,10 +296,10 @@ fn ProjectView(project: ProjectData) -> impl IntoView {
                 </div>
             </div>
 
-            // 契約書類セクション
+            // 下請施工体制セクション
             {(!project.contracts.is_empty()).then(|| view! {
                 <div class="contracts-section">
-                    <h4>"契約書類"</h4>
+                    <h4>"下請施工体制"</h4>
                     <div class="contracts-list">
                         {project.contracts.into_iter().map(|c| view! {
                             <div class="contract-item">
