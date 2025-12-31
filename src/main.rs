@@ -124,6 +124,16 @@ pub struct Contractor {
     pub docs: HashMap<String, DocStatus>,
 }
 
+/// AIチェック結果データ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckResultData {
+    pub status: String,       // "ok", "warning", "error"
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub details: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocStatus {
     pub status: bool,
@@ -137,6 +147,10 @@ pub struct DocStatus {
     pub valid_from: Option<String>,  // 有効期間開始 (YYYY-MM-DD)
     #[serde(default)]
     pub valid_until: Option<String>, // 有効期限 (YYYY-MM-DD)
+    #[serde(default)]
+    pub check_result: Option<CheckResultData>, // AIチェック結果
+    #[serde(default)]
+    pub last_checked: Option<String>,          // 最終チェック日時 (ISO 8601)
 }
 
 // ============================================
@@ -147,8 +161,8 @@ pub struct DocStatus {
 pub enum ViewMode {
     Dashboard,
     OcrViewer,
-    PdfViewer { contractor: String, doc_type: String, url: String },
-    SpreadsheetViewer { contractor: String, doc_type: String, url: String },
+    PdfViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
+    SpreadsheetViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
 }
 
 impl Default for ViewMode {
@@ -662,7 +676,19 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
     let complete = contractor.docs.values().filter(|d| d.status).count();
     let is_complete = complete == total;
 
+    // チェック状況の集計
+    let checked_count = contractor.docs.values()
+        .filter(|d| d.check_result.is_some())
+        .count();
+    let warning_count = contractor.docs.values()
+        .filter(|d| d.check_result.as_ref().map(|r| r.status == "warning").unwrap_or(false))
+        .count();
+    let error_count = contractor.docs.values()
+        .filter(|d| d.check_result.as_ref().map(|r| r.status == "error").unwrap_or(false))
+        .count();
+
     let contractor_name = contractor.name.clone();
+    let contractor_id = contractor.id.clone();
 
     // ドキュメントをソートして表示
     let mut docs: Vec<_> = contractor.docs.into_iter().collect();
@@ -673,7 +699,23 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
             <div class="contractor-header">
                 <h4>{contractor.name}</h4>
                 <span class="role">{contractor.role}</span>
-                <span class="count">{complete}"/" {total}</span>
+
+                <div class="header-stats">
+                    <span class="count">{complete}"/" {total}</span>
+
+                    // チェック状況バッジ
+                    {(checked_count > 0).then(|| view! {
+                        <span class="checked-stats">
+                            {(error_count > 0).then(|| view! {
+                                <span class="stat-error" title="要対応">"!" {error_count}</span>
+                            })}
+                            {(warning_count > 0).then(|| view! {
+                                <span class="stat-warning" title="要確認">"⚠" {warning_count}</span>
+                            })}
+                            <span class="stat-checked" title="チェック済み">"📋" {checked_count}</span>
+                        </span>
+                    })}
+                </div>
             </div>
 
             <div class="doc-list">
@@ -683,9 +725,24 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let has_url = status.url.is_some();
                     let url = status.url.clone();
 
+                    // チェック結果からバッジを決定
+                    let check_badge = status.check_result.as_ref().map(|r| {
+                        match r.status.as_str() {
+                            "ok" => ("✓", "badge-ok", "チェック済み"),
+                            "warning" => ("⚠", "badge-warning", "要確認"),
+                            "error" => ("!", "badge-error", "要対応"),
+                            _ => ("?", "badge-unknown", "不明"),
+                        }
+                    });
+
+                    let last_checked = status.last_checked.clone();
+
+                    // クリック用の変数クローン
                     let contractor_name_click = contractor_name.clone();
                     let label_click = label.clone();
                     let url_click = url.clone();
+                    let key_click = key.clone();
+                    let contractor_id_click = contractor_id.clone();
                     let set_view_mode = ctx.set_view_mode;
 
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
@@ -698,20 +755,18 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                                         contractor: contractor_name_click.clone(),
                                         doc_type: label_click.clone(),
                                         url: u.clone(),
+                                        doc_key: key_click.clone(),
+                                        contractor_id: contractor_id_click.clone(),
                                     });
                                 }
-                                DocFileType::GoogleSpreadsheet => {
+                                DocFileType::GoogleSpreadsheet | DocFileType::Excel => {
                                     set_view_mode.set(ViewMode::SpreadsheetViewer {
                                         contractor: contractor_name_click.clone(),
                                         doc_type: label_click.clone(),
                                         url: u.clone(),
+                                        doc_key: key_click.clone(),
+                                        contractor_id: contractor_id_click.clone(),
                                     });
-                                }
-                                DocFileType::Excel => {
-                                    // Excelは新規タブで開く（ローカルファイルのため埋め込み不可）
-                                    if let Some(window) = web_sys::window() {
-                                        let _ = window.open_with_url_and_target(u, "_blank");
-                                    }
                                 }
                                 _ => {
                                     // 不明な場合はURLを新規タブで開く
@@ -727,24 +782,42 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         <div
                             class=format!("doc-item {} {} {}",
                                 if status.status { "ok" } else { "missing" },
-                                if has_url { "has-link" } else { "" },
-                                if has_url { "clickable" } else { "" }
+                                if has_url { "has-link clickable" } else { "" },
+                                check_badge.as_ref().map(|(_, class, _)| *class).unwrap_or("")
                             )
                             on:click=on_doc_click
                         >
+                            // 書類状態アイコン
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
-                            {if url.is_some() {
-                                view! {
-                                    <span class="doc-name doc-link">{label.clone()}</span>
-                                }.into_view()
-                            } else {
-                                view! {
-                                    <span class="doc-name">{label.clone()}</span>
-                                }.into_view()
-                            }}
-                            {status.note.map(|n| view! {
+
+                            // 書類名
+                            <span class=format!("doc-name {}", if has_url { "doc-link" } else { "" })>
+                                {label.clone()}
+                            </span>
+
+                            // チェック結果バッジ
+                            {check_badge.map(|(icon, class, title)| view! {
+                                <span
+                                    class=format!("check-badge {}", class)
+                                    title=title
+                                >
+                                    {icon}
+                                </span>
+                            })}
+
+                            // 最終チェック日時（ホバーで表示）
+                            {last_checked.map(|dt| view! {
+                                <span class="last-checked" title=format!("最終チェック: {}", dt)>
+                                    "📅"
+                                </span>
+                            })}
+
+                            // 備考
+                            {status.note.clone().map(|n| view! {
                                 <span class="doc-note">{n}</span>
                             })}
+
+                            // クリックヒント
                             {has_url.then(|| view! {
                                 <span class="click-hint">"クリックで開く"</span>
                             })}
@@ -989,6 +1062,8 @@ where
                                                     note: Some("要依頼".to_string()),
                                                     valid_from: None,
                                                     valid_until: None,
+                                                    check_result: None,
+                                                    last_checked: None,
                                                 });
                                                 break;
                                             }
@@ -1085,6 +1160,8 @@ where
         note: if note.get().is_empty() { None } else { Some(note.get()) },
         valid_from: None,
         valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+        check_result: None,
+        last_checked: None,
     };
 
     view! {
@@ -2184,7 +2261,7 @@ fn App() -> impl IntoView {
                         </main>
                     }.into_view(),
 
-                    ViewMode::PdfViewer { contractor, doc_type, url } => view! {
+                    ViewMode::PdfViewer { contractor, doc_type, url, doc_key: _, contractor_id: _ } => view! {
                         <PdfViewer
                             contractor=contractor
                             doc_type=doc_type
@@ -2192,7 +2269,7 @@ fn App() -> impl IntoView {
                         />
                     }.into_view(),
 
-                    ViewMode::SpreadsheetViewer { contractor, doc_type, url } => view! {
+                    ViewMode::SpreadsheetViewer { contractor, doc_type, url, doc_key: _, contractor_id: _ } => view! {
                         <SpreadsheetViewer
                             contractor=contractor
                             doc_type=doc_type
