@@ -1628,9 +1628,6 @@ fn PdfViewer(
     view! {
         <div class="viewer-container pdf-viewer">
             <div class="viewer-header">
-                <button class="back-button" on:click=on_back>
-                    "← 戻る"
-                </button>
                 <div class="doc-title">
                     <span class="contractor-name">{contractor_display}</span>
                     <span class="doc-type">{doc_type_display}</span>
@@ -1639,6 +1636,9 @@ fn PdfViewer(
                     "新規タブで開く ↗"
                 </a>
             </div>
+            <button class="back-button-float" on:click=on_back>
+                "← 戻る"
+            </button>
 
             // アクションバー
             <div class="viewer-actions">
@@ -1823,9 +1823,6 @@ fn SpreadsheetViewer(
     view! {
         <div class="viewer-container spreadsheet-viewer">
             <div class="viewer-header">
-                <button class="back-button" on:click=on_back>
-                    "← 戻る"
-                </button>
                 <div class="doc-title">
                     <span class="contractor-name">{contractor_display}</span>
                     <span class="doc-type">{doc_type_display}</span>
@@ -1834,6 +1831,9 @@ fn SpreadsheetViewer(
                     "新規タブで開く ↗"
                 </a>
             </div>
+            <button class="back-button-float" on:click=on_back>
+                "← 戻る"
+            </button>
 
             // アクションバー
             <div class="viewer-actions">

@@ -1182,6 +1182,30 @@ button:disabled {
     flex-direction: column;
     height: calc(100vh - 80px);
     background: #f5f5f5;
+    position: relative;
+}
+
+.back-button-float {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 24px;
+    background: #1a1a2e;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    transition: all 0.2s;
+}
+
+.back-button-float:hover {
+    background: #2a2a4e;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .viewer-header {
