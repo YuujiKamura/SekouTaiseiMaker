@@ -10,6 +10,7 @@ import ipaddress
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
+import socket
 
 import requests
 
@@ -349,6 +350,33 @@ def _is_private_ip(hostname: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
+def _is_hostname_resolving_to_private_ip(hostname: str) -> bool:
+    """
+    ホスト名をDNS解決し、プライベートIP / ループバックアドレスに解決されるかをチェック
+    """
+    try:
+        addrinfo_list = socket.getaddrinfo(hostname, None)
+    except OSError:
+        # 解決できないホスト名はここではプライベートとはみなさない
+        return False
+
+    for family, _, _, _, sockaddr in addrinfo_list:
+        ip_str = None
+        if family == socket.AF_INET:
+            ip_str = sockaddr[0]
+        elif family == socket.AF_INET6:
+            ip_str = sockaddr[0]
+        if ip_str is None:
+            continue
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            return True
+    return False
+
+
 def _validate_external_url(url: str) -> str:
     """
     外部から指定されたURLを検証し、安全なURLのみ許可する
@@ -365,7 +393,7 @@ def _validate_external_url(url: str) -> str:
     if not parsed.hostname:
         raise ValueError("URLにホスト名が含まれていません")
 
-    # SSRF対策: プライベートIP / ループバックアドレスは拒否
+    # SSRF対策: プライベートIP / ループバックアドレスは拒否（IPリテラルの場合）
     if _is_private_ip(parsed.hostname):
         raise ValueError("プライベートIPアドレスへのアクセスは許可されていません")
 
@@ -376,6 +404,10 @@ def _validate_external_url(url: str) -> str:
 
     if parsed.hostname not in allowed_hosts:
         raise ValueError(f"指定されたホスト({parsed.hostname})へのアクセスは許可されていません")
+
+    # SSRF対策: 許可されたホスト名であっても、プライベートIPに解決される場合は拒否
+    if _is_hostname_resolving_to_private_ip(parsed.hostname):
+        raise ValueError("プライベートIPアドレスに解決されるホスト名へのアクセスは許可されていません")
 
     return url
 
