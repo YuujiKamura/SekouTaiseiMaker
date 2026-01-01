@@ -29,6 +29,22 @@
   margin: 0 4px;
 }
 
+/* 戻るボタン */
+.back-btn {
+  padding: 6px 12px;
+  border: 1px solid #999;
+  border-radius: 4px;
+  background: #f8f8f8;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+
+.back-btn:hover {
+  background: #e8e8e8;
+  border-color: #666;
+}
+
 /* ファイル開くボタン */
 .file-button {
   padding: 6px 12px;

@@ -1971,6 +1971,7 @@ fn PdfEditor(
     original_url: String,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext必須");
+    let set_view_mode = ctx.set_view_mode;
 
     // GAS URLとファイルIDを取得してiframe URLを構築
     let iframe_url = {
@@ -1987,8 +1988,27 @@ fn PdfEditor(
     };
 
     let on_back = move |_| {
-        ctx.set_view_mode.set(ViewMode::Dashboard);
+        set_view_mode.set(ViewMode::Dashboard);
     };
+
+    // iframeからのpostMessageを受信してダッシュボードに戻る
+    create_effect(move |_| {
+        let window = web_sys::window().expect("window");
+        let closure = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+            if let Ok(data) = event.data().dyn_into::<js_sys::Object>() {
+                if let Ok(type_val) = js_sys::Reflect::get(&data, &JsValue::from_str("type")) {
+                    if let Some(type_str) = type_val.as_string() {
+                        if type_str == "back" {
+                            set_view_mode.set(ViewMode::Dashboard);
+                        }
+                    }
+                }
+            }
+        }) as Box<dyn FnMut(_)>);
+
+        window.add_event_listener_with_callback("message", closure.as_ref().unchecked_ref()).ok();
+        closure.forget(); // リスナーを保持
+    });
 
     view! {
         <div class="pdf-editor-container">

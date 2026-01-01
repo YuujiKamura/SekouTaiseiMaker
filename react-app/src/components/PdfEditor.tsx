@@ -803,6 +803,23 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   return (
     <div className="pdf-editor" tabIndex={0} onKeyDown={handleKeyDown}>
       <div className="toolbar">
+        <button
+          className="back-btn"
+          onClick={() => {
+            // 親ウィンドウに戻るメッセージを送信（iframe統合用）
+            window.parent.postMessage({ type: 'back' }, '*');
+            // 直接アクセスの場合はhistory.back()
+            if (window.parent === window) {
+              window.history.back();
+            }
+          }}
+          title="ダッシュボードに戻る"
+        >
+          ← 戻る
+        </button>
+
+        <span className="separator">|</span>
+
         <label className="file-button">
           開く
           <input type="file" accept=".pdf" onChange={handleFileChange} />
