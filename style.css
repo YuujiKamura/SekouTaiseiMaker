@@ -2965,9 +2965,9 @@ button:disabled {
     position: fixed;
     bottom: 60px;
     left: 10px;
-    width: 400px;
-    max-height: 300px;
-    background: rgba(0, 0, 0, 0.9);
+    width: 500px;
+    max-height: 70vh;
+    background: rgba(0, 0, 0, 0.95);
     color: #0f0;
     font-family: 'Consolas', 'Monaco', monospace;
     font-size: 11px;
@@ -2988,7 +2988,7 @@ button:disabled {
 
 .debug-content {
     padding: 10px 12px;
-    max-height: 250px;
+    max-height: calc(70vh - 40px);
     overflow-y: auto;
 }
 
@@ -3036,4 +3036,35 @@ button:disabled {
 
 .debug-content summary:hover {
     color: #fff;
+}
+
+.debug-contractors {
+    margin-top: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.debug-contractor {
+    margin: 4px 0;
+    padding: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.debug-contractor summary {
+    color: #9f9;
+    font-weight: bold;
+}
+
+.debug-status {
+    color: #f90;
+    font-size: 10px;
+}
+
+.debug-url {
+    color: #888;
+    font-size: 9px;
+    word-break: break-all;
+    display: block;
+    margin-left: 10px;
 }

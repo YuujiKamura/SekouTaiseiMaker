@@ -3192,18 +3192,30 @@ fn App() -> impl IntoView {
                             <div class="debug-project">
                                 <p><strong>"プロジェクト: "</strong>{p.project_name.clone()}</p>
                                 <p><strong>"業者数: "</strong>{p.contractors.len()}</p>
-                                <details>
-                                    <summary>"書類URL一覧（先頭5件）"</summary>
-                                    <ul class="debug-urls">
-                                        {p.contractors.iter().take(2).flat_map(|c| {
-                                            c.docs.iter().filter_map(|(k, v)| {
-                                                v.url.as_ref().map(|u| view! {
-                                                    <li><span class="debug-key">{k.clone()}</span>": "{u.clone()}</li>
-                                                })
-                                            }).take(3).collect::<Vec<_>>()
-                                        }).collect::<Vec<_>>()}
-                                    </ul>
-                                </details>
+                                <div class="debug-contractors">
+                                    {p.contractors.iter().map(|c| {
+                                        let name = c.name.clone();
+                                        let docs: Vec<_> = c.docs.iter().map(|(k, v)| {
+                                            let key = k.clone();
+                                            let url = v.url.clone().unwrap_or_else(|| "なし".to_string());
+                                            let status = v.status.clone();
+                                            view! {
+                                                <li>
+                                                    <span class="debug-key">{key}</span>
+                                                    <span class="debug-status">" ["{status}"]"</span>
+                                                    <br/>
+                                                    <span class="debug-url">{url}</span>
+                                                </li>
+                                            }
+                                        }).collect();
+                                        view! {
+                                            <details class="debug-contractor">
+                                                <summary>{name}" ("{c.docs.len()}"件)"</summary>
+                                                <ul class="debug-urls">{docs}</ul>
+                                            </details>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </div>
                             </div>
                         })}
                     </div>
