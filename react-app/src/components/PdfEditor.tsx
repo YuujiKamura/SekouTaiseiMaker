@@ -660,12 +660,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
           <input type="file" accept=".pdf" onChange={handleFileChange} />
         </label>
 
-        <button onClick={handleSave} disabled={!pdfLoaded} className="save-btn">💾保存</button>
-        {fileIdParam && gasUrlParam && (
-          <button onClick={handleSaveToDrive} disabled={!pdfLoaded || isSavingToDrive} className="save-btn" style={{background: '#34a853', borderColor: '#34a853'}}>
-            ☁️Drive保存
-          </button>
-        )}
+        <button onClick={handleSave} disabled={!pdfLoaded} className="save-btn">保存</button>
 
         <span className="separator">|</span>
 
@@ -712,20 +707,23 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
 
         <button onClick={handleUndo} disabled={history.length === 0}>↩</button>
         <button onClick={handleDelete} disabled={!selectedId} className="delete-btn">✕</button>
-      </div>
 
-      {status && <div className="status">{status}</div>}
-      {driveFileName && <div className="status" style={{background: '#e8f0fe', color: '#1967d2'}}>📁 {driveFileName}</div>}
+        <span className="separator">|</span>
 
-      <div className="page-nav">
         <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1}>◀</button>
-        <span>{currentPage} / {totalPages}</span>
+        <span className="page-info">{currentPage}/{totalPages}</span>
         <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages}>▶</button>
-        <span className="zoom-indicator">|</span>
-        <button onClick={() => setZoom(z => Math.max(0.25, z - 0.25))}>−</button>
+
+        <span className="separator">|</span>
+
         <span className="zoom-value">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(z => Math.min(4, z + 0.25))}>+</button>
-        <button onClick={() => setZoom(1)}>100%</button>
+
+        {(status || driveFileName) && (
+          <>
+            <span className="separator">|</span>
+            <span className="status-inline">{driveFileName || status}</span>
+          </>
+        )}
       </div>
 
       <div

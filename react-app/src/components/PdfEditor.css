@@ -170,44 +170,27 @@
   cursor: not-allowed;
 }
 
-.status {
-  padding: 4px 12px;
-  background: #e8f4e8;
-  color: #2a6;
+.page-info {
   font-size: 13px;
-}
-
-.page-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 8px;
-  background: #fafafa;
-  border-bottom: 1px solid #eee;
-}
-
-.page-nav button {
-  padding: 4px 12px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: white;
-  cursor: pointer;
-}
-
-.page-nav button:disabled {
-  opacity: 0.4;
-}
-
-.zoom-indicator {
-  color: #ccc;
-  margin: 0 8px;
+  color: #666;
+  min-width: 40px;
+  text-align: center;
 }
 
 .zoom-value {
-  min-width: 50px;
+  font-size: 12px;
+  color: #666;
+  min-width: 40px;
   text-align: center;
-  font-weight: bold;
+}
+
+.status-inline {
+  font-size: 12px;
+  color: #2a6;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-container {

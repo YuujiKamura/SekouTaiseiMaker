@@ -2271,10 +2271,29 @@ button:disabled {
    ============================================ */
 
 .pdf-editor-container {
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 40px);
+    position: relative;
+    height: 100vh;
     background: #f0f0f0;
+}
+
+.back-btn-float {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+    background: rgba(26, 26, 46, 0.9);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.back-btn-float:hover {
+    background: rgba(42, 42, 78, 0.95);
 }
 
 .editor-toolbar {

@@ -1946,6 +1946,7 @@ fn extract_file_id(url: &str) -> Option<String> {
     None
 }
 
+#[allow(unused_variables)]
 #[component]
 fn PdfEditor(
     contractor: String,
@@ -1953,9 +1954,6 @@ fn PdfEditor(
     original_url: String,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext必須");
-
-    let contractor_display = contractor.clone();
-    let doc_type_display = doc_type.clone();
 
     // GAS URLとファイルIDを取得してiframe URLを構築
     let iframe_url = {
@@ -1977,21 +1975,11 @@ fn PdfEditor(
 
     view! {
         <div class="pdf-editor-container">
-            <div class="editor-toolbar">
-                <div class="toolbar-left">
-                    <button class="back-btn" on:click=on_back>"← 戻る"</button>
-                    <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
-                </div>
-                <div class="toolbar-right">
-                    <a class="external-link" href=original_url.clone() target="_blank" rel="noopener">
-                        "元ファイルを開く ↗"
-                    </a>
-                </div>
-            </div>
+            <button class="back-btn-float" on:click=on_back>"← 戻る"</button>
             <iframe
                 class="pdf-editor-iframe"
                 src=iframe_url
-                style="width: 100%; height: calc(100vh - 50px); border: none;"
+                style="width: 100%; height: 100vh; border: none;"
             ></iframe>
         </div>
     }
