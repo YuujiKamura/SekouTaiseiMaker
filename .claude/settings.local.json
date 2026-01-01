@@ -22,7 +22,9 @@
       "Bash(pyftsubset:*)",
       "Bash(git restore:*)",
       "Bash(cargo check:*)",
-      "Bash(xxd:*)"
+      "Bash(xxd:*)",
+      "Bash(npx playwright install chromium)",
+      "Bash(npm run test:e2e:*)"
     ]
   }
 }
