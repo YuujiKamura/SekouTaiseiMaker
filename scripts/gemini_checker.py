@@ -67,9 +67,54 @@ def init_gemini():
     return get_gemini_model()
 
 
+def _validate_file_path(file_path: Path) -> Path:
+    """
+    ファイルパスを検証し、パストラバーサル攻撃を防ぐ
+
+    Args:
+        file_path: 検証するファイルパス
+
+    Returns:
+        正規化されたファイルパス
+
+    Raises:
+        ValueError: 不正なパスの場合
+    """
+    # パスを正規化（シンボリックリンク解決、..の解決）
+    resolved_path = file_path.resolve()
+
+    # 許可されたベースディレクトリ
+    allowed_bases = [
+        Path(tempfile.gettempdir()).resolve(),  # システムのtempディレクトリ
+        Path(__file__).parent.parent.resolve(),  # プロジェクトルート
+        Path.home().resolve(),  # ユーザーホームディレクトリ
+    ]
+
+    # いずれかの許可されたベースディレクトリ内かチェック
+    is_allowed = any(
+        str(resolved_path).startswith(str(base))
+        for base in allowed_bases
+    )
+
+    if not is_allowed:
+        raise ValueError(f"アクセスが許可されていないパスです: {file_path}")
+
+    # ファイルが存在するかチェック
+    if not resolved_path.exists():
+        raise ValueError(f"ファイルが存在しません: {file_path}")
+
+    # ディレクトリではなくファイルかチェック
+    if not resolved_path.is_file():
+        raise ValueError(f"ファイルではありません: {file_path}")
+
+    return resolved_path
+
+
 def image_to_base64(image_path: Path) -> str:
     """画像をBase64エンコード"""
-    with open(image_path, 'rb') as f:
+    # パストラバーサル対策
+    validated_path = _validate_file_path(image_path)
+    with open(validated_path, 'rb') as f:
         return base64.standard_b64encode(f.read()).decode('utf-8')
 
 
