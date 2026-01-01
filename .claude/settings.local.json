@@ -19,7 +19,27 @@
       "Bash(curl:*)",
       "Bash(pip install:*)",
       "Bash(python:*)",
-      "Bash(pyftsubset:*)"
+      "Bash(pyftsubset:*)",
+      "Bash(cargo run:*)",
+      "Bash(start rust-font-poc/output.pdf)",
+      "Bash(start output.pdf)",
+      "Bash(start rust-font-poc/output_edited.pdf)",
+      "Bash(start rust-font-poc/text_layer.pdf)",
+      "Bash(wasm-pack build:*)",
+      "Bash(cargo install:*)",
+      "Bash(cargo update:*)",
+      "Bash(rustup update:*)",
+      "WebSearch",
+      "Bash(cargo doc:*)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(grep:*)",
+      "Bash(~/.cargo/bin/wasm-pack build:*)",
+      "Bash(echo:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

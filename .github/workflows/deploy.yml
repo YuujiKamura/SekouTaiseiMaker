@@ -50,10 +50,11 @@ jobs:
       - name: Build Leptos app
         run: trunk build --release --public-url /SekouTaiseiMaker/
 
-      - name: Copy React app to dist
+      - name: Copy React app to dist/editor
         run: |
-          cp -r react-app/dist/* dist/
-          cp -r react-app/public/fonts dist/
+          mkdir -p dist/editor
+          cp -r react-app/dist/* dist/editor/
+          cp -r react-app/public/fonts dist/editor/
 
       - name: Copy data
         run: cp -r data dist/

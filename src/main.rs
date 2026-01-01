@@ -1966,11 +1966,11 @@ fn PdfEditor(
             (Some(gas), Some(fid)) => {
                 // URL encode the GAS URL
                 let encoded_gas = js_sys::encode_uri_component(&gas).as_string().unwrap_or_default();
-                format!("dist/index.html?fileId={}&gasUrl={}", fid, encoded_gas)
+                format!("editor/index.html?fileId={}&gasUrl={}", fid, encoded_gas)
             }
             _ => {
                 // GAS未設定時はReact editorを単体で開く
-                "dist/index.html".to_string()
+                "editor/index.html".to_string()
             }
         }
     };
