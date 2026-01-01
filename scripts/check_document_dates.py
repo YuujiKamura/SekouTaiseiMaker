@@ -14,12 +14,11 @@ from datetime import datetime
 from google.oauth2.credentials import Credentials
 import googleapiclient.discovery
 
-from gemini_checker import GEMINI_MODEL_NAME
+from gemini_checker import GEMINI_MODEL_NAME, get_api_key
 
 # 設定
 PROJECT_ROOT = Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator")
 TOKEN_PATH = PROJECT_ROOT / "gmail_token.json"
-GEMINI_API_KEY = "AIzaSyB-fkaiOwslxdCOnakC6_-DFBbxFPBPvmI"
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
@@ -77,7 +76,8 @@ def get_file_mime_type(drive_service, file_id):
 
 def read_document_with_gemini(file_base64, mime_type, prompt):
     """Gemini APIでドキュメントを読み取る"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
+    api_key = get_api_key()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_NAME}:generateContent?key={api_key}"
 
     payload = {
         "contents": [{
