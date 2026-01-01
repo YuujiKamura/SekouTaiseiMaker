@@ -22,6 +22,16 @@ interface TextAnnotation {
   page: number;
 }
 
+interface RectAnnotation {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  page: number;
+}
+
 interface PdfEditorProps {
   pdfUrl?: string;
   onSave?: (pdfBytes: Uint8Array) => void;
@@ -39,12 +49,15 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   const gasUrlParam = getUrlParam('gasUrl');
   const [driveFileName, setDriveFileName] = useState<string | null>(null);
   // State
-  const [mode, setMode] = useState<'add' | 'select'>('add');
+  const [mode, setMode] = useState<'text' | 'rect' | 'select'>('text');
   const [inputText, setInputText] = useState('');
   const [fontSize, setFontSize] = useState(12);
   const [fontFamily, setFontFamily] = useState<'mincho' | 'gothic'>('mincho');
+  const [rectColor, setRectColor] = useState('#808080'); // グレーがデフォルト
   const [annotations, setAnnotations] = useState<TextAnnotation[]>([]);
+  const [rectangles, setRectangles] = useState<RectAnnotation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<'text' | 'rect' | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [pdfLoaded, setPdfLoaded] = useState(false);
@@ -61,6 +74,9 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   const fontsRef = useRef<{ mincho: ArrayBuffer | null; gothic: ArrayBuffer | null }>({ mincho: null, gothic: null });
   const dragRef = useRef<{ isDragging: boolean; startX: number; startY: number; annId: string | null }>({
     isDragging: false, startX: 0, startY: 0, annId: null
+  });
+  const rectDrawRef = useRef<{ isDrawing: boolean; startX: number; startY: number; currentX: number; currentY: number }>({
+    isDrawing: false, startX: 0, startY: 0, currentX: 0, currentY: 0
   });
   const panRef = useRef<{ isPanning: boolean; startX: number; startY: number; scrollLeft: number; scrollTop: number }>({
     isPanning: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0
@@ -96,11 +112,13 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
       try {
         const cachedPdf = localStorage.getItem('pdfEditor_pdf');
         const cachedAnnotations = localStorage.getItem('pdfEditor_annotations');
+        const cachedRectangles = localStorage.getItem('pdfEditor_rectangles');
 
         console.log('Cache check:', {
           hasPdf: !!cachedPdf,
           pdfSize: cachedPdf?.length,
-          hasAnnotations: !!cachedAnnotations
+          hasAnnotations: !!cachedAnnotations,
+          hasRectangles: !!cachedRectangles
         });
 
         if (cachedPdf && cachedPdf.length > 0) {
@@ -127,11 +145,18 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
           setAnnotations(parsed);
         }
 
+        if (cachedRectangles && !cancelled) {
+          const parsed = JSON.parse(cachedRectangles);
+          console.log('Restored rectangles:', parsed.length);
+          setRectangles(parsed);
+        }
+
         initializedRef.current = true;
       } catch (e) {
         console.error('Cache restore error:', e);
         localStorage.removeItem('pdfEditor_pdf');
         localStorage.removeItem('pdfEditor_annotations');
+        localStorage.removeItem('pdfEditor_rectangles');
         initializedRef.current = true;
       }
     };
@@ -145,6 +170,12 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     if (!initializedRef.current) return;
     localStorage.setItem('pdfEditor_annotations', JSON.stringify(annotations));
   }, [annotations]);
+
+  // 矩形変更時にキャッシュ保存（初期化後のみ）
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    localStorage.setItem('pdfEditor_rectangles', JSON.stringify(rectangles));
+  }, [rectangles]);
 
   // PDFレンダリング
   const baseScale = 1.0; // 基本スケール（100%）
@@ -190,29 +221,58 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     }
   }, [zoom]);
 
-  // オーバーレイ描画（注釈表示）
+  // オーバーレイ描画（注釈・矩形表示）
   const renderOverlay = useCallback(() => {
     if (!overlayRef.current) return;
     const ctx = overlayRef.current.getContext('2d')!;
     ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
 
     const displayScale = baseScale * zoom;
+
+    // 矩形を描画（テキストより先に描画してテキストが上に来るように）
+    const pageRectangles = rectangles.filter(r => r.page === currentPage);
+    for (const rect of pageRectangles) {
+      ctx.fillStyle = rect.color;
+      ctx.fillRect(rect.x * zoom, rect.y * zoom, rect.width * zoom, rect.height * zoom);
+
+      // 選択中は枠を表示
+      if (rect.id === selectedId && selectedType === 'rect') {
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rect.x * zoom - 1, rect.y * zoom - 1, rect.width * zoom + 2, rect.height * zoom + 2);
+      }
+    }
+
+    // 矩形描画中のプレビュー
+    if (rectDrawRef.current.isDrawing) {
+      const { startX, startY, currentX, currentY } = rectDrawRef.current;
+      const x = Math.min(startX, currentX);
+      const y = Math.min(startY, currentY);
+      const w = Math.abs(currentX - startX);
+      const h = Math.abs(currentY - startY);
+      ctx.fillStyle = rectColor + '80'; // 半透明
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = rectColor;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    // テキスト注釈を描画
     const pageAnnotations = annotations.filter(a => a.page === currentPage);
-    console.log('renderOverlay:', { pageAnnotations: pageAnnotations.length, currentPage, zoom });
     for (const ann of pageAnnotations) {
       ctx.font = `${ann.fontSize * displayScale}px ${ann.fontFamily === 'mincho' ? 'serif' : 'sans-serif'}`;
       ctx.fillStyle = ann.color;
       ctx.fillText(ann.text, ann.x * zoom, ann.y * zoom);
 
       // 選択中は枠を表示
-      if (ann.id === selectedId) {
+      if (ann.id === selectedId && selectedType === 'text') {
         const metrics = ctx.measureText(ann.text);
         ctx.strokeStyle = '#0066ff';
         ctx.lineWidth = 2;
         ctx.strokeRect(ann.x * zoom - 2, ann.y * zoom - ann.fontSize * displayScale, metrics.width + 4, ann.fontSize * displayScale * 1.2);
       }
     }
-  }, [annotations, currentPage, selectedId, zoom]);
+  }, [annotations, rectangles, currentPage, selectedId, selectedType, zoom, rectColor]);
 
   // ズーム・ページ変更時に再レンダリング
   useEffect(() => {
@@ -224,12 +284,12 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     }
   }, [zoom, pdfLoaded, currentPage, renderPage, renderOverlay]);
 
-  // annotations変更時にオーバーレイを再描画（PDFレンダリング不要）
+  // annotations/rectangles変更時にオーバーレイを再描画（PDFレンダリング不要）
   useEffect(() => {
     if (pdfLoaded && overlayRef.current && overlayRef.current.width > 0) {
       renderOverlay();
     }
-  }, [annotations, selectedId, pdfLoaded, renderOverlay]);
+  }, [annotations, rectangles, selectedId, selectedType, pdfLoaded, renderOverlay]);
 
   // PDF読み込み
   const loadPdf = async (data: ArrayBuffer) => {
@@ -342,7 +402,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     const x = clickX / zoom;
     const y = clickY / zoom;
 
-    if (mode === 'add' && inputText) {
+    if (mode === 'text' && inputText) {
       saveHistory();
       const newAnn: TextAnnotation = {
         id: `ann_${Date.now()}`,
@@ -356,13 +416,35 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
       setAnnotations(prev => [...prev, newAnn]);
       setStatus('テキスト追加');
     } else if (mode === 'select') {
-      // 注釈の当たり判定
+      // まず矩形の当たり判定
+      const pageRects = rectangles.filter(r => r.page === currentPage);
+      let foundRect: RectAnnotation | null = null;
+
+      for (const rect of pageRects) {
+        const rx = rect.x * zoom;
+        const ry = rect.y * zoom;
+        const rw = rect.width * zoom;
+        const rh = rect.height * zoom;
+        if (clickX >= rx && clickX <= rx + rw && clickY >= ry && clickY <= ry + rh) {
+          foundRect = rect;
+          break;
+        }
+      }
+
+      if (foundRect) {
+        setSelectedId(foundRect.id);
+        setSelectedType('rect');
+        setRectColor(foundRect.color);
+        return;
+      }
+
+      // テキスト注釈の当たり判定
       const ctx = overlayRef.current?.getContext('2d');
       if (!ctx) return;
 
       const displayScale = baseScale * zoom;
       const pageAnns = annotations.filter(a => a.page === currentPage);
-      let found: TextAnnotation | null = null;
+      let foundText: TextAnnotation | null = null;
 
       for (const ann of pageAnns) {
         ctx.font = `${ann.fontSize * displayScale}px ${ann.fontFamily === 'mincho' ? 'serif' : 'sans-serif'}`;
@@ -371,18 +453,20 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
         const annY = ann.y * zoom;
         if (clickX >= annX - 2 && clickX <= annX + metrics.width + 2 &&
             clickY >= annY - ann.fontSize * displayScale && clickY <= annY + 4) {
-          found = ann;
+          foundText = ann;
           break;
         }
       }
 
-      if (found) {
-        setSelectedId(found.id);
-        setInputText(found.text);
-        setFontSize(found.fontSize);
-        setFontFamily(found.fontFamily);
+      if (foundText) {
+        setSelectedId(foundText.id);
+        setSelectedType('text');
+        setInputText(foundText.text);
+        setFontSize(foundText.fontSize);
+        setFontFamily(foundText.fontFamily);
       } else {
         setSelectedId(null);
+        setSelectedType(null);
       }
     }
   };
@@ -406,23 +490,50 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
       return;
     }
 
+    // 矩形モードでドラッグ開始
+    if (mode === 'rect') {
+      rectDrawRef.current = {
+        isDrawing: true,
+        startX: clickX,
+        startY: clickY,
+        currentX: clickX,
+        currentY: clickY
+      };
+      return;
+    }
+
     if (mode !== 'select' || !selectedId) return;
 
-    // 選択中の注釈上でマウスダウンしたらドラッグ開始
-    const ctx = overlayRef.current?.getContext('2d');
-    if (!ctx) return;
+    // 選択中のテキスト注釈上でマウスダウンしたらドラッグ開始
+    if (selectedType === 'text') {
+      const ctx = overlayRef.current?.getContext('2d');
+      if (!ctx) return;
 
-    const displayScale = baseScale * zoom;
-    const ann = annotations.find(a => a.id === selectedId && a.page === currentPage);
-    if (ann) {
-      ctx.font = `${ann.fontSize * displayScale}px ${ann.fontFamily === 'mincho' ? 'serif' : 'sans-serif'}`;
-      const metrics = ctx.measureText(ann.text);
-      const annX = ann.x * zoom;
-      const annY = ann.y * zoom;
-      if (clickX >= annX - 2 && clickX <= annX + metrics.width + 2 &&
-          clickY >= annY - ann.fontSize * displayScale && clickY <= annY + 4) {
-        saveHistory();
-        dragRef.current = { isDragging: true, startX: clickX, startY: clickY, annId: selectedId };
+      const displayScale = baseScale * zoom;
+      const ann = annotations.find(a => a.id === selectedId && a.page === currentPage);
+      if (ann) {
+        ctx.font = `${ann.fontSize * displayScale}px ${ann.fontFamily === 'mincho' ? 'serif' : 'sans-serif'}`;
+        const metrics = ctx.measureText(ann.text);
+        const annX = ann.x * zoom;
+        const annY = ann.y * zoom;
+        if (clickX >= annX - 2 && clickX <= annX + metrics.width + 2 &&
+            clickY >= annY - ann.fontSize * displayScale && clickY <= annY + 4) {
+          saveHistory();
+          dragRef.current = { isDragging: true, startX: clickX, startY: clickY, annId: selectedId };
+        }
+      }
+    } else if (selectedType === 'rect') {
+      // 選択中の矩形上でマウスダウンしたらドラッグ開始
+      const rectItem = rectangles.find(r => r.id === selectedId && r.page === currentPage);
+      if (rectItem) {
+        const rx = rectItem.x * zoom;
+        const ry = rectItem.y * zoom;
+        const rw = rectItem.width * zoom;
+        const rh = rectItem.height * zoom;
+        if (clickX >= rx && clickX <= rx + rw && clickY >= ry && clickY <= ry + rh) {
+          saveHistory();
+          dragRef.current = { isDragging: true, startX: clickX, startY: clickY, annId: selectedId };
+        }
       }
     }
   };
@@ -438,7 +549,16 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
       return;
     }
 
-    // ドラッグ処理
+    // 矩形描画中
+    if (rectDrawRef.current.isDrawing) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      rectDrawRef.current.currentX = e.clientX - rect.left;
+      rectDrawRef.current.currentY = e.clientY - rect.top;
+      renderOverlay();
+      return;
+    }
+
+    // ドラッグ処理（テキストまたは矩形の移動）
     if (!dragRef.current.isDragging || !dragRef.current.annId) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
@@ -447,14 +567,45 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     const dx = (x - dragRef.current.startX) / zoom;
     const dy = (y - dragRef.current.startY) / zoom;
 
-    setAnnotations(prev => prev.map(a =>
-      a.id === dragRef.current.annId ? { ...a, x: a.x + dx, y: a.y + dy } : a
-    ));
+    if (selectedType === 'text') {
+      setAnnotations(prev => prev.map(a =>
+        a.id === dragRef.current.annId ? { ...a, x: a.x + dx, y: a.y + dy } : a
+      ));
+    } else if (selectedType === 'rect') {
+      setRectangles(prev => prev.map(r =>
+        r.id === dragRef.current.annId ? { ...r, x: r.x + dx, y: r.y + dy } : r
+      ));
+    }
     dragRef.current.startX = x;
     dragRef.current.startY = y;
   };
 
   const handleMouseUp = () => {
+    // 矩形描画完了
+    if (rectDrawRef.current.isDrawing) {
+      const { startX, startY, currentX, currentY } = rectDrawRef.current;
+      const x = Math.min(startX, currentX) / zoom;
+      const y = Math.min(startY, currentY) / zoom;
+      const width = Math.abs(currentX - startX) / zoom;
+      const height = Math.abs(currentY - startY) / zoom;
+
+      // 最小サイズのチェック
+      if (width >= 5 && height >= 5) {
+        saveHistory();
+        const newRect: RectAnnotation = {
+          id: `rect_${Date.now()}`,
+          x, y, width, height,
+          color: rectColor,
+          page: currentPage
+        };
+        setRectangles(prev => [...prev, newRect]);
+        setStatus('矩形追加');
+      }
+
+      rectDrawRef.current.isDrawing = false;
+      renderOverlay();
+    }
+
     if (dragRef.current.isDragging) {
       dragRef.current.isDragging = false;
       dragRef.current.annId = null;
@@ -477,8 +628,13 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   const handleDelete = () => {
     if (selectedId) {
       saveHistory();
-      setAnnotations(prev => prev.filter(a => a.id !== selectedId));
+      if (selectedType === 'text') {
+        setAnnotations(prev => prev.filter(a => a.id !== selectedId));
+      } else if (selectedType === 'rect') {
+        setRectangles(prev => prev.filter(r => r.id !== selectedId));
+      }
       setSelectedId(null);
+      setSelectedType(null);
       setStatus('削除しました');
     }
   };
@@ -511,7 +667,59 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
 
       const pages = pdfDoc.getPages();
       console.log('Annotations to save:', annotations);
+      console.log('Rectangles to save:', rectangles);
 
+      // 矩形を描画（先に描画してテキストが上に来るように）
+      for (const rect of rectangles) {
+        const page = pages[rect.page - 1];
+        if (!page) continue;
+
+        const { width, height } = page.getSize();
+        const rotation = page.getRotation().angle;
+
+        // 色を解析 (#808080 -> rgb)
+        const hex = rect.color.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16) / 255;
+        const g = parseInt(hex.substring(2, 4), 16) / 255;
+        const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+        // ページ回転を考慮した座標変換
+        let pdfX: number, pdfY: number, pdfWidth: number, pdfHeight: number;
+        if (rotation === 90) {
+          pdfX = rect.y;
+          pdfY = rect.x;
+          pdfWidth = rect.height;
+          pdfHeight = rect.width;
+        } else if (rotation === 180) {
+          pdfX = width - rect.x - rect.width;
+          pdfY = rect.y;
+          pdfWidth = rect.width;
+          pdfHeight = rect.height;
+        } else if (rotation === 270) {
+          pdfX = height - rect.y - rect.height;
+          pdfY = width - rect.x - rect.width;
+          pdfWidth = rect.height;
+          pdfHeight = rect.width;
+        } else {
+          // 0度または回転なし
+          pdfX = rect.x;
+          pdfY = height - rect.y - rect.height;
+          pdfWidth = rect.width;
+          pdfHeight = rect.height;
+        }
+
+        console.log(`Drawing rect at PDF coords: (${pdfX}, ${pdfY}), size: ${pdfWidth}x${pdfHeight}`);
+
+        page.drawRectangle({
+          x: pdfX,
+          y: pdfY,
+          width: pdfWidth,
+          height: pdfHeight,
+          color: rgb(r, g, b),
+        });
+      }
+
+      // テキスト注釈を描画
       for (const ann of annotations) {
         const page = pages[ann.page - 1];
         if (!page) continue;
@@ -604,46 +812,79 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
 
         <span className="separator">|</span>
 
-        <div className="mode-switch">
-          <span className={mode === 'select' ? 'active' : ''}>選択</span>
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={mode === 'add'}
-              onChange={() => setMode(mode === 'add' ? 'select' : 'add')}
-            />
-            <span className="slider"></span>
-          </label>
-          <span className={mode === 'add' ? 'active' : ''}>追加</span>
+        <div className="mode-buttons">
+          <button
+            className={mode === 'select' ? 'active' : ''}
+            onClick={() => setMode('select')}
+            title="選択モード"
+          >選択</button>
+          <button
+            className={mode === 'text' ? 'active' : ''}
+            onClick={() => setMode('text')}
+            title="テキスト追加モード"
+          >文字</button>
+          <button
+            className={mode === 'rect' ? 'active' : ''}
+            onClick={() => setMode('rect')}
+            title="矩形追加モード（マスク）"
+          >矩形</button>
         </div>
 
-        <input
-          type="text"
-          className="text-input"
-          placeholder="テキスト"
-          value={inputText}
-          onChange={e => setInputText(e.target.value)}
-          disabled={!pdfLoaded}
-        />
+        {mode === 'text' && (
+          <>
+            <input
+              type="text"
+              className="text-input"
+              placeholder="テキスト"
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              disabled={!pdfLoaded}
+            />
 
-        <select
-          value={fontSize}
-          onChange={e => setFontSize(Number(e.target.value))}
-          disabled={!pdfLoaded}
-        >
-          {[10, 12, 14, 16, 18, 20, 24].map(s => (
-            <option key={s} value={s}>{s}pt</option>
-          ))}
-        </select>
+            <select
+              value={fontSize}
+              onChange={e => setFontSize(Number(e.target.value))}
+              disabled={!pdfLoaded}
+            >
+              {[10, 12, 14, 16, 18, 20, 24].map(s => (
+                <option key={s} value={s}>{s}pt</option>
+              ))}
+            </select>
 
-        <select
-          value={fontFamily}
-          onChange={e => setFontFamily(e.target.value as 'mincho' | 'gothic')}
-          disabled={!pdfLoaded}
-        >
-          <option value="mincho">明朝</option>
-          <option value="gothic">ゴシック</option>
-        </select>
+            <select
+              value={fontFamily}
+              onChange={e => setFontFamily(e.target.value as 'mincho' | 'gothic')}
+              disabled={!pdfLoaded}
+            >
+              <option value="mincho">明朝</option>
+              <option value="gothic">ゴシック</option>
+            </select>
+          </>
+        )}
+
+        {mode === 'rect' && (
+          <div className="rect-color-picker">
+            <label>色:</label>
+            <input
+              type="color"
+              value={rectColor}
+              onChange={e => setRectColor(e.target.value)}
+              disabled={!pdfLoaded}
+            />
+            <button
+              onClick={() => setRectColor('#808080')}
+              className={rectColor === '#808080' ? 'active' : ''}
+            >グレー</button>
+            <button
+              onClick={() => setRectColor('#ffffff')}
+              className={rectColor === '#ffffff' ? 'active' : ''}
+            >白</button>
+            <button
+              onClick={() => setRectColor('#000000')}
+              className={rectColor === '#000000' ? 'active' : ''}
+            >黒</button>
+          </div>
+        )}
 
         <button onClick={handleUndo} disabled={history.length === 0}>↩</button>
         <button onClick={handleDelete} disabled={!selectedId} className="delete-btn">✕</button>
