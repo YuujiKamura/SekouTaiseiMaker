@@ -302,6 +302,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     setCurrentPage(1);
     setPdfLoaded(true);
     setAnnotations([]);
+    setRectangles([]);
     setHistory([]);
     await renderPage(1);
 
