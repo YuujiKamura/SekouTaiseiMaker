@@ -351,7 +351,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     if (fileIdParam && gasUrlParam) {
       const loadFromDrive = async () => {
         // キャッシュをチェック
-        const cached = getCachedPdf(fileIdParam);
+        const cached = await getCachedPdf(fileIdParam);
         if (cached) {
           setStatus('キャッシュから読み込み中...');
           await loadPdf(cached);
@@ -373,7 +373,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
           }
           const pdfBytes = bytes.buffer;
           // キャッシュに保存
-          setCachedPdf(fileIdParam, pdfBytes);
+          await setCachedPdf(fileIdParam, pdfBytes);
           await loadPdf(pdfBytes);
           setStatus(`読み込み完了: ${result.fileName}`);
         }

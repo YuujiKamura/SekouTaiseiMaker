@@ -1,27 +1,129 @@
 /**
- * PDFキャッシュサービス
- * 親ウィンドウ（Leptos側）のグローバルキャッシュにアクセス
- * プレーンオブジェクト + Base64文字列を使用（iframe間で共有可能）
+ * PDFキャッシュサービス (IndexedDB版)
+ * 親ウィンドウと同じIndexedDBにアクセスして永続キャッシュを実現
  */
+
+// IndexedDB設定（pdf-editor.jsと同じ設定）
+const PDF_CACHE_DB_NAME = 'PdfCacheDB';
+const PDF_CACHE_STORE_NAME = 'pdfCache';
+const PDF_CACHE_DB_VERSION = 1;
+const PDF_CACHE_TTL = 24 * 60 * 60 * 1000;  // 24時間
 
 // 親ウィンドウのグローバル関数・変数型定義
 declare global {
   interface Window {
-    __pdfCacheData?: Record<string, { base64: string; timestamp: number }>;
     __pdfCachePending?: Record<string, Promise<boolean>>;
-    getCachedPdfBase64?: (fileId: string) => string | null;
     getPdfCachePending?: (fileId: string) => Promise<boolean> | null;
   }
 }
 
-function getParentWindow(): Window | null {
+/**
+ * IndexedDBを開く
+ */
+function openPdfCacheDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(PDF_CACHE_DB_NAME, PDF_CACHE_DB_VERSION);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(PDF_CACHE_STORE_NAME)) {
+        db.createObjectStore(PDF_CACHE_STORE_NAME, { keyPath: 'fileId' });
+      }
+    };
+  });
+}
+
+/**
+ * IndexedDBからPDFを取得（Base64形式）
+ */
+async function getFromIndexedDB(fileId: string): Promise<string | null> {
+  try {
+    const db = await openPdfCacheDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PDF_CACHE_STORE_NAME, 'readonly');
+      const store = tx.objectStore(PDF_CACHE_STORE_NAME);
+      const request = store.get(fileId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const entry = request.result;
+        if (!entry) {
+          resolve(null);
+          return;
+        }
+        // TTL チェック
+        if (Date.now() - entry.timestamp > PDF_CACHE_TTL) {
+          // 期限切れ: 削除して null 返却
+          deleteFromIndexedDB(fileId);
+          resolve(null);
+          return;
+        }
+        resolve(entry.base64);
+      };
+    });
+  } catch (e) {
+    console.error('[pdfCache] getFromIndexedDB error:', e);
+    return null;
+  }
+}
+
+/**
+ * IndexedDBにPDFを保存
+ */
+async function saveToIndexedDB(fileId: string, base64: string): Promise<boolean> {
+  try {
+    const db = await openPdfCacheDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PDF_CACHE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(PDF_CACHE_STORE_NAME);
+      const request = store.put({
+        fileId: fileId,
+        base64: base64,
+        timestamp: Date.now()
+      });
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(true);
+    });
+  } catch (e) {
+    console.error('[pdfCache] saveToIndexedDB error:', e);
+    return false;
+  }
+}
+
+/**
+ * IndexedDBからPDFを削除
+ */
+async function deleteFromIndexedDB(fileId: string): Promise<boolean> {
+  try {
+    const db = await openPdfCacheDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PDF_CACHE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(PDF_CACHE_STORE_NAME);
+      const request = store.delete(fileId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(true);
+    });
+  } catch (e) {
+    console.error('[pdfCache] deleteFromIndexedDB error:', e);
+    return false;
+  }
+}
+
+/**
+ * 親ウィンドウのフェッチ中Promiseを取得
+ */
+function getParentPending(fileId: string): Promise<boolean> | null {
   try {
     if (window.parent && window.parent !== window) {
-      // 親ウィンドウにアクセス可能か確認
-      const cache = window.parent.__pdfCacheData;
-      if (typeof cache !== 'undefined') {
-        return window.parent;
+      if (typeof window.parent.getPdfCachePending === 'function') {
+        return window.parent.getPdfCachePending(fileId);
       }
+      return window.parent.__pdfCachePending?.[fileId] || null;
     }
   } catch {
     // Cross-origin の場合はアクセス不可
@@ -30,43 +132,10 @@ function getParentWindow(): Window | null {
 }
 
 /**
- * フェッチ中のPromiseを取得
- */
-export function getPdfCachePending(fileId: string): Promise<boolean> | null {
-  const parent = getParentWindow();
-  if (!parent) return null;
-
-  if (typeof parent.getPdfCachePending === 'function') {
-    return parent.getPdfCachePending(fileId);
-  }
-
-  return parent.__pdfCachePending?.[fileId] || null;
-}
-
-/**
  * キャッシュからPDF（Base64）を取得
  */
-export function getCachedPdfBase64(fileId: string): string | null {
-  const parent = getParentWindow();
-  if (!parent) return null;
-
-  // 親ウィンドウの関数を使用
-  if (typeof parent.getCachedPdfBase64 === 'function') {
-    return parent.getCachedPdfBase64(fileId);
-  }
-
-  // フォールバック: 直接アクセス
-  const entry = parent.__pdfCacheData?.[fileId];
-  if (!entry) return null;
-
-  // 10分以上経過したら無効
-  const CACHE_TTL = 10 * 60 * 1000;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
-    delete parent.__pdfCacheData![fileId];
-    return null;
-  }
-
-  return entry.base64;
+export async function getCachedPdfBase64(fileId: string): Promise<string | null> {
+  return await getFromIndexedDB(fileId);
 }
 
 /**
@@ -74,16 +143,16 @@ export function getCachedPdfBase64(fileId: string): string | null {
  * フェッチ中なら待機する
  */
 export async function getCachedPdfAsync(fileId: string): Promise<ArrayBuffer | null> {
-  // まずキャッシュをチェック
-  let base64 = getCachedPdfBase64(fileId);
+  // まずIndexedDBをチェック
+  let base64 = await getFromIndexedDB(fileId);
 
   // なければ、フェッチ中かチェックして待機
   if (!base64) {
-    const pending = getPdfCachePending(fileId);
+    const pending = getParentPending(fileId);
     if (pending) {
       console.log('[pdfCache] Waiting for prefetch:', fileId);
       await pending;
-      base64 = getCachedPdfBase64(fileId);
+      base64 = await getFromIndexedDB(fileId);
     }
   }
 
@@ -99,42 +168,23 @@ export async function getCachedPdfAsync(fileId: string): Promise<ArrayBuffer | n
 }
 
 /**
- * キャッシュからPDFを取得してArrayBufferに変換（同期版）
+ * キャッシュからPDFを取得してArrayBufferに変換（同期版は非推奨、非同期版を使用）
  */
-export function getCachedPdf(fileId: string): ArrayBuffer | null {
-  const base64 = getCachedPdfBase64(fileId);
-  if (!base64) return null;
-
-  // Base64 → ArrayBuffer
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
+export async function getCachedPdf(fileId: string): Promise<ArrayBuffer | null> {
+  return await getCachedPdfAsync(fileId);
 }
 
 /**
  * キャッシュにPDFを保存（Base64形式）
  */
-export function setCachedPdfBase64(fileId: string, base64: string): void {
-  const parent = getParentWindow();
-  if (!parent) return;
-
-  if (!parent.__pdfCacheData) {
-    parent.__pdfCacheData = {};
-  }
-
-  parent.__pdfCacheData[fileId] = {
-    base64,
-    timestamp: Date.now(),
-  };
+export async function setCachedPdfBase64(fileId: string, base64: string): Promise<void> {
+  await saveToIndexedDB(fileId, base64);
 }
 
 /**
  * キャッシュにPDFを保存（ArrayBuffer形式）
  */
-export function setCachedPdf(fileId: string, data: ArrayBuffer): void {
+export async function setCachedPdf(fileId: string, data: ArrayBuffer): Promise<void> {
   // ArrayBuffer → Base64
   const bytes = new Uint8Array(data);
   let binary = '';
@@ -142,15 +192,24 @@ export function setCachedPdf(fileId: string, data: ArrayBuffer): void {
     binary += String.fromCharCode(bytes[i]);
   }
   const base64 = btoa(binary);
-  setCachedPdfBase64(fileId, base64);
+  await saveToIndexedDB(fileId, base64);
 }
 
 /**
  * キャッシュをクリア
  */
-export function clearPdfCache(): void {
-  const parent = getParentWindow();
-  if (parent && parent.__pdfCacheData) {
-    parent.__pdfCacheData = {};
+export async function clearPdfCache(): Promise<void> {
+  try {
+    const db = await openPdfCacheDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PDF_CACHE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(PDF_CACHE_STORE_NAME);
+      const request = store.clear();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  } catch (e) {
+    console.error('[pdfCache] clearPdfCache error:', e);
   }
 }

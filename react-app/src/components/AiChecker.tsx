@@ -75,7 +75,7 @@ export function AiChecker() {
           }
           pdfBytes = bytes.buffer;
           // キャッシュに保存
-          setCachedPdf(fileId, pdfBytes);
+          await setCachedPdf(fileId, pdfBytes);
           console.log('[AiChecker] PDF cached:', fileId);
         }
 

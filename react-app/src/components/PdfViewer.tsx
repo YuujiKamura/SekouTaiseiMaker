@@ -71,7 +71,7 @@ export function PdfViewer() {
           }
           pdfBytes = bytes.buffer;
           // キャッシュに保存
-          setCachedPdf(fileId, pdfBytes);
+          await setCachedPdf(fileId, pdfBytes);
           console.log('[PdfViewer] PDF cached:', fileId);
         }
 
