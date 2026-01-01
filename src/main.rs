@@ -1634,8 +1634,13 @@ fn PdfViewer(
         });
     };
 
+    // ローカルパス検出（H:\, C:\, /Users/ など）
+    let is_local_path = url.contains(":\\") || url.starts_with("/Users/") || url.starts_with("/home/");
+
     // Google Drive URLをプレビュー用に変換（堅牢なID抽出方式）
-    let preview_url = if url.contains("drive.google.com") {
+    let preview_url = if is_local_path {
+        String::new()
+    } else if url.contains("drive.google.com") {
         extract_drive_file_id(&url)
             .map(|id| build_drive_preview_url(&id))
             .unwrap_or_else(|| url.clone())
@@ -1645,6 +1650,7 @@ fn PdfViewer(
 
     let contractor_display = contractor.clone();
     let doc_type_display = doc_type.clone();
+    let url_display = url.clone();
 
     view! {
         <div class="viewer-container pdf-viewer">
@@ -1652,11 +1658,11 @@ fn PdfViewer(
                 <button class="back-btn" on:click=on_back>"← 戻る"</button>
                 <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
                 <div class="toolbar-actions">
-                    <button class="edit-btn" on:click=on_edit>"編集"</button>
+                    <button class="edit-btn" on:click=on_edit disabled=is_local_path>"編集"</button>
                     <button
                         class="check-btn"
                         on:click=on_check
-                        disabled=move || checking.get() || !ctx.api_connected.get()
+                        disabled=move || checking.get() || !ctx.api_connected.get() || is_local_path
                     >
                         {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
                     </button>
@@ -1674,11 +1680,24 @@ fn PdfViewer(
             })}
 
             <div class="viewer-content">
-                <iframe
-                    src=preview_url
-                    class="pdf-frame"
-                    allow="autoplay"
-                ></iframe>
+                {if is_local_path {
+                    view! {
+                        <div class="local-path-warning">
+                            <p class="warning-title">"ローカルファイルはプレビューできません"</p>
+                            <p class="warning-path">{url_display}</p>
+                            <p class="warning-hint">"目次シートのURLをGoogle Drive Web URL形式に変更してください"</p>
+                            <p class="warning-example">"例: https://drive.google.com/file/d/ファイルID/view"</p>
+                        </div>
+                    }.into_view()
+                } else {
+                    view! {
+                        <iframe
+                            src=preview_url
+                            class="pdf-frame"
+                            allow="autoplay"
+                        ></iframe>
+                    }.into_view()
+                }}
             </div>
         </div>
     }
@@ -1816,8 +1835,13 @@ fn SpreadsheetViewer(
         });
     };
 
+    // ローカルパス検出（H:\, C:\, /Users/ など）
+    let is_local_path = url.contains(":\\") || url.starts_with("/Users/") || url.starts_with("/home/");
+
     // Google Sheets URLを埋め込み用に変換（堅牢なID抽出方式）
-    let embed_url = if url.contains("docs.google.com/spreadsheets") {
+    let embed_url = if is_local_path {
+        String::new()
+    } else if url.contains("docs.google.com/spreadsheets") {
         extract_spreadsheet_info(&url)
             .map(|(id, gid)| build_sheets_embed_url(&id, gid.as_deref()))
             .unwrap_or_else(|| url.clone())
@@ -1827,6 +1851,7 @@ fn SpreadsheetViewer(
 
     let contractor_display = contractor.clone();
     let doc_type_display = doc_type.clone();
+    let url_display = url.clone();
 
     view! {
         <div class="viewer-container spreadsheet-viewer">
@@ -1855,10 +1880,23 @@ fn SpreadsheetViewer(
             })}
 
             <div class="viewer-content">
-                <iframe
-                    src=embed_url
-                    class="spreadsheet-frame"
-                ></iframe>
+                {if is_local_path {
+                    view! {
+                        <div class="local-path-warning">
+                            <p class="warning-title">"ローカルファイルはプレビューできません"</p>
+                            <p class="warning-path">{url_display}</p>
+                            <p class="warning-hint">"目次シートのURLをGoogle Drive Web URL形式に変更してください"</p>
+                            <p class="warning-example">"例: https://docs.google.com/spreadsheets/d/ファイルID/edit"</p>
+                        </div>
+                    }.into_view()
+                } else {
+                    view! {
+                        <iframe
+                            src=embed_url
+                            class="spreadsheet-frame"
+                        ></iframe>
+                    }.into_view()
+                }}
             </div>
         </div>
     }

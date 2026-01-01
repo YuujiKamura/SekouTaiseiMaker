@@ -1334,6 +1334,48 @@ button:disabled {
     cursor: not-allowed;
 }
 
+/* ローカルパス警告 */
+.local-path-warning {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px;
+    text-align: center;
+    background: #fff;
+}
+
+.local-path-warning .warning-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #c00;
+    margin-bottom: 16px;
+}
+
+.local-path-warning .warning-path {
+    font-size: 12px;
+    color: #666;
+    background: #f5f5f5;
+    padding: 8px 16px;
+    border-radius: 4px;
+    word-break: break-all;
+    max-width: 600px;
+    margin-bottom: 20px;
+}
+
+.local-path-warning .warning-hint {
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.local-path-warning .warning-example {
+    font-size: 12px;
+    color: #0066cc;
+    font-family: monospace;
+}
+
 .viewer-content {
     flex: 1;
     display: flex;
