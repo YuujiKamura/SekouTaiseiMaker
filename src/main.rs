@@ -2737,6 +2737,10 @@ fn App() -> impl IntoView {
     let (api_connected, set_api_connected) = create_signal(false);
     let (api_loading, set_api_loading) = create_signal(false);
 
+    // データソース追跡（デバッグ用）
+    let (data_source, set_data_source) = create_signal("なし".to_string());
+    let (show_debug, set_show_debug) = create_signal(false);
+
     // OCRビュー用の状態
     let (ocr_documents, set_ocr_documents) = create_signal(Vec::<OcrDocument>::new());
     let (current_doc_index, set_current_doc_index) = create_signal(0usize);
@@ -2797,6 +2801,7 @@ fn App() -> impl IntoView {
                 Ok(data) => {
                     set_project.set(Some(data.clone()));
                     save_to_cache(&data);
+                    set_data_source.set("GAS (URLパラメータ)".to_string());
                     set_gas_message.set(Some("シートからデータを読み込みました".to_string()));
                 }
                 Err(e) => {
@@ -2813,8 +2818,10 @@ fn App() -> impl IntoView {
             if let Some(data) = get_hash_data() {
                 set_project.set(Some(data.clone()));
                 save_to_cache(&data);
+                set_data_source.set("URLハッシュ".to_string());
             } else if let Some(data) = load_from_cache() {
                 set_project.set(Some(data));
+                set_data_source.set("LocalStorageキャッシュ".to_string());
             }
         }
     });
@@ -3163,6 +3170,9 @@ fn App() -> impl IntoView {
                                 "GitHub Actions ↗"
                             </a>
                             <hr class="menu-divider" />
+                            <button class="menu-item" on:click=move |_| set_show_debug.update(|v| *v = !*v)>
+                                {move || if show_debug.get() { "デバッグ非表示" } else { "デバッグ表示" }}
+                            </button>
                             <button class="menu-item danger" on:click=on_clear_cache>
                                 "キャッシュクリア"
                             </button>
@@ -3170,6 +3180,35 @@ fn App() -> impl IntoView {
                     })}
                 </div>
             </header>
+
+            // デバッグパネル
+            <Show when=move || show_debug.get() fallback=|| ()>
+                <div class="debug-panel">
+                    <div class="debug-header">"データソース情報"</div>
+                    <div class="debug-content">
+                        <p><strong>"ソース: "</strong>{move || data_source.get()}</p>
+                        <p><strong>"GAS URL: "</strong>{move || get_gas_url().unwrap_or_else(|| "未設定".to_string())}</p>
+                        {move || project.get().map(|p| view! {
+                            <div class="debug-project">
+                                <p><strong>"プロジェクト: "</strong>{p.project_name.clone()}</p>
+                                <p><strong>"業者数: "</strong>{p.contractors.len()}</p>
+                                <details>
+                                    <summary>"書類URL一覧（先頭5件）"</summary>
+                                    <ul class="debug-urls">
+                                        {p.contractors.iter().take(2).flat_map(|c| {
+                                            c.docs.iter().filter_map(|(k, v)| {
+                                                v.url.as_ref().map(|u| view! {
+                                                    <li><span class="debug-key">{k.clone()}</span>": "{u.clone()}</li>
+                                                })
+                                            }).take(3).collect::<Vec<_>>()
+                                        }).collect::<Vec<_>>()}
+                                    </ul>
+                                </details>
+                            </div>
+                        })}
+                    </div>
+                </div>
+            </Show>
 
             {move || {
                 match view_mode.get() {

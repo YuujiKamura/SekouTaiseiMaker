@@ -20,7 +20,8 @@
       "Bash(pip install:*)",
       "Bash(python:*)",
       "Bash(pyftsubset:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(cargo check:*)"
     ]
   }
 }
