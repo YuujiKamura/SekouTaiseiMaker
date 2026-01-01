@@ -483,11 +483,11 @@ fn extract_spreadsheet_info(url: &str) -> Option<(String, Option<String>)> {
 fn build_sheets_embed_url(spreadsheet_id: &str, gid: Option<&str>) -> String {
     match gid {
         Some(g) => format!(
-            "https://docs.google.com/spreadsheets/d/{}/htmlembed?gid={}",
+            "https://docs.google.com/spreadsheets/d/{}/preview?gid={}",
             spreadsheet_id, g
         ),
         None => format!(
-            "https://docs.google.com/spreadsheets/d/{}/htmlembed",
+            "https://docs.google.com/spreadsheets/d/{}/preview",
             spreadsheet_id
         ),
     }
