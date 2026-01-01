@@ -73,8 +73,8 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     const loadFonts = async () => {
       try {
         const [minchoRes, gothicRes] = await Promise.all([
-          fetch('/fonts/NotoSerifJP-Subset.otf'),
-          fetch('/fonts/NotoSansJP-Subset.otf')
+          fetch('./fonts/NotoSerifJP-Subset.otf'),
+          fetch('./fonts/NotoSansJP-Subset.otf')
         ]);
         fontsRef.current.mincho = await minchoRes.arrayBuffer();
         fontsRef.current.gothic = await gothicRes.arrayBuffer();
