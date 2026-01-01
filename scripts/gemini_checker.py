@@ -22,13 +22,12 @@ from document_prompts import get_check_prompt, get_spreadsheet_check_prompt
 # Geminiモデル名（モデル変更時はここを更新）
 GEMINI_MODEL_NAME = 'gemini-2.0-flash-exp'
 
-# APIキーのパス設定
-# Windows環境: C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\gemini_api_key.txt
-# Linux環境: 環境変数 GEMINI_API_KEY または カレントディレクトリの credentials/gemini_api_key.txt
+# APIキーのパス設定（Gemini API と Google Sheets API 共通）
+# 環境変数 GOOGLE_API_KEY または以下のファイルから取得
 API_KEY_PATHS = [
-    Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\gemini_api_key.txt"),
-    Path.home() / "credentials" / "gemini_api_key.txt",
-    Path(__file__).parent.parent / "credentials" / "gemini_api_key.txt",
+    Path(r"C:\Users\yuuji\Sanyuu2Kouku\cursor_tools\summarygenerator\credentials\google_api_key.txt"),
+    Path.home() / "credentials" / "google_api_key.txt",
+    Path(__file__).parent.parent / "credentials" / "google_api_key.txt",
 ]
 
 # モジュールレベルでモデルをキャッシュ（シングルトン）
@@ -36,9 +35,9 @@ _model: Optional[genai.GenerativeModel] = None
 
 
 def get_api_key() -> str:
-    """APIキーを取得"""
+    """APIキーを取得（Gemini/Sheets共通）"""
     # 環境変数から取得
-    env_key = os.environ.get("GEMINI_API_KEY")
+    env_key = os.environ.get("GOOGLE_API_KEY")
     if env_key:
         return env_key.strip()
 
@@ -48,7 +47,7 @@ def get_api_key() -> str:
             return path.read_text().strip()
 
     raise FileNotFoundError(
-        "APIキーが見つかりません。環境変数 GEMINI_API_KEY を設定するか、"
+        "APIキーが見つかりません。環境変数 GOOGLE_API_KEY を設定するか、"
         f"以下のいずれかにAPIキーファイルを配置してください: {API_KEY_PATHS}"
     )
 
@@ -219,10 +218,7 @@ def read_sheet_data(spreadsheet_id: str, sheet_name: Optional[str] = None) -> li
     Returns:
         2次元リスト [[row1], [row2], ...]
     """
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("環境変数 GOOGLE_API_KEY を設定してください")
-
+    api_key = get_api_key()
     service = build('sheets', 'v4', developerKey=api_key)
 
     # シート名が指定されていない場合は最初のシートを取得

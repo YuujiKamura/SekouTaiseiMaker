@@ -3,22 +3,19 @@
 契約書スプレッドシートを読み取るスクリプト
 Google Sheets API を使用（APIキー方式）
 
-環境変数 GOOGLE_API_KEY にAPIキーを設定して実行
+環境変数 GOOGLE_API_KEY または credentials/google_api_key.txt から取得
 """
 
-import os
 import json
 from pathlib import Path
 from googleapiclient.discovery import build
 
-# APIキー（環境変数から取得）
-API_KEY = os.environ.get('GOOGLE_API_KEY')
-if not API_KEY:
-    raise ValueError("環境変数 GOOGLE_API_KEY を設定してください")
+from gemini_checker import get_api_key
 
 def read_spreadsheet(spreadsheet_id: str):
     """スプレッドシートを読み取ってJSONに保存"""
-    service = build('sheets', 'v4', developerKey=API_KEY)
+    api_key = get_api_key()
+    service = build('sheets', 'v4', developerKey=api_key)
 
     # シート一覧を取得
     spreadsheet = service.spreadsheets().get(
