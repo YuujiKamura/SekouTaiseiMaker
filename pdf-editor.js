@@ -43,8 +43,8 @@ window.PdfEditor = (function() {
 
     // 日本語フォントURL (ローカルサブセットフォント - 軽量版)
     const FONT_URLS = {
-        gothic: './fonts/NotoSansJP-Subset.ttf',
-        mincho: './fonts/NotoSerifJP-Subset.ttf'
+        gothic: './fonts/NotoSansJP-Subset.otf',
+        mincho: './fonts/NotoSerifJP-Subset.otf'
     };
 
     /**
