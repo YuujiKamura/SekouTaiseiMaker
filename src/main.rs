@@ -1648,35 +1648,19 @@ fn PdfViewer(
 
     view! {
         <div class="viewer-container pdf-viewer">
-            <div class="viewer-header">
-                <div class="doc-title">
-                    <span class="contractor-name">{contractor_display}</span>
-                    <span class="doc-type">{doc_type_display}</span>
+            <div class="viewer-toolbar">
+                <button class="back-btn" on:click=on_back>"← 戻る"</button>
+                <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
+                <div class="toolbar-actions">
+                    <button class="edit-btn" on:click=on_edit>"編集"</button>
+                    <button
+                        class="check-btn"
+                        on:click=on_check
+                        disabled=move || checking.get() || !ctx.api_connected.get()
+                    >
+                        {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
+                    </button>
                 </div>
-                <a class="external-link" href=url.clone() target="_blank" rel="noopener">
-                    "新規タブで開く ↗"
-                </a>
-            </div>
-            <button class="back-button-float" on:click=on_back>
-                "← 戻る"
-            </button>
-
-            // アクションバー
-            <div class="viewer-actions">
-                <button class="edit-btn" on:click=on_edit>
-                    "編集"
-                </button>
-                <button
-                    class="action-btn check-btn"
-                    on:click=on_check
-                    disabled=move || checking.get() || !ctx.api_connected.get()
-                >
-                    {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
-                </button>
-
-                {move || (!ctx.api_connected.get()).then(|| view! {
-                    <span class="api-warning">"※サーバー未接続"</span>
-                })}
             </div>
 
             // エラー表示
@@ -1846,32 +1830,18 @@ fn SpreadsheetViewer(
 
     view! {
         <div class="viewer-container spreadsheet-viewer">
-            <div class="viewer-header">
-                <div class="doc-title">
-                    <span class="contractor-name">{contractor_display}</span>
-                    <span class="doc-type">{doc_type_display}</span>
+            <div class="viewer-toolbar">
+                <button class="back-btn" on:click=on_back>"← 戻る"</button>
+                <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
+                <div class="toolbar-actions">
+                    <button
+                        class="check-btn"
+                        on:click=on_check
+                        disabled=move || checking.get() || !ctx.api_connected.get()
+                    >
+                        {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
+                    </button>
                 </div>
-                <a class="external-link" href=url.clone() target="_blank" rel="noopener">
-                    "新規タブで開く ↗"
-                </a>
-            </div>
-            <button class="back-button-float" on:click=on_back>
-                "← 戻る"
-            </button>
-
-            // アクションバー
-            <div class="viewer-actions">
-                <button
-                    class="action-btn check-btn"
-                    on:click=on_check
-                    disabled=move || checking.get() || !ctx.api_connected.get()
-                >
-                    {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
-                </button>
-
-                {move || (!ctx.api_connected.get()).then(|| view! {
-                    <span class="api-warning">"※サーバー未接続"</span>
-                })}
             </div>
 
             // エラー表示
