@@ -198,6 +198,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
 
     const displayScale = baseScale * zoom;
     const pageAnnotations = annotations.filter(a => a.page === currentPage);
+    console.log('renderOverlay:', { pageAnnotations: pageAnnotations.length, currentPage, zoom });
     for (const ann of pageAnnotations) {
       ctx.font = `${ann.fontSize * displayScale}px ${ann.fontFamily === 'mincho' ? 'serif' : 'sans-serif'}`;
       ctx.fillStyle = ann.color;
@@ -213,16 +214,22 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     }
   }, [annotations, currentPage, selectedId, zoom]);
 
-  useEffect(() => {
-    renderOverlay();
-  }, [renderOverlay]);
-
-  // ズーム変更時に再レンダリング
+  // ズーム・ページ変更時に再レンダリング
   useEffect(() => {
     if (pdfLoaded) {
-      renderPage(currentPage).then(renderOverlay);
+      renderPage(currentPage).then(() => {
+        // renderPage完了後に必ずオーバーレイを再描画
+        setTimeout(() => renderOverlay(), 0);
+      });
     }
   }, [zoom, pdfLoaded, currentPage, renderPage, renderOverlay]);
+
+  // annotations変更時にオーバーレイを再描画（PDFレンダリング不要）
+  useEffect(() => {
+    if (pdfLoaded && overlayRef.current && overlayRef.current.width > 0) {
+      renderOverlay();
+    }
+  }, [annotations, selectedId, pdfLoaded, renderOverlay]);
 
   // PDF読み込み
   const loadPdf = async (data: ArrayBuffer) => {
