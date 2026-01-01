@@ -38,7 +38,6 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   const fileIdParam = getUrlParam('fileId');
   const gasUrlParam = getUrlParam('gasUrl');
   const [driveFileName, setDriveFileName] = useState<string | null>(null);
-  const [isSavingToDrive, setIsSavingToDrive] = useState(false);
   // State
   const [mode, setMode] = useState<'add' | 'select'>('add');
   const [inputText, setInputText] = useState('');
@@ -563,72 +562,6 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     } catch (e) {
       console.error('Save error:', e);
       setStatus(`保存エラー: ${e}`);
-    }
-  };
-
-  // Google Driveに保存
-  const handleSaveToDrive = async () => {
-    if (!pdfBytesRef.current || !gasUrlParam || !fileIdParam) return;
-    setIsSavingToDrive(true);
-    setStatus('Driveに保存中...');
-
-    try {
-      const pdfDoc = await PDFDocument.load(pdfBytesRef.current);
-      pdfDoc.registerFontkit(fontkit);
-
-      if (!fontsRef.current.mincho || !fontsRef.current.gothic) {
-        setStatus('フォント読み込み中...');
-        setIsSavingToDrive(false);
-        return;
-      }
-
-      const minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho);
-      const gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic);
-      const pages = pdfDoc.getPages();
-
-      for (const ann of annotations) {
-        const page = pages[ann.page - 1];
-        if (!page) continue;
-        const font = ann.fontFamily === 'mincho' ? minchoFont : gothicFont;
-        const { width, height } = page.getSize();
-        const rotation = page.getRotation().angle;
-
-        let pdfX: number, pdfY: number;
-        if (rotation === 90) { pdfX = ann.y; pdfY = ann.x; }
-        else if (rotation === 180) { pdfX = width - ann.x; pdfY = ann.y; }
-        else if (rotation === 270) { pdfX = height - ann.y; pdfY = width - ann.x; }
-        else { pdfX = ann.x; pdfY = height - ann.y; }
-
-        page.drawText(ann.text, { x: pdfX, y: pdfY, size: ann.fontSize, font, color: rgb(0, 0, 0), rotate: degrees(rotation) });
-      }
-
-      const savedBytes = await pdfDoc.save();
-      let binary = '';
-      const bytes = new Uint8Array(savedBytes);
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
-      }
-      const base64 = btoa(binary);
-
-      const response = await fetch(gasUrlParam, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'uploadPdf',
-          base64,
-          originalFileId: fileIdParam,
-          newFileName: driveFileName,
-          overwrite: true
-        })
-      });
-      const result = await response.json();
-      if (result.error) throw new Error(result.error);
-      setStatus(`Driveに保存しました: ${result.fileName}`);
-    } catch (e) {
-      console.error('Drive save error:', e);
-      setStatus(`Drive保存エラー: ${e}`);
-    } finally {
-      setIsSavingToDrive(false);
     }
   };
 

@@ -19,7 +19,8 @@
       "Bash(curl:*)",
       "Bash(pip install:*)",
       "Bash(python:*)",
-      "Bash(pyftsubset:*)"
+      "Bash(pyftsubset:*)",
+      "Bash(git restore:*)"
     ]
   }
 }
