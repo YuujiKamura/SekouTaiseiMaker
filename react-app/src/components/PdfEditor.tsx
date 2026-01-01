@@ -615,13 +615,9 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
     }
   };
 
-  // ホイールでズーム
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setZoom(z => Math.max(0.25, Math.min(4, z + delta)));
-    }
+  // ホイールでパン（Ctrl+wheelはブラウザズームと競合するので無効化）
+  const handleWheel = (_e: React.WheelEvent) => {
+    // 通常のスクロール動作を許可（何もしない）
   };
 
   // 削除
@@ -791,12 +787,32 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
 
   // キーボードショートカット
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+
+    // Ctrl+Z: 元に戻す（入力中でも有効）
     if (e.ctrlKey && e.key === 'z') {
       e.preventDefault();
       handleUndo();
+      return;
     }
-    if (e.key === 'Delete' && selectedId) {
+    // Delete: 選択中のアイテムを削除（入力中は無効）
+    if (e.key === 'Delete' && selectedId && !isInputFocused) {
       handleDelete();
+      return;
+    }
+    // 入力フィールドにフォーカス中はZ/Xズームを無効化
+    if (isInputFocused) return;
+
+    // Z: 縮小 (zoom out)
+    if (e.key === 'z' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      setZoom(z => Math.max(0.25, z - 0.1));
+    }
+    // X: 拡大 (zoom in)
+    if (e.key === 'x' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      setZoom(z => Math.min(4, z + 0.1));
     }
   };
 
