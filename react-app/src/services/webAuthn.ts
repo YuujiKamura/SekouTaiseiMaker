@@ -1,0 +1,145 @@
+/**
+ * WebAuthn Service - パスキー（指紋/顔認証）でAPIキーを保護
+ */
+
+const CREDENTIAL_ID_KEY = 'sekou_taisei_credential_id';
+const PROTECTED_API_KEY = 'sekou_taisei_passkey_api_key';
+
+export const isWebAuthnSupported = (): boolean => {
+  return !!(
+    typeof window !== 'undefined' &&
+    window.PublicKeyCredential &&
+    typeof navigator.credentials?.create === 'function' &&
+    typeof navigator.credentials?.get === 'function'
+  );
+};
+
+export const isBiometricAvailable = async (): Promise<boolean> => {
+  if (!isWebAuthnSupported()) return false;
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+};
+
+export const hasRegisteredPasskey = (): boolean => {
+  return !!(localStorage.getItem(CREDENTIAL_ID_KEY) && localStorage.getItem(PROTECTED_API_KEY));
+};
+
+const generateChallenge = (): Uint8Array => {
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  return challenge;
+};
+
+const bufferToBase64url = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+};
+
+const base64urlToBuffer = (base64url: string): Uint8Array => {
+  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - base64.length % 4) % 4);
+  const binary = atob(base64 + padding);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
+export const registerPasskey = async (apiKey: string): Promise<{ success: boolean; error?: string }> => {
+  if (!isWebAuthnSupported()) {
+    return { success: false, error: 'WebAuthn非対応ブラウザ' };
+  }
+
+  try {
+    const challenge = generateChallenge();
+    const userId = new Uint8Array(16);
+    crypto.getRandomValues(userId);
+
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge: challenge.buffer as ArrayBuffer,
+        rp: { name: '施工体制メーカー', id: window.location.hostname },
+        user: { id: userId.buffer as ArrayBuffer, name: 'user@sekou-taisei', displayName: 'ユーザー' },
+        pubKeyCredParams: [
+          { alg: -7, type: 'public-key' },
+          { alg: -257, type: 'public-key' },
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'preferred',
+        },
+        timeout: 60000,
+        attestation: 'none',
+      },
+    }) as PublicKeyCredential;
+
+    if (!credential) {
+      return { success: false, error: 'キャンセルされました' };
+    }
+
+    localStorage.setItem(CREDENTIAL_ID_KEY, bufferToBase64url(credential.rawId));
+    localStorage.setItem(PROTECTED_API_KEY, apiKey);
+    return { success: true };
+  } catch (e: unknown) {
+    const err = e as Error & { name?: string };
+    if (err.name === 'NotAllowedError') return { success: false, error: 'キャンセルされました' };
+    if (err.name === 'SecurityError') return { success: false, error: 'HTTPSが必要です' };
+    return { success: false, error: err.message || '登録失敗' };
+  }
+};
+
+export const authenticateWithPasskey = async (): Promise<{ success: boolean; apiKey?: string; error?: string }> => {
+  if (!isWebAuthnSupported()) {
+    return { success: false, error: 'WebAuthn非対応' };
+  }
+
+  const storedCredentialId = localStorage.getItem(CREDENTIAL_ID_KEY);
+  if (!storedCredentialId) {
+    return { success: false, error: 'パスキー未登録' };
+  }
+
+  try {
+    const credId = base64urlToBuffer(storedCredentialId);
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: generateChallenge().buffer as ArrayBuffer,
+        allowCredentials: [{
+          id: credId.buffer as ArrayBuffer,
+          type: 'public-key',
+          transports: ['internal'],
+        }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    }) as PublicKeyCredential;
+
+    if (!assertion) {
+      return { success: false, error: 'キャンセルされました' };
+    }
+
+    const apiKey = localStorage.getItem(PROTECTED_API_KEY);
+    if (!apiKey) {
+      return { success: false, error: 'APIキーが見つかりません' };
+    }
+
+    return { success: true, apiKey };
+  } catch (e: unknown) {
+    const err = e as Error & { name?: string };
+    if (err.name === 'NotAllowedError') return { success: false, error: 'キャンセルされました' };
+    return { success: false, error: err.message || '認証失敗' };
+  }
+};
+
+export const removePasskey = (): void => {
+  localStorage.removeItem(CREDENTIAL_ID_KEY);
+  localStorage.removeItem(PROTECTED_API_KEY);
+};

@@ -117,3 +117,53 @@
   border-radius: 4px;
   font-size: 13px;
 }
+
+.passkey-btn {
+  background: #2a6 !important;
+}
+
+.passkey-btn:hover:not(:disabled) {
+  background: #196 !important;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px;
+  background: #f0f8ff;
+  border-radius: 4px;
+  border: 1px solid #cde;
+}
+
+.checkbox-label input {
+  width: 18px;
+  height: 18px;
+}
+
+.alt-login {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #eee;
+}
+
+.link-btn {
+  background: none !important;
+  border: none !important;
+  color: #0066ff;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.link-btn.reset {
+  color: #999;
+}
