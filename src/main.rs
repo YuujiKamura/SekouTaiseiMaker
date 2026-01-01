@@ -1839,11 +1839,20 @@ fn SpreadsheetViewer(
     let is_local_path = url.contains(":\\") || url.starts_with("/Users/") || url.starts_with("/home/");
 
     // Google Sheets URLを埋め込み用に変換（堅牢なID抽出方式）
+    // rtpof=true がある場合はExcelファイルなのでDrive形式でプレビュー
+    let is_excel_compat = url.contains("rtpof=true");
     let embed_url = if is_local_path {
         String::new()
     } else if url.contains("docs.google.com/spreadsheets") {
         extract_spreadsheet_info(&url)
-            .map(|(id, gid)| build_sheets_embed_url(&id, gid.as_deref()))
+            .map(|(id, gid)| {
+                if is_excel_compat {
+                    // ExcelファイルはGoogle Driveのプレビューを使用
+                    build_drive_preview_url(&id)
+                } else {
+                    build_sheets_embed_url(&id, gid.as_deref())
+                }
+            })
             .unwrap_or_else(|| url.clone())
     } else {
         url.clone()
