@@ -1,6 +1,9 @@
 [build]
 target = "index.html"
 dist = "dist"
+# Disable SRI for preload - Chrome ignores integrity for WASM/font preloads anyway
+# See: https://crbug.com/981419
+no_sri = true
 
 [watch]
 ignore = ["dist", "react-app"]
