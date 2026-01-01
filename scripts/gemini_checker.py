@@ -6,8 +6,10 @@ import json
 import base64
 import re
 import tempfile
+import ipaddress
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -290,6 +292,49 @@ def check_image_base64(
     return parse_gemini_response(response.text)
 
 
+def _is_private_ip(hostname: str) -> bool:
+    """
+    ホスト名がプライベートIPアドレスを指しているか簡易チェック
+    """
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        # hostname is not a direct IP literal
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local
+
+
+def _validate_external_url(url: str) -> str:
+    """
+    外部から指定されたURLを検証し、安全なURLのみ許可する
+
+    現状では以下を許可:
+      - https スキームのみ
+      - ホスト名が明示的に許可されたドメインのいずれか
+    """
+    parsed = urlparse(url)
+
+    if parsed.scheme != "https":
+        raise ValueError("サポートされていないURLスキームです（httpsのみ許可）")
+
+    if not parsed.hostname:
+        raise ValueError("URLにホスト名が含まれていません")
+
+    # SSRF対策: プライベートIP / ループバックアドレスは拒否
+    if _is_private_ip(parsed.hostname):
+        raise ValueError("プライベートIPアドレスへのアクセスは許可されていません")
+
+    allowed_hosts = {
+        "drive.google.com",
+        "docs.google.com",
+    }
+
+    if parsed.hostname not in allowed_hosts:
+        raise ValueError(f"指定されたホスト({parsed.hostname})へのアクセスは許可されていません")
+
+    return url
+
+
 def download_file_from_url(url: str) -> tuple[bytes, str]:
     """
     URLからファイルをダウンロード
@@ -300,6 +345,9 @@ def download_file_from_url(url: str) -> tuple[bytes, str]:
     Returns:
         (ファイルバイナリ, MIMEタイプ)
     """
+    # 外部入力されたURLを検証 (SSRF対策)
+    url = _validate_external_url(url)
+
     # Google Drive URLの場合、ダウンロード用URLに変換
     if "drive.google.com" in url:
         # /file/d/FILE_ID/view -> export/download形式に変換
