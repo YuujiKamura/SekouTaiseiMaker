@@ -255,11 +255,10 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
 }
 
 // ============================================
-// APIクライアント設定
+// APIキー確認
 // ============================================
 
-/// ローカル開発用のAPIサーバーURL
-const API_BASE_URL: &str = "http://localhost:5000";
+const API_KEY_STORAGE_KEY: &str = "sekou_taisei_api_key";
 
 // ============================================
 // 施工体制ダッシュボード用データ構造
@@ -368,6 +367,8 @@ pub struct DocStatus {
 pub enum ViewMode {
     Dashboard,
     OcrViewer,
+    ApiKeySetup,
+    AiChecker { contractor: String, doc_type: String, file_id: String, doc_key: String, contractor_id: String },
     PdfViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
     SpreadsheetViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
     PdfEditor { contractor: String, doc_type: String, original_url: String },
@@ -611,31 +612,6 @@ impl Default for OcrResult {
     }
 }
 
-/// チェックAPIリクエスト
-#[derive(Debug, Clone, Serialize)]
-pub struct CheckRequest {
-    pub url: String,
-    pub doc_type: String,
-    pub contractor: String,
-}
-
-/// チェックAPIレスポンス（CheckResultDataと同じ形式）
-#[derive(Debug, Clone, Deserialize)]
-pub struct CheckResponse {
-    pub status: String,
-    pub summary: String,
-    #[serde(default)]
-    pub items: Vec<CheckItem>,
-    #[serde(default)]
-    pub missing_fields: Vec<CheckMissingField>,
-}
-
-/// APIエラーレスポンス
-#[derive(Debug, Clone, Deserialize)]
-pub struct ApiError {
-    pub error: String,
-}
-
 /// OCR結果から不足フィールドを検出
 fn detect_missing_fields(ocr_result: &OcrResult) -> Vec<MissingField> {
     let mut missing = Vec::new();
@@ -677,85 +653,20 @@ fn detect_missing_fields(ocr_result: &OcrResult) -> Vec<MissingField> {
 // API通信関数
 // ============================================
 
-/// サーバーのヘルスチェック
-async fn check_api_health() -> Result<bool, String> {
-    // 本番環境（GitHub Pages等）ではローカルAPIサーバーは存在しないのでスキップ
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let hostname = window.location().hostname().unwrap_or_default();
-    if hostname != "localhost" && hostname != "127.0.0.1" {
-        return Ok(false);
+/// APIキー設定済みかチェック（localStorage）
+fn check_api_key_exists() -> bool {
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => return false,
+    };
+    let storage = match window.local_storage() {
+        Ok(Some(s)) => s,
+        _ => return false,
+    };
+    match storage.get_item(API_KEY_STORAGE_KEY) {
+        Ok(Some(key)) => key.starts_with("AIza") && key.len() >= 39,
+        _ => false,
     }
-
-    let url = format!("{}/health", API_BASE_URL);
-
-    let opts = RequestInit::new();
-    opts.set_method("GET");
-
-    let request = Request::new_with_str_and_init(&url, &opts)
-        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
-
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request))
-        .await
-        .map_err(|e| format!("fetch失敗: {:?}", e))?;
-
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
-
-    Ok(resp.ok())
-}
-
-/// 書類チェックAPIを呼び出し
-async fn call_check_api(req: CheckRequest) -> Result<CheckResultData, String> {
-    let url = format!("{}/check/url", API_BASE_URL);
-
-    let body = serde_json::to_string(&req)
-        .map_err(|e| format!("JSON変換失敗: {:?}", e))?;
-
-    let opts = RequestInit::new();
-    opts.set_method("POST");
-    opts.set_body(&JsValue::from_str(&body));
-
-    let headers = web_sys::Headers::new()
-        .map_err(|_| "Headers作成失敗")?;
-    headers.set("Content-Type", "application/json")
-        .map_err(|_| "Header設定失敗")?;
-    opts.set_headers(&headers);
-
-    let request = Request::new_with_str_and_init(&url, &opts)
-        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
-
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request))
-        .await
-        .map_err(|e| format!("fetch失敗: {:?}", e))?;
-
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
-
-    if !resp.ok() {
-        let json = JsFuture::from(resp.json().map_err(|_| "json()失敗")?)
-            .await
-            .map_err(|_| "JSON解析失敗")?;
-        let error: ApiError = serde_wasm_bindgen::from_value(json)
-            .map_err(|_| "エラーレスポンス解析失敗")?;
-        return Err(error.error);
-    }
-
-    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
-        .await
-        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
-
-    let response: CheckResponse = serde_wasm_bindgen::from_value(json)
-        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
-
-    // CheckResponseをCheckResultDataに変換
-    Ok(CheckResultData {
-        status: response.status,
-        summary: response.summary,
-        items: response.items,
-        missing_fields: response.missing_fields,
-    })
 }
 
 // ============================================
@@ -1577,128 +1488,130 @@ fn PdfViewer(
     contractor_id: String,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+    let set_view_mode = ctx.set_view_mode;
+    let api_connected = ctx.api_connected;
 
-    // ローカル状態
-    let (checking, set_checking) = create_signal(false);
-    let (check_result, set_check_result) = create_signal(None::<CheckResultData>);
+    // エラーメッセージ（ローカルファイル用）
     let (error_msg, set_error_msg) = create_signal(None::<String>);
 
-    let on_back = move |_| {
-        ctx.set_view_mode.set(ViewMode::Dashboard);
-    };
-
-    // 編集モードへ遷移
-    let contractor_for_edit = contractor.clone();
-    let doc_type_for_edit = doc_type.clone();
-    let url_for_edit = url.clone();
-
-    let on_edit = move |_| {
-        ctx.set_view_mode.set(ViewMode::PdfEditor {
-            contractor: contractor_for_edit.clone(),
-            doc_type: doc_type_for_edit.clone(),
-            original_url: url_for_edit.clone(),
-        });
-    };
-
-    // チェック実行
-    let url_for_check = url.clone();
-    let doc_type_for_check = doc_type.clone();
-    let contractor_for_check = contractor.clone();
-    let _doc_key_for_save = doc_key.clone();
-    let _contractor_id_for_save = contractor_id.clone();
-
-    let on_check = move |_| {
-        let url = url_for_check.clone();
-        let doc_type = doc_type_for_check.clone();
-        let contractor = contractor_for_check.clone();
-
-        set_checking.set(true);
-        set_error_msg.set(None);
-
-        spawn_local(async move {
-            let request = CheckRequest {
-                url,
-                doc_type,
-                contractor,
-            };
-
-            match call_check_api(request).await {
-                Ok(result) => {
-                    set_check_result.set(Some(result));
-                }
-                Err(e) => {
-                    set_error_msg.set(Some(e));
+    // PDFプリフェッチ（バックグラウンドでキャッシュ）
+    {
+        let url_for_prefetch = url.clone();
+        create_effect(move |_| {
+            if let Some(file_id) = extract_drive_file_id(&url_for_prefetch) {
+                if let Some(gas_url) = get_gas_url() {
+                    // JavaScript の prefetchPdf を呼び出し
+                    let _ = js_sys::eval(&format!(
+                        "window.prefetchPdf && window.prefetchPdf('{}', '{}')",
+                        file_id, gas_url
+                    ));
                 }
             }
-            set_checking.set(false);
         });
+    }
+
+    let on_back = move |_: web_sys::MouseEvent| {
+        set_view_mode.set(ViewMode::Dashboard);
     };
 
     // ローカルパス検出（H:\, C:\, /Users/ など）
     let is_local_path = url.contains(":\\") || url.starts_with("/Users/") || url.starts_with("/home/");
 
-    // Google Drive URLをプレビュー用に変換（堅牢なID抽出方式）
-    let preview_url = if is_local_path {
+    // React viewer用のiframe URL構築
+    let iframe_url = if is_local_path {
         String::new()
-    } else if url.contains("drive.google.com") {
-        extract_drive_file_id(&url)
-            .map(|id| build_drive_preview_url(&id))
-            .unwrap_or_else(|| url.clone())
     } else {
-        url.clone()
+        let file_id = extract_drive_file_id(&url).unwrap_or_default();
+        let gas_url = get_gas_url().unwrap_or_default();
+        format!(
+            "editor/index.html?mode=view&fileId={}&docType={}&contractor={}&gasUrl={}",
+            js_sys::encode_uri_component(&file_id),
+            js_sys::encode_uri_component(&doc_type),
+            js_sys::encode_uri_component(&contractor),
+            js_sys::encode_uri_component(&gas_url)
+        )
     };
 
-    let contractor_display = contractor.clone();
-    let doc_type_display = doc_type.clone();
     let url_display = url.clone();
+
+    // postMessage ハンドラ（viewer-back, viewer-edit, viewer-check）
+    {
+        let set_view_mode = ctx.set_view_mode.clone();
+        let contractor_for_msg = contractor.clone();
+        let doc_type_for_msg = doc_type.clone();
+        let url_for_msg = url.clone();
+        let doc_key_for_msg = doc_key.clone();
+        let contractor_id_for_msg = contractor_id.clone();
+
+        create_effect(move |_| {
+            let set_view_mode = set_view_mode.clone();
+            let contractor = contractor_for_msg.clone();
+            let doc_type = doc_type_for_msg.clone();
+            let url = url_for_msg.clone();
+            let doc_key = doc_key_for_msg.clone();
+            let contractor_id = contractor_id_for_msg.clone();
+
+            let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                if let Ok(data) = event.data().dyn_into::<js_sys::Object>() {
+                    if let Some(msg_type) = js_sys::Reflect::get(&data, &"type".into())
+                        .ok()
+                        .and_then(|v| v.as_string())
+                    {
+                        match msg_type.as_str() {
+                            "viewer-back" => {
+                                set_view_mode.set(ViewMode::Dashboard);
+                            }
+                            "viewer-edit" => {
+                                set_view_mode.set(ViewMode::PdfEditor {
+                                    contractor: contractor.clone(),
+                                    doc_type: doc_type.clone(),
+                                    original_url: url.clone(),
+                                });
+                            }
+                            "viewer-check" => {
+                                if let Some(file_id) = extract_drive_file_id(&url) {
+                                    set_view_mode.set(ViewMode::AiChecker {
+                                        contractor: contractor.clone(),
+                                        doc_type: doc_type.clone(),
+                                        file_id,
+                                        doc_key: doc_key.clone(),
+                                        contractor_id: contractor_id.clone(),
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(_)>);
+
+            let window = web_sys::window().unwrap();
+            let _ = window.add_event_listener_with_callback("message", handler.as_ref().unchecked_ref());
+            handler.forget();
+        });
+    }
 
     view! {
         <div class="viewer-container pdf-viewer">
-            <div class="viewer-toolbar">
-                <button class="back-btn" on:click=on_back>"← 戻る"</button>
-                <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
-                <div class="toolbar-actions">
-                    <button class="edit-btn" on:click=on_edit disabled=is_local_path>"編集"</button>
-                    <button
-                        class="check-btn"
-                        on:click=on_check
-                        disabled=move || checking.get() || !ctx.api_connected.get() || is_local_path
-                    >
-                        {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
-                    </button>
-                </div>
-            </div>
-
-            // エラー表示
-            {move || error_msg.get().map(|e| view! {
-                <div class="error-message">{e}</div>
-            })}
-
-            // チェック結果パネル
-            {move || check_result.get().map(|result| view! {
-                <ViewerCheckResultPanel result=result />
-            })}
-
-            <div class="viewer-content">
-                {if is_local_path {
-                    view! {
-                        <div class="local-path-warning">
-                            <p class="warning-title">"ローカルファイルはプレビューできません"</p>
-                            <p class="warning-path">{url_display}</p>
-                            <p class="warning-hint">"目次シートのURLをGoogle Drive Web URL形式に変更してください"</p>
-                            <p class="warning-example">"例: https://drive.google.com/file/d/ファイルID/view"</p>
-                        </div>
-                    }.into_view()
-                } else {
-                    view! {
-                        <iframe
-                            src=preview_url
-                            class="pdf-frame"
-                            allow="autoplay"
-                        ></iframe>
-                    }.into_view()
-                }}
-            </div>
+            {if is_local_path {
+                view! {
+                    <div class="local-path-warning">
+                        <button class="back-btn" on:click=on_back>"← 戻る"</button>
+                        <p class="warning-title">"ローカルファイルはプレビューできません"</p>
+                        <p class="warning-path">{url_display}</p>
+                        <p class="warning-hint">"目次シートのURLをGoogle Drive Web URL形式に変更してください"</p>
+                        <p class="warning-example">"例: https://drive.google.com/file/d/ファイルID/view"</p>
+                    </div>
+                }.into_view()
+            } else {
+                view! {
+                    <iframe
+                        src=iframe_url
+                        class="pdf-frame"
+                        style="width: 100%; height: 100vh; border: none;"
+                    ></iframe>
+                }.into_view()
+            }}
         </div>
     }
 }
@@ -1792,47 +1705,11 @@ fn SpreadsheetViewer(
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
 
-    // ローカル状態
-    let (checking, set_checking) = create_signal(false);
-    let (check_result, set_check_result) = create_signal(None::<CheckResultData>);
-    let (error_msg, set_error_msg) = create_signal(None::<String>);
+    // 未使用パラメータ
+    let _ = (doc_key, contractor_id);
 
     let on_back = move |_| {
         ctx.set_view_mode.set(ViewMode::Dashboard);
-    };
-
-    // チェック実行
-    let url_for_check = url.clone();
-    let doc_type_for_check = doc_type.clone();
-    let contractor_for_check = contractor.clone();
-    let _doc_key_for_save = doc_key.clone();
-    let _contractor_id_for_save = contractor_id.clone();
-
-    let on_check = move |_| {
-        let url = url_for_check.clone();
-        let doc_type = doc_type_for_check.clone();
-        let contractor = contractor_for_check.clone();
-
-        set_checking.set(true);
-        set_error_msg.set(None);
-
-        spawn_local(async move {
-            let request = CheckRequest {
-                url,
-                doc_type,
-                contractor,
-            };
-
-            match call_check_api(request).await {
-                Ok(result) => {
-                    set_check_result.set(Some(result));
-                }
-                Err(e) => {
-                    set_error_msg.set(Some(e));
-                }
-            }
-            set_checking.set(false);
-        });
     };
 
     // ローカルパス検出（H:\, C:\, /Users/ など）
@@ -1868,25 +1745,9 @@ fn SpreadsheetViewer(
                 <button class="back-btn" on:click=on_back>"← 戻る"</button>
                 <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
                 <div class="toolbar-actions">
-                    <button
-                        class="check-btn"
-                        on:click=on_check
-                        disabled=move || checking.get() || !ctx.api_connected.get()
-                    >
-                        {move || if checking.get() { "チェック中..." } else { "AIチェック" }}
-                    </button>
+                    // スプレッドシートのAIチェックは現在未対応
                 </div>
             </div>
-
-            // エラー表示
-            {move || error_msg.get().map(|e| view! {
-                <div class="error-message">{e}</div>
-            })}
-
-            // チェック結果パネル
-            {move || check_result.get().map(|result| view! {
-                <ViewerCheckResultPanel result=result />
-            })}
 
             <div class="viewer-content">
                 {if is_local_path {
@@ -2760,9 +2621,8 @@ fn App() -> impl IntoView {
     let (check_results, set_check_results) = create_signal(Vec::<CheckResult>::new());
     let (edit_mode, set_edit_mode) = create_signal(false);
     let (view_mode, set_view_mode) = create_signal(ViewMode::Dashboard);
-    let (api_connected, set_api_connected) = create_signal(true);  // デフォルトは接続状態
 
-    // API接続状態
+    // APIキー設定状態（false = 未設定、ボタン無効化）
     let (api_connected, set_api_connected) = create_signal(false);
     let (api_loading, set_api_loading) = create_signal(false);
 
@@ -2812,13 +2672,103 @@ fn App() -> impl IntoView {
     };
     provide_context(ctx.clone());
 
-    // 起動時にヘルスチェック
-    spawn_local(async move {
-        match check_api_health().await {
-            Ok(true) => set_api_connected.set(true),
-            _ => set_api_connected.set(false),
-        }
-    });
+    // iframeからのpostMessageを受信（グローバル）
+    {
+        let set_view_mode = set_view_mode.clone();
+        let set_api_connected = set_api_connected.clone();
+        let set_project = set_project.clone();
+        let project = project.clone();
+        create_effect(move |_| {
+            let set_view_mode = set_view_mode.clone();
+            let set_api_connected = set_api_connected.clone();
+            let set_project = set_project.clone();
+            let project = project.clone();
+            let window = web_sys::window().expect("window");
+            let closure = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                if let Ok(data) = event.data().dyn_into::<js_sys::Object>() {
+                    if let Ok(type_val) = js_sys::Reflect::get(&data, &JsValue::from_str("type")) {
+                        if let Some(type_str) = type_val.as_string() {
+                            match type_str.as_str() {
+                                "apikey-setup-complete" => {
+                                    // APIキー設定完了 - 状態を更新してダッシュボードに戻る
+                                    set_api_connected.set(check_api_key_exists());
+                                    set_view_mode.set(ViewMode::Dashboard);
+                                }
+                                "ai-check-result" => {
+                                    web_sys::console::log_1(&"[ai-check-result] Received".into());
+                                    // AIチェック結果を受け取り、ProjectDataを更新
+                                    let contractor = js_sys::Reflect::get(&data, &JsValue::from_str("contractor"))
+                                        .ok().and_then(|v| v.as_string());
+                                    let doc_key_raw = js_sys::Reflect::get(&data, &JsValue::from_str("docKey"))
+                                        .ok().and_then(|v| v.as_string());
+                                    let result_val = js_sys::Reflect::get(&data, &JsValue::from_str("result")).ok();
+
+                                    web_sys::console::log_1(&format!("[ai-check-result] contractor={:?}, doc_key={:?}", contractor, doc_key_raw).into());
+
+                                    if let (Some(contractor_name), Some(doc_key_raw), Some(result_js)) = (contractor, doc_key_raw, result_val) {
+                                        let doc_key = doc_key_raw.trim().to_string();
+                                        // 結果をCheckResultDataにデシリアライズ
+                                        match serde_wasm_bindgen::from_value::<CheckResultData>(result_js.clone()) {
+                                            Ok(check_result) => {
+                                                web_sys::console::log_1(&format!("[ai-check-result] Deserialized: status={}", check_result.status).into());
+                                                // ProjectDataを更新
+                                                if let Some(mut proj) = project.get() {
+                                                    let now = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
+
+                                                    // contractor.docsを更新
+                                                    let contractor_name_trimmed = contractor_name.trim();
+                                                    for contractor in &mut proj.contractors {
+                                                        if contractor.name.trim() == contractor_name_trimmed {
+                                                            web_sys::console::log_1(&format!("[ai-check-result] Found contractor: {}", contractor.name).into());
+                                                            let doc_keys: Vec<_> = contractor.docs.keys().collect();
+                                                            web_sys::console::log_1(&format!("[ai-check-result] Available docs: {:?}", doc_keys).into());
+                                                            if let Some(doc_status) = contractor.docs.get_mut(&doc_key) {
+                                                                doc_status.check_result = Some(check_result.clone());
+                                                                doc_status.last_checked = Some(now.clone());
+                                                                web_sys::console::log_1(&format!("[ai-check-result] Updated doc: {}", doc_key).into());
+                                                            } else {
+                                                                web_sys::console::log_1(&format!("[ai-check-result] Doc key '{}' not found", doc_key).into());
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    // ローカル更新
+                                                    set_project.set(Some(proj.clone()));
+                                                    save_to_cache(&proj);
+                                                    web_sys::console::log_1(&"[ai-check-result] Saved to cache".into());
+
+                                                    // GASに保存
+                                                    spawn_local(async move {
+                                                        if let Err(e) = sync_to_gas(&proj).await {
+                                                            web_sys::console::error_1(&format!("GAS保存エラー: {}", e).into());
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                            Err(e) => {
+                                                web_sys::console::error_1(&format!("[ai-check-result] Deserialize error: {:?}", e).into());
+                                            }
+                                        }
+                                    }
+                                    set_view_mode.set(ViewMode::Dashboard);
+                                }
+                                "ai-check-cancel" | "back" => {
+                                    set_view_mode.set(ViewMode::Dashboard);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(_)>);
+            window.add_event_listener_with_callback("message", closure.as_ref().unchecked_ref()).ok();
+            closure.forget();
+        });
+    }
+
+    // 起動時にAPIキー設定をチェック
+    set_api_connected.set(check_api_key_exists());
 
     // GAS URLパラメータ初期化 (?gas=xxx)
     if init_gas_from_url_params().is_some() {
@@ -3121,6 +3071,13 @@ fn App() -> impl IntoView {
                                 {move || if copy_success.get() { "URLをコピーしました!" } else { "共有URLを生成" }}
                             </button>
                             <hr class="menu-divider" />
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                set_view_mode.set(ViewMode::ApiKeySetup);
+                            }>
+                                "APIキー設定"
+                            </button>
+                            <hr class="menu-divider" />
                             // GAS連携
                             <button class="menu-item" on:click=move |_| {
                                 set_menu_open.set(false);
@@ -3292,6 +3249,33 @@ fn App() -> impl IntoView {
                             doc_type=doc_type
                             original_url=original_url
                         />
+                    }.into_view(),
+
+                    ViewMode::AiChecker { contractor, doc_type, file_id, doc_key, contractor_id } => {
+                        let gas_url = get_gas_url().unwrap_or_default();
+                        let iframe_url = format!(
+                            "editor/index.html?mode=check&fileId={}&docType={}&contractor={}&gasUrl={}&docKey={}&contractorId={}",
+                            file_id,
+                            js_sys::encode_uri_component(&doc_type),
+                            js_sys::encode_uri_component(&contractor),
+                            js_sys::encode_uri_component(&gas_url),
+                            js_sys::encode_uri_component(&doc_key),
+                            js_sys::encode_uri_component(&contractor_id)
+                        );
+                        view! {
+                            <iframe src=iframe_url style="width: 100%; height: 100vh; border: none;"></iframe>
+                        }.into_view()
+                    },
+
+                    ViewMode::ApiKeySetup => view! {
+                        <div class="api-key-setup-container">
+                            <div class="back-button-container">
+                                <button class="back-btn" on:click=move |_| set_view_mode.set(ViewMode::Dashboard)>
+                                    "← 戻る"
+                                </button>
+                            </div>
+                            <iframe src="editor/index.html?mode=apikey" style="width: 100%; height: calc(100vh - 50px); border: none;"></iframe>
+                        </div>
                     }.into_view(),
                 }
             }}

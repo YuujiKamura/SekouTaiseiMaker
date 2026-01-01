@@ -27,7 +27,8 @@
       "Bash(npm run test:e2e:*)",
       "Bash(npx playwright test:*)",
       "Bash(pip show:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(RUST_LOG=trunk=debug trunk build:*)"
     ]
   }
 }

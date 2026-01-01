@@ -3,6 +3,7 @@ import { PDFDocument, rgb, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { getDocument, GlobalWorkerOptions, AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { getCachedPdf, setCachedPdf } from '../services/pdfCache';
 import './PdfEditor.css';
 
 // PDF.js worker設定 (v5.x - use bundled worker)
@@ -348,24 +349,36 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   // Google DriveからPDF読み込み (URL params: ?fileId=xxx&gasUrl=xxx)
   useEffect(() => {
     if (fileIdParam && gasUrlParam) {
-      setStatus('Google Driveから読み込み中...');
-      const fetchUrl = `${gasUrlParam}?action=fetchPdf&fileId=${encodeURIComponent(fileIdParam)}`;
-      fetch(fetchUrl)
-        .then(res => res.json())
-        .then(async (result) => {
-          if (result.error) throw new Error(result.error);
-          if (result.base64) {
-            setDriveFileName(result.fileName || 'document.pdf');
-            const binary = atob(result.base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              bytes[i] = binary.charCodeAt(i);
-            }
-            await loadPdf(bytes.buffer);
-            setStatus(`読み込み完了: ${result.fileName}`);
+      const loadFromDrive = async () => {
+        // キャッシュをチェック
+        const cached = getCachedPdf(fileIdParam);
+        if (cached) {
+          setStatus('キャッシュから読み込み中...');
+          await loadPdf(cached);
+          setStatus('読み込み完了 (キャッシュ)');
+          return;
+        }
+
+        setStatus('Google Driveから読み込み中...');
+        const fetchUrl = `${gasUrlParam}?action=fetchPdf&fileId=${encodeURIComponent(fileIdParam)}`;
+        const res = await fetch(fetchUrl);
+        const result = await res.json();
+        if (result.error) throw new Error(result.error);
+        if (result.base64) {
+          setDriveFileName(result.fileName || 'document.pdf');
+          const binary = atob(result.base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
           }
-        })
-        .catch(e => setStatus(`読み込みエラー: ${e.message}`));
+          const pdfBytes = bytes.buffer;
+          // キャッシュに保存
+          setCachedPdf(fileIdParam, pdfBytes);
+          await loadPdf(pdfBytes);
+          setStatus(`読み込み完了: ${result.fileName}`);
+        }
+      };
+      loadFromDrive().catch(e => setStatus(`読み込みエラー: ${e.message}`));
     }
   }, [fileIdParam, gasUrlParam]);
 

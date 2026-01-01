@@ -167,3 +167,18 @@
 .link-btn.reset {
   color: #999;
 }
+
+.success-message {
+  color: #2a6;
+  font-size: 16px;
+  text-align: center;
+  padding: 20px;
+}
+
+.key-preview {
+  font-family: monospace;
+  background: #f0f0f0;
+  padding: 8px 12px;
+  border-radius: 4px;
+  text-align: center;
+}

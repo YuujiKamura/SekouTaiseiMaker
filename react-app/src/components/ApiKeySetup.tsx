@@ -2,15 +2,7 @@
  * APIキー設定コンポーネント（パスキー対応）
  */
 import { useState, useEffect } from 'react';
-import { hashPassword } from '../utils/crypto';
-import {
-  hasEncryptedApiKey,
-  setApiKeyEncrypted,
-  loadApiKeyEncrypted,
-  clearApiKey,
-  getMasterHashKey,
-  setApiKey as saveApiKey,
-} from '../services/apiKey';
+import { getApiKey, setApiKey, clearApiKey } from '../services/apiKey';
 import {
   isBiometricAvailable,
   hasRegisteredPasskey,
@@ -25,27 +17,25 @@ interface Props {
   onCancel?: () => void;
 }
 
-type Mode = 'check' | 'passkey' | 'unlock' | 'new';
+type Mode = 'loading' | 'auth' | 'new' | 'done';
 
 export function ApiKeySetup({ onComplete, onCancel }: Props) {
-  const [mode, setMode] = useState<Mode>('check');
-  const [apiKey, setApiKey] = useState('');
-  const [masterPassword, setMasterPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [mode, setMode] = useState<Mode>('loading');
+  const [apiKey, setApiKeyValue] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [registerBiometric, setRegisterBiometric] = useState(false);
 
   useEffect(() => {
     const init = async () => {
-      const bioAvailable = await isBiometricAvailable();
-      setBiometricAvailable(bioAvailable);
+      const bioAvail = await isBiometricAvailable();
+      setBiometricAvailable(bioAvail);
 
       if (hasRegisteredPasskey()) {
-        setMode('passkey');
-      } else if (hasEncryptedApiKey()) {
-        setMode('unlock');
+        setMode('auth');
+      } else if (getApiKey()) {
+        // 既にAPIキーがある
+        setMode('auth');
       } else {
         setMode('new');
       }
@@ -54,8 +44,6 @@ export function ApiKeySetup({ onComplete, onCancel }: Props) {
   }, []);
 
   const isValidKey = apiKey.trim().startsWith('AIza') && apiKey.trim().length >= 39;
-  const isValidPassword = masterPassword.length >= 4;
-  const passwordsMatch = masterPassword === confirmPassword;
 
   // パスキー認証
   const handlePasskeyAuth = async () => {
@@ -64,7 +52,8 @@ export function ApiKeySetup({ onComplete, onCancel }: Props) {
     try {
       const result = await authenticateWithPasskey();
       if (result.success && result.apiKey) {
-        saveApiKey(result.apiKey);
+        setApiKey(result.apiKey);
+        setMode('done');
         onComplete(result.apiKey);
       } else {
         setError(result.error || '認証失敗');
@@ -76,65 +65,44 @@ export function ApiKeySetup({ onComplete, onCancel }: Props) {
     }
   };
 
-  // パスワードでアンロック
-  const handleUnlock = async () => {
-    if (!masterPassword) {
-      setError('パスワードを入力');
-      return;
+  // 既存キーを使用
+  const handleUseExisting = () => {
+    const key = getApiKey();
+    if (key) {
+      setMode('done');
+      onComplete(key);
     }
+  };
+
+  // パスキーで保存
+  const handleSaveWithPasskey = async () => {
+    if (!isValidKey) return;
     setLoading(true);
     setError('');
     try {
-      const success = await loadApiKeyEncrypted(masterPassword);
-      if (success) {
-        const { getApiKey } = await import('../services/apiKey');
-        const key = getApiKey();
-        if (key) onComplete(key);
-        else setError('キー読み込み失敗');
+      const trimmedKey = apiKey.trim();
+      const result = await registerPasskey(trimmedKey);
+      if (result.success) {
+        setApiKey(trimmedKey);
+        setMode('done');
+        onComplete(trimmedKey);
       } else {
-        setError('パスワードが違います');
+        setError(result.error || 'パスキー登録失敗');
       }
-    } catch {
-      setError('復号失敗');
+    } catch (e) {
+      setError('エラー: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       setLoading(false);
     }
   };
 
-  // 新規設定
-  const handleSubmit = async () => {
-    if (!isValidKey || !isValidPassword || !passwordsMatch) {
-      setError('入力を確認してください');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const trimmedKey = apiKey.trim();
-
-      // パスキー登録が選択されている場合
-      if (registerBiometric && biometricAvailable) {
-        const result = await registerPasskey(trimmedKey);
-        if (result.success) {
-          saveApiKey(trimmedKey);
-          onComplete(trimmedKey);
-          return;
-        } else {
-          // パスキー登録失敗時はパスワード方式にフォールバック
-          console.warn('Passkey registration failed, falling back to password:', result.error);
-        }
-      }
-
-      // パスワード方式で保存
-      const hash = await hashPassword(masterPassword);
-      localStorage.setItem(getMasterHashKey(), hash);
-      await setApiKeyEncrypted(trimmedKey, masterPassword);
-      onComplete(trimmedKey);
-    } catch (e: unknown) {
-      setError('保存失敗: ' + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setLoading(false);
-    }
+  // 通常保存
+  const handleSaveNormal = () => {
+    if (!isValidKey) return;
+    const trimmedKey = apiKey.trim();
+    setApiKey(trimmedKey);
+    setMode('done');
+    onComplete(trimmedKey);
   };
 
   // リセット
@@ -143,71 +111,61 @@ export function ApiKeySetup({ onComplete, onCancel }: Props) {
       clearApiKey();
       removePasskey();
       setMode('new');
-      setMasterPassword('');
-      setConfirmPassword('');
-      setApiKey('');
+      setApiKeyValue('');
       setError('');
     }
   };
 
-  if (mode === 'check') {
-    return <div className="api-key-setup">読み込み中...</div>;
+  if (mode === 'loading') {
+    return <div className="api-key-setup"><p>読み込み中...</p></div>;
+  }
+
+  if (mode === 'done') {
+    return (
+      <div className="api-key-setup">
+        <h2>APIキー設定</h2>
+        <div className="setup-form">
+          <p className="success-message">設定完了</p>
+          <div className="button-row">
+            <button onClick={() => window.parent.postMessage({ type: 'apikey-setup-complete' }, '*')}>
+              閉じる
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="api-key-setup">
       <h2>APIキー設定</h2>
 
-      {/* パスキーモード */}
-      {mode === 'passkey' && (
+      {mode === 'auth' && (
         <div className="setup-form">
-          <p>指紋/顔認証でログイン</p>
-          <div className="button-row">
-            <button onClick={handlePasskeyAuth} disabled={loading} className="passkey-btn">
-              {loading ? '認証中...' : '認証する'}
-            </button>
-          </div>
+          {hasRegisteredPasskey() ? (
+            <>
+              <p>パスキーで認証</p>
+              <div className="button-row">
+                <button onClick={handlePasskeyAuth} disabled={loading} className="passkey-btn">
+                  {loading ? '認証中...' : '指紋/顔認証'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>APIキー設定済み</p>
+              <p className="key-preview">AIza...{getApiKey()?.slice(-4)}</p>
+              <div className="button-row">
+                <button onClick={handleUseExisting}>このまま使用</button>
+              </div>
+            </>
+          )}
           <div className="alt-login">
-            <button onClick={() => setMode('unlock')} className="link-btn">
-              パスワードでログイン
-            </button>
-            <button onClick={handleReset} className="link-btn reset">
-              リセット
-            </button>
+            <button onClick={handleReset} className="link-btn reset">リセット</button>
           </div>
         </div>
       )}
 
-      {/* パスワードアンロックモード */}
-      {mode === 'unlock' && (
-        <div className="setup-form">
-          <p>マスターパスワードを入力</p>
-          <input
-            type="password"
-            value={masterPassword}
-            onChange={(e) => setMasterPassword(e.target.value)}
-            placeholder="マスターパスワード"
-            onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-          />
-          <div className="button-row">
-            <button onClick={handleUnlock} disabled={loading}>
-              {loading ? '処理中...' : 'アンロック'}
-            </button>
-          </div>
-          <div className="alt-login">
-            {hasRegisteredPasskey() && (
-              <button onClick={() => setMode('passkey')} className="link-btn">
-                パスキーでログイン
-              </button>
-            )}
-            <button onClick={handleReset} className="link-btn reset">
-              リセット
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 新規設定モード */}
       {mode === 'new' && (
         <div className="setup-form">
           <div className="step">
@@ -224,61 +182,32 @@ export function ApiKeySetup({ onComplete, onCancel }: Props) {
           <input
             type="password"
             value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
+            onChange={(e) => setApiKeyValue(e.target.value)}
             placeholder="AIza..."
+            autoFocus
           />
           {apiKey && !isValidKey && <span className="hint error">AIza...で始まる39文字以上</span>}
           {isValidKey && <span className="hint ok">OK</span>}
 
-          <div className="step">
-            <span className="step-num">3</span>
-            <span>保護方法を選択</span>
-          </div>
-
-          {biometricAvailable && (
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={registerBiometric}
-                onChange={(e) => setRegisterBiometric(e.target.checked)}
-              />
-              <span>指紋/顔認証を使用（推奨）</span>
-            </label>
-          )}
-
-          {!registerBiometric && (
-            <>
-              <input
-                type="password"
-                value={masterPassword}
-                onChange={(e) => setMasterPassword(e.target.value)}
-                placeholder="マスターパスワード（4文字以上）"
-              />
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="パスワード確認"
-              />
-              {masterPassword && confirmPassword && !passwordsMatch && (
-                <span className="hint error">パスワードが一致しません</span>
-              )}
-            </>
-          )}
-
           <div className="button-row">
-            <button
-              onClick={handleSubmit}
-              disabled={loading || !isValidKey || (!registerBiometric && (!isValidPassword || !passwordsMatch))}
-            >
-              {loading ? '保存中...' : '保存'}
-            </button>
-            {onCancel && (
-              <button onClick={onCancel} className="cancel-btn">
-                キャンセル
+            {biometricAvailable ? (
+              <button onClick={handleSaveWithPasskey} disabled={!isValidKey || loading} className="passkey-btn">
+                {loading ? '登録中...' : 'パスキーで保存'}
+              </button>
+            ) : (
+              <button onClick={handleSaveNormal} disabled={!isValidKey}>
+                保存
               </button>
             )}
+            {onCancel && <button onClick={onCancel} className="cancel-btn">キャンセル</button>}
           </div>
+          {biometricAvailable && (
+            <div className="alt-login">
+              <button onClick={handleSaveNormal} disabled={!isValidKey} className="link-btn">
+                パスキーなしで保存
+              </button>
+            </div>
+          )}
         </div>
       )}
 
