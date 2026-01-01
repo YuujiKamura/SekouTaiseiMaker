@@ -34,8 +34,26 @@ jobs:
         with:
           version: 'v0.21.14'
 
-      - name: Build
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: react-app/package-lock.json
+
+      - name: Build React app
+        run: |
+          cd react-app
+          npm ci
+          npm run build
+
+      - name: Build Leptos app
         run: trunk build --release --public-url /SekouTaiseiMaker/
+
+      - name: Copy React app to dist
+        run: |
+          cp -r react-app/dist/* dist/
+          cp -r react-app/public/fonts dist/
 
       - name: Copy data
         run: cp -r data dist/

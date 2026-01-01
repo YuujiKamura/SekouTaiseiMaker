@@ -1,0 +1,263 @@
+.pdf-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: sans-serif;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: auto;
+}
+
+.toolbar-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.separator {
+  color: #ccc;
+  margin: 0 4px;
+}
+
+/* ファイル開くボタン */
+.file-button {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f0f0f0;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.file-button:hover {
+  background: #e0e0e0;
+}
+
+.file-button input {
+  display: none;
+}
+
+/* モード切替スイッチ */
+.mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #eee;
+  border-radius: 20px;
+}
+
+.mode-switch span {
+  font-size: 13px;
+  color: #888;
+}
+
+.mode-switch span.active {
+  color: #0066ff;
+  font-weight: bold;
+}
+
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 22px;
+}
+
+.switch .slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.switch input:checked + .slider {
+  background-color: #0066ff;
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(18px);
+}
+
+/* 削除ボタン */
+.delete-btn {
+  color: #c00;
+  border-color: #c00;
+}
+
+.delete-btn:hover:not(:disabled) {
+  background: #fee;
+}
+
+/* 保存ボタン */
+.save-btn {
+  background: #0066ff !important;
+  color: white !important;
+  border-color: #0066ff !important;
+}
+
+.save-btn:hover:not(:disabled) {
+  background: #0055dd !important;
+}
+
+.save-btn:disabled {
+  background: #ccc !important;
+  border-color: #ccc !important;
+  color: #888 !important;
+}
+
+.text-input {
+  flex: 1;
+  min-width: 150px;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.toolbar select {
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.toolbar button {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: #eee;
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status {
+  padding: 4px 12px;
+  background: #e8f4e8;
+  color: #2a6;
+  font-size: 13px;
+}
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px;
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+}
+
+.page-nav button {
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.page-nav button:disabled {
+  opacity: 0.4;
+}
+
+.zoom-indicator {
+  color: #ccc;
+  margin: 0 8px;
+}
+
+.zoom-value {
+  min-width: 50px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.canvas-container {
+  flex: 1;
+  overflow: auto;
+  background: #888;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 20px;
+}
+
+.canvas-container:active {
+  cursor: grabbing;
+}
+
+.canvas-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.pdf-canvas {
+  display: block;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+.file-upload-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 20px 40px;
+  background: white;
+  border: 2px dashed #999;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #666;
+  z-index: 10;
+}
+
+/* PDF.jsのテキストレイヤーを非表示 */
+.textLayer,
+.annotationLayer {
+  display: none !important;
+}
