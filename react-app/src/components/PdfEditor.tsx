@@ -652,18 +652,29 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
       const pdfDoc = await PDFDocument.load(pdfBytesRef.current);
       pdfDoc.registerFontkit(fontkit);
 
-      // フォント読み込み確認
-      if (!fontsRef.current.mincho || !fontsRef.current.gothic) {
-        setStatus('フォント読み込み中...');
-        return;
-      }
-
-      const minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho);
-      const gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic);
-
       const pages = pdfDoc.getPages();
       console.log('Annotations to save:', annotations);
       console.log('Rectangles to save:', rectangles);
+
+      // 使用するフォントのみを埋め込む（サイズ削減）
+      const needsMincho = annotations.some(a => a.fontFamily === 'mincho');
+      const needsGothic = annotations.some(a => a.fontFamily === 'gothic');
+
+      let minchoFont: Awaited<ReturnType<typeof pdfDoc.embedFont>> | null = null;
+      let gothicFont: Awaited<ReturnType<typeof pdfDoc.embedFont>> | null = null;
+
+      if (needsMincho || needsGothic) {
+        if (!fontsRef.current.mincho || !fontsRef.current.gothic) {
+          setStatus('フォント読み込み中...');
+          return;
+        }
+        if (needsMincho) {
+          minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho);
+        }
+        if (needsGothic) {
+          gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic);
+        }
+      }
 
       // 矩形を描画（先に描画してテキストが上に来るように）
       for (const rect of rectangles) {
@@ -721,6 +732,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
         if (!page) continue;
 
         const font = ann.fontFamily === 'mincho' ? minchoFont : gothicFont;
+        if (!font) continue; // フォントがない場合はスキップ
         const { width, height } = page.getSize();
         const rotation = page.getRotation().angle;
 
