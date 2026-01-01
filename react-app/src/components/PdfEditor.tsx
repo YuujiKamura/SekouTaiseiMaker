@@ -669,10 +669,11 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
           return;
         }
         if (needsMincho) {
-          minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho);
+          // subset: true で使用文字のみ埋め込み（ファイルサイズ削減）
+          minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho, { subset: true });
         }
         if (needsGothic) {
-          gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic);
+          gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic, { subset: true });
         }
       }
 
