@@ -25,7 +25,8 @@
       "Bash(xxd:*)",
       "Bash(npx playwright install chromium)",
       "Bash(npm run test:e2e:*)",
-      "Bash(npx playwright test:*)"
+      "Bash(npx playwright test:*)",
+      "Bash(pip show:*)"
     ]
   }
 }
