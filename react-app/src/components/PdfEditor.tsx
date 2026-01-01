@@ -318,6 +318,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
         const base64 = btoa(binary);
         localStorage.setItem('pdfEditor_pdf', base64);
         localStorage.removeItem('pdfEditor_annotations');
+        localStorage.removeItem('pdfEditor_rectangles');
         console.log('PDF cached:', base64.length, 'chars, bytes:', cachedBytes.length);
         setStatus('PDF読み込み完了（キャッシュ済）');
       } catch (e) {
