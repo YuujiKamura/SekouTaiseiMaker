@@ -1,4 +1,4 @@
-# 施工体制チェッカー (SekouTaiseiMaker)
+# 施工体制メーカー (SekouTaiseiMaker)
 
 建設工事の施工体制書類を管理・チェックするWebアプリケーション。
 
