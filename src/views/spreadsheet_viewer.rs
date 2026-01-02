@@ -1,11 +1,14 @@
 //! スプレッドシートビューワモジュール
 //!
 //! ## 変更履歴
+//! - 2026-01-02: AIチェック時のツールバー重複を修正
 //! - 2026-01-02: 工事名（projectName）をAIチェックURLに追加（バリデーション用）
 //! - 2026-01-02: Excelファイル判定（isExcel, fileId）をAIチェックURLに追加
 //! - 2026-01-02: AIチェック機能追加（プレビュー画面からSpreadsheetCheckerを呼び出し）
 
 use leptos::*;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use crate::models::ViewMode;
 use crate::ProjectContext;
 use crate::utils::gas::get_gas_url;
@@ -138,28 +141,61 @@ pub fn SpreadsheetViewer(
     let can_ai_check = spreadsheet_info.is_some() && !gas_url.is_empty();
     let ai_check_url_clone = ai_check_url.clone();
 
+    // postMessageハンドラ（spreadsheet-check-cancel: AIチェック画面から戻る）
+    {
+        let set_ai_check_mode = set_ai_check_mode.clone();
+
+        create_effect(move |_| {
+            let set_ai_check_mode = set_ai_check_mode.clone();
+
+            let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                if let Ok(data) = event.data().dyn_into::<js_sys::Object>() {
+                    if let Some(msg_type) = js_sys::Reflect::get(&data, &"type".into())
+                        .ok()
+                        .and_then(|v| v.as_string())
+                    {
+                        if msg_type == "spreadsheet-check-cancel" {
+                            set_ai_check_mode.set(false);
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(_)>);
+
+            let window = web_sys::window().unwrap();
+            let _ = window.add_event_listener_with_callback("message", handler.as_ref().unchecked_ref());
+            handler.forget();
+        });
+    }
+
     view! {
         <div class="viewer-container spreadsheet-viewer">
-            <div class="viewer-toolbar">
-                <button class="back-btn" on:click=on_back>
-                    {move || if ai_check_mode.get() { "← プレビューに戻る" } else { "← 戻る" }}
-                </button>
-                <span class="doc-info">{contractor.clone()}" / "{doc_type.clone()}</span>
-                <div class="toolbar-actions">
-                    {move || if !ai_check_mode.get() && can_ai_check {
-                        view! {
-                            <button
-                                class="ai-check-btn"
-                                on:click=move |_| set_ai_check_mode.set(true)
-                            >
-                                "🤖 AIチェック"
-                            </button>
-                        }.into_view()
-                    } else {
-                        view! {}.into_view()
-                    }}
-                </div>
-            </div>
+            // AIチェックモード時はiframe側にツールバーがあるので非表示
+            {move || if !ai_check_mode.get() {
+                view! {
+                    <div class="viewer-toolbar">
+                        <button class="back-btn" on:click=on_back.clone()>
+                            "← 戻る"
+                        </button>
+                        <span class="doc-info">{contractor.clone()}" / "{doc_type.clone()}</span>
+                        <div class="toolbar-actions">
+                            {if can_ai_check {
+                                view! {
+                                    <button
+                                        class="ai-check-btn"
+                                        on:click=move |_| set_ai_check_mode.set(true)
+                                    >
+                                        "🤖 AIチェック"
+                                    </button>
+                                }.into_view()
+                            } else {
+                                view! {}.into_view()
+                            }}
+                        </div>
+                    </div>
+                }.into_view()
+            } else {
+                view! {}.into_view()
+            }}
 
             <div class="viewer-content">
                 {move || if ai_check_mode.get() {
