@@ -433,11 +433,45 @@ def download_file_from_url(url: str) -> tuple[bytes, str]:
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 
-    response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
-    response.raise_for_status()
+    # SSRF対策: リダイレクト先のURLも逐次検証するため、手動でリダイレクトを追跡
+    max_redirects = 5
+    redirects_followed = 0
+    current_url = url
 
-    content_type = response.headers.get('Content-Type', 'application/pdf')
-    return response.content, content_type
+    while True:
+        response = requests.get(
+            current_url,
+            headers=headers,
+            timeout=30,
+            allow_redirects=False,
+        )
+
+        # リダイレクトでなければレスポンスをそのまま利用
+        if response.is_redirect or response.is_permanent_redirect:
+            if redirects_followed >= max_redirects:
+                raise requests.exceptions.TooManyRedirects(
+                    f"リダイレクト回数が上限({max_redirects})を超えました"
+                )
+
+            location = response.headers.get("Location")
+            if not location:
+                # Location ヘッダが無いリダイレクトは不正とみなす
+                raise requests.exceptions.InvalidURL("リダイレクト先URLが不正です")
+
+            # 相対URLの可能性があるため、絶対URLに解決
+            next_url = requests.compat.urljoin(current_url, location)
+
+            # リダイレクト先URLも再度検証
+            next_url = _validate_external_url(next_url)
+
+            current_url = next_url
+            redirects_followed += 1
+            continue
+
+        # 200系など最終レスポンス
+        response.raise_for_status()
+        content_type = response.headers.get('Content-Type', 'application/pdf')
+        return response.content, content_type
 
 
 def check_document_from_url(
