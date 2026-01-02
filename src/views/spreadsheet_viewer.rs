@@ -1,6 +1,7 @@
 //! スプレッドシートビューワモジュール
 //!
 //! ## 変更履歴
+//! - 2026-01-02: 工事名（projectName）をAIチェックURLに追加（バリデーション用）
 //! - 2026-01-02: Excelファイル判定（isExcel, fileId）をAIチェックURLに追加
 //! - 2026-01-02: AIチェック機能追加（プレビュー画面からSpreadsheetCheckerを呼び出し）
 
@@ -111,15 +112,18 @@ pub fn SpreadsheetViewer(
     // AIチェック用のURL構築
     let spreadsheet_info = extract_spreadsheet_info(&url);
     let gas_url = get_gas_url().unwrap_or_default();
+    // 工事名を取得（事業所名バリデーション用）
+    let project_name = ctx.project.get().map(|p| p.project_name.clone()).unwrap_or_default();
     let ai_check_url = spreadsheet_info.as_ref().map(|(id, gid)| {
         let mut check_url = format!(
-            "editor/index.html?mode=spreadsheet-check&spreadsheetId={}&docType={}&contractor={}&gasUrl={}&contractorId={}&docKey={}",
+            "editor/index.html?mode=spreadsheet-check&spreadsheetId={}&docType={}&contractor={}&gasUrl={}&contractorId={}&docKey={}&projectName={}",
             js_sys::encode_uri_component(id),
             js_sys::encode_uri_component(&doc_type),
             js_sys::encode_uri_component(&contractor),
             js_sys::encode_uri_component(&gas_url),
             js_sys::encode_uri_component(&contractor_id),
-            js_sys::encode_uri_component(&doc_key)
+            js_sys::encode_uri_component(&doc_key),
+            js_sys::encode_uri_component(&project_name)
         );
         if let Some(g) = gid {
             check_url.push_str(&format!("&gid={}", js_sys::encode_uri_component(g)));

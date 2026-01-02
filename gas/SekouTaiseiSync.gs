@@ -1,8 +1,10 @@
 /**
  * 施工体制台帳メーカー スプレッドシート同期 GAS
- * 
+ *
  * ■ 変更履歴 (要再デプロイ)
  * ─────────────────────────────────────
+ * 2026-01-02: listSheets に重要フィールド抽出機能追加
+ *             → 事業所名・所長名・作成日・提出日・工事名を自動抽出
  * 2026-01-02: fetchExcelAsBase64 アクション追加
  *             → ExcelファイルをBase64で取得（フロントエンドでパース用）
  * 2026-01-02: listSheets アクション追加
@@ -352,6 +354,7 @@ function fetchExcelAsBase64(fileId) {
 }
 
 // スプレッドシートの全シート一覧を取得
+// 施工体制台帳用に重要フィールドも抽出
 function listSpreadsheetSheets(spreadsheetId) {
   try {
     const ss = SpreadsheetApp.openById(spreadsheetId);
@@ -362,17 +365,21 @@ function listSpreadsheetSheets(spreadsheetId) {
       const rowCount = range.getNumRows();
       const colCount = range.getNumColumns();
 
-      // 先頭数行をプレビュー用に取得
-      const previewRows = Math.min(3, rowCount);
-      const previewCols = Math.min(5, colCount);
+      // 先頭部分をプレビュー用に取得（10行×20列でフィールド抽出に十分なデータ）
+      const previewRows = Math.min(10, rowCount);
+      const previewCols = Math.min(20, colCount);
       const preview = sheet.getRange(1, 1, previewRows, previewCols).getDisplayValues();
+
+      // 施工体制台帳用の重要フィールドを抽出
+      const fields = extractImportantFields(preview);
 
       return {
         sheetId: sheet.getSheetId(),
         name: sheet.getName(),
         rowCount: rowCount,
         colCount: colCount,
-        preview: preview
+        preview: preview.slice(0, 3).map(row => row.slice(0, 5)), // カード表示用は3行×5列
+        fields: fields
       };
     });
 
@@ -385,6 +392,65 @@ function listSpreadsheetSheets(spreadsheetId) {
   } catch (err) {
     return { error: 'Failed to list sheets: ' + err.message };
   }
+}
+
+// 施工体制台帳から重要フィールドを抽出
+function extractImportantFields(data) {
+  const fields = {
+    officeName: null,      // 事業所名
+    directorName: null,    // 所長名
+    createdDate: null,     // 名簿作成日
+    submittedDate: null,   // 提出日
+    projectName: null      // 工事名（検証用）
+  };
+
+  if (!data || data.length === 0) return fields;
+
+  // 各行・列をスキャンしてキーワードを探す
+  for (let row = 0; row < data.length; row++) {
+    for (let col = 0; col < data[row].length; col++) {
+      const cell = String(data[row][col] || '').trim();
+      const cellLower = cell.toLowerCase();
+
+      // 事業所名・事業所の名称
+      if ((cell.includes('事業所') || cell.includes('事業所の名称')) && !fields.officeName) {
+        // 右隣または下のセルから値を取得
+        const rightValue = col + 1 < data[row].length ? data[row][col + 1] : null;
+        const belowValue = row + 1 < data.length && col < data[row + 1].length ? data[row + 1][col] : null;
+        fields.officeName = rightValue || belowValue || null;
+      }
+
+      // 所長・現場代理人・監督員
+      if ((cell.includes('所長') || cell.includes('現場代理人') || cell.includes('責任者')) && !fields.directorName) {
+        const rightValue = col + 1 < data[row].length ? data[row][col + 1] : null;
+        const belowValue = row + 1 < data.length && col < data[row + 1].length ? data[row + 1][col] : null;
+        fields.directorName = rightValue || belowValue || null;
+      }
+
+      // 作成日（名簿の作成日、作成年月日）
+      if ((cell.includes('作成') && (cell.includes('日') || cell.includes('年月'))) && !fields.createdDate) {
+        const rightValue = col + 1 < data[row].length ? data[row][col + 1] : null;
+        const belowValue = row + 1 < data.length && col < data[row + 1].length ? data[row + 1][col] : null;
+        fields.createdDate = rightValue || belowValue || null;
+      }
+
+      // 提出日
+      if (cell.includes('提出') && !fields.submittedDate) {
+        const rightValue = col + 1 < data[row].length ? data[row][col + 1] : null;
+        const belowValue = row + 1 < data.length && col < data[row + 1].length ? data[row + 1][col] : null;
+        fields.submittedDate = rightValue || belowValue || null;
+      }
+
+      // 工事名称・工事名
+      if ((cell === '工事名称' || cell === '工事名') && !fields.projectName) {
+        const rightValue = col + 1 < data[row].length ? data[row][col + 1] : null;
+        const belowValue = row + 1 < data.length && col < data[row + 1].length ? data[row + 1][col] : null;
+        fields.projectName = rightValue || belowValue || null;
+      }
+    }
+  }
+
+  return fields;
 }
 
 // 外部スプレッドシートのデータを取得（AIチェック用）
