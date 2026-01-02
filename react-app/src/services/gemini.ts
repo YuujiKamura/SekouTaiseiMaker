@@ -53,6 +53,8 @@ const PROMPTS: Record<string, string> = {
 5. 健康保険・年金の加入状況が記載されているか
 6. 雇入年月日が記入されているか
 
+※入場年月日が空白でも問題ありません（作業日当日に記入するため）
+
 結果を以下のJSON形式で返してください:
 {
     "status": "ok" | "warning" | "error",
