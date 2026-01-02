@@ -142,6 +142,39 @@ const PROMPTS: Record<string, string> = {
 
 };
 
+// 労働保険番号確認用プロンプト
+const ROUDOU_HOKEN_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「労働保険番号」の証明として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【重要】労働保険番号確認書類として有効な条件:
+1. 労働保険番号が記載されていること
+2. 口座振替日（引落日）が記載されていること
+3. 口座名義が当該法人（業者名）のものであること
+
+※金額がマスキング・黒塗りされていても問題ありません
+※口座番号がマスキング・黒塗りされていても問題ありません
+※重要なのは「労働保険番号」「口座振替日」「口座名義が法人名と一致」の3点です
+
+チェック項目:
+1. 労働保険番号が確認できるか
+2. 口座振替日（引落日）が確認できるか
+3. 口座名義が業者名（{contractor_name}）と一致または関連しているか
+4. 書類の形式が労働保険関連の公的書類として妥当か
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ]
+}`;
+
 // 在籍証明系プロンプト（「在籍」を含む書類タイプ用）
 const ZAISEKI_PROMPT = `あなたは建設業の書類チェック専門家です。
 この書類が「{doc_type}」の証明として有効かどうかを確認してください。
@@ -206,13 +239,16 @@ function getPrompt(docType: string, contractorName: string): string {
   let template: string;
   if (PROMPTS[docType]) {
     template = PROMPTS[docType];
+  } else if (docType.includes('労働保険')) {
+    // 「労働保険」を含む書類は労働保険番号確認用プロンプトを使用
+    template = ROUDOU_HOKEN_PROMPT;
   } else if (docType.includes('在籍')) {
     // 「在籍」を含む書類は在籍証明用プロンプトを使用
     template = ZAISEKI_PROMPT.replace(/{doc_type}/g, docType);
   } else {
     template = GENERIC_PROMPT.replace('{doc_type}', docType);
   }
-  return template.replace('{contractor_name}', contractorName);
+  return template.replace(/{contractor_name}/g, contractorName);
 }
 
 function parseResponse(text: string): CheckResult {
