@@ -65,6 +65,19 @@ export function PdfViewer() {
         // GASから最新ファイル情報を取得（フォルダ内の同名or最新ファイルを探す）
         let actualFileId = fileId;
         try {
+          // まずファイル情報を取得してMIMEタイプをチェック
+          const fileInfoRes = await fetch(`${gasUrl}?action=getFileInfo&fileId=${fileId}`, { cache: 'no-store' });
+          const fileInfo = await fileInfoRes.json();
+          console.log('[PdfViewer] File info:', fileInfo);
+
+          // MIMEタイプチェック（Excel/Spreadsheetの場合はエラー）
+          if (fileInfo.mimeType) {
+            const mime = fileInfo.mimeType.toLowerCase();
+            if (mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('ms-excel')) {
+              throw new Error('このファイルはExcel/スプレッドシート形式です。一覧に戻って正しいビューワで開いてください。');
+            }
+          }
+
           const infoRes = await fetch(`${gasUrl}?action=getLatestFile&fileId=${fileId}`, { cache: 'no-store' });
           const info = await infoRes.json();
           console.log('[PdfViewer] GAS getLatestFile response:', info);
@@ -88,6 +101,9 @@ export function PdfViewer() {
             }
           }
         } catch (e) {
+          if (e instanceof Error && e.message.includes('Excel')) {
+            throw e; // Excel関連のエラーはそのままスロー
+          }
           console.error('[PdfViewer] getLatestFile failed:', e);
         }
 
@@ -121,7 +137,20 @@ export function PdfViewer() {
           const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${actualFileId}`, { cache: 'no-store' });
           if (!response.ok) throw new Error('PDF取得失敗');
           const data = await response.json();
-          if (data.error) throw new Error(data.error);
+          if (data.error) {
+            // ファイルタイプエラーの場合は分かりやすいメッセージ
+            if (data.error.includes('Unsupported file type')) {
+              const mimeType = data.error.split(': ')[1] || '';
+              if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) {
+                throw new Error('このファイルはExcel形式です。シートビューワで開いてください。');
+              } else if (mimeType.includes('image')) {
+                throw new Error('このファイルは画像形式です。');
+              } else {
+                throw new Error(`非対応のファイル形式です: ${mimeType}`);
+              }
+            }
+            throw new Error(data.error);
+          }
           if (!data.base64) throw new Error('PDFデータがありません');
           // Base64をArrayBufferに変換
           try {

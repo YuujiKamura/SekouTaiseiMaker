@@ -219,7 +219,7 @@ function fetchPdfAsBase64(fileId) {
   }
 }
 
-// ファイル情報取得（フォルダID、ファイル名、更新日時）
+// ファイル情報取得（フォルダID、ファイル名、更新日時、MIMEタイプ）
 function getFileInfo(fileId) {
   try {
     const file = DriveApp.getFileById(fileId);
@@ -233,6 +233,7 @@ function getFileInfo(fileId) {
       fileId: fileId,
       fileName: file.getName(),
       folderId: folderId,
+      mimeType: file.getMimeType(),
       modifiedTime: file.getLastUpdated().toISOString()
     };
   } catch (err) {

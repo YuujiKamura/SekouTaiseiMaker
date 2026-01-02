@@ -201,6 +201,7 @@ pub enum DocFileType {
 ///
 /// ## 変更履歴
 /// - 2026-01-02: rtpof=trueでExcelファイルを判定するロジック追加
+/// - 2026-01-02: drive.google.com/file URLはMIMEタイプを付与して判定するように変更
 pub fn detect_file_type(url: &str) -> DocFileType {
     let url_lower = url.to_lowercase();
 
@@ -212,7 +213,32 @@ pub fn detect_file_type(url: &str) -> DocFileType {
     } else if url_lower.contains("docs.google.com/document") {
         DocFileType::GoogleDoc
     } else if url_lower.contains("drive.google.com/file") {
-        DocFileType::Pdf
+        // Google DriveのファイルURLはMIMEタイプで判定
+        // URL末尾やクエリパラメータにMIMEタイプヒントがある場合
+        if url_lower.contains("mime=application/pdf") || url_lower.contains("type=pdf") {
+            DocFileType::Pdf
+        } else if url_lower.contains("mime=application/vnd.openxmlformats")
+            || url_lower.contains("mime=application/vnd.ms-excel")
+            || url_lower.contains("type=xlsx")
+            || url_lower.contains("type=xls") {
+            DocFileType::Excel
+        } else if url_lower.contains("mime=image/") || url_lower.contains("type=image") {
+            DocFileType::Image
+        } else {
+            // MIMEタイプが不明な場合、URLにヒントがあれば使う
+            // ファイル名が含まれている場合（例: /d/xxx/view?filename=xxx.pdf）
+            if url_lower.contains(".pdf") {
+                DocFileType::Pdf
+            } else if url_lower.contains(".xlsx") || url_lower.contains(".xls") {
+                DocFileType::Excel
+            } else if url_lower.contains(".png") || url_lower.contains(".jpg") || url_lower.contains(".jpeg") {
+                DocFileType::Image
+            } else {
+                // 判別不能な場合はPDFとして試行（従来の動作）
+                // ただし失敗した場合はエラーメッセージを表示
+                DocFileType::Pdf
+            }
+        }
     } else if url_lower.ends_with(".pdf") {
         DocFileType::Pdf
     } else if url_lower.ends_with(".xlsx") || url_lower.ends_with(".xls") {
