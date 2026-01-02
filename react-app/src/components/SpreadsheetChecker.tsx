@@ -207,11 +207,19 @@ export function SpreadsheetChecker() {
   const fetchExcelFile = async () => {
     try {
       const url = `${gasUrl}?action=fetchExcelAsBase64&fileId=${encodeURIComponent(fileId!)}`;
+      console.log('[SpreadsheetChecker] Fetching Excel:', url);
       const response = await fetch(url, { cache: 'no-store' });
       const data: ExcelResponse = await response.json();
+      console.log('[SpreadsheetChecker] GAS response:', { success: data.success, error: data.error, hasBase64: !!data.base64, fileName: data.fileName });
 
       if (data.error) {
         throw new Error(data.error);
+      }
+
+      // base64データのチェック
+      if (!data.base64) {
+        console.error('[SpreadsheetChecker] No base64 data in response. GASが再デプロイされていない可能性があります。');
+        throw new Error('Excelデータを取得できませんでした。GASの再デプロイが必要な可能性があります。');
       }
 
       // Base64をデコードしてSheetJSでパース（sanitization付き）
