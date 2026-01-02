@@ -2,7 +2,7 @@
 
 use leptos::*;
 use crate::models::{ProjectData, DocLink};
-use crate::ContractorCard;
+use super::ContractorCard;
 
 /// プロジェクト全体の書類カード
 #[component]
