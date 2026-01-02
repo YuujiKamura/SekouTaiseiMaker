@@ -214,9 +214,12 @@
 }
 
 /* スプレッドシートプレビュー */
-.spreadsheet-preview {
+.preview-area.spreadsheet-preview {
   flex-direction: column;
   align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
 }
 
 .loading-message,
