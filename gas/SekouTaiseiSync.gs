@@ -1,5 +1,17 @@
 /**
  * 施工体制台帳メーカー スプレッドシート同期 GAS
+ * 
+ * ■ 変更履歴 (要再デプロイ)
+ * ─────────────────────────────────────
+ * 2026-01-02: updateDocUrl アクション追加
+ *             → fileId変更時にスプレッドシートのURLを自動更新
+ * 2026-01-02: getLatestFile アクション追加
+ *             → フォルダ内の同名/最新PDFを自動検出
+ * 2026-01-02: fetchPdfAsBase64 を Drive API 直接呼び出しに変更
+ *             → Google CDNキャッシュをバイパス
+ * 2026-01-02: getFileInfo に modifiedTime 追加
+ *             → PDFキャッシュの有効性検証用
+ * ─────────────────────────────────────
  *
  * 使い方:
  * 1. Google スプレッドシートを新規作成
@@ -33,6 +45,7 @@ function doPost(e) {
       const result = uploadPdfToDrive(data);
       return jsonResponse(result);
     }
+
 
     // 設定保存（暗号化APIキー等）
     if (data.action === 'saveSettings') {
@@ -77,6 +90,34 @@ function doGet(e) {
       return jsonResponse(result);
     }
 
+    // フォルダ内の最新ファイルを取得（古いfileIdから親フォルダを特定し、同名or最新のファイルを返す）
+    if (action === 'getLatestFile') {
+      const fileId = e.parameter.fileId;
+      if (!fileId) {
+        return jsonResponse({ error: 'fileId is required' });
+      }
+      const result = getLatestFileInFolder(fileId);
+      return jsonResponse(result);
+    }
+
+    // ドキュメントURL更新（fileId変更時、GETで処理）
+    if (action === 'updateDocUrl') {
+      const contractorId = e.parameter.contractorId;
+      const docKey = e.parameter.docKey;
+      const newFileId = e.parameter.newFileId;
+      if (!contractorId || !docKey || !newFileId) {
+        return jsonResponse({ error: 'contractorId, docKey, newFileId are required' });
+      }
+      const result = updateDocUrl(contractorId, docKey, newFileId);
+      return jsonResponse(result);
+    }
+
+    // スクリプト情報取得（UI上で更新日時表示用）
+    if (action === 'getScriptInfo') {
+      const result = getScriptInfo();
+      return jsonResponse(result);
+    }
+
     // 設定のみ取得
     if (action === 'loadSettings') {
       const settings = loadSettings();
@@ -94,16 +135,25 @@ function doGet(e) {
 }
 
 // Google DriveからPDFを取得してBase64で返す
+// Drive APIを直接使用してキャッシュをバイパス
 function fetchPdfAsBase64(fileId) {
   try {
     const file = DriveApp.getFileById(fileId);
-    const blob = file.getBlob();
-    const mimeType = blob.getContentType();
+    const mimeType = file.getMimeType();
+    const fileName = file.getName();
 
-    // PDFでない場合はPDFに変換を試みる
     let pdfBlob;
     if (mimeType === 'application/pdf') {
-      pdfBlob = blob;
+      // Drive API v3で直接取得（キャッシュバイパス）
+      const url = 'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media';
+      const response = UrlFetchApp.fetch(url, {
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      });
+      if (response.getResponseCode() !== 200) {
+        return { error: 'Drive API error: ' + response.getContentText() };
+      }
+      pdfBlob = response.getBlob();
     } else if (mimeType.includes('google-apps.document') ||
                mimeType.includes('google-apps.spreadsheet') ||
                mimeType.includes('google-apps.presentation')) {
@@ -120,16 +170,17 @@ function fetchPdfAsBase64(fileId) {
     const base64 = Utilities.base64Encode(pdfBlob.getBytes());
     return {
       success: true,
-      fileName: file.getName(),
+      fileName: fileName,
       mimeType: 'application/pdf',
-      base64: base64
+      base64: base64,
+      modifiedTime: file.getLastUpdated().toISOString()
     };
   } catch (err) {
     return { error: 'Failed to fetch PDF: ' + err.message };
   }
 }
 
-// ファイル情報取得（フォルダID、ファイル名）
+// ファイル情報取得（フォルダID、ファイル名、更新日時）
 function getFileInfo(fileId) {
   try {
     const file = DriveApp.getFileById(fileId);
@@ -142,10 +193,135 @@ function getFileInfo(fileId) {
       success: true,
       fileId: fileId,
       fileName: file.getName(),
-      folderId: folderId
+      folderId: folderId,
+      modifiedTime: file.getLastUpdated().toISOString()
     };
   } catch (err) {
     return { error: 'Failed to get file info: ' + err.message };
+  }
+}
+
+// フォルダ内の最新ファイルを取得
+// 古いfileIdから親フォルダを特定し、同名ファイルがあればそれを、なければ最新のPDFを返す
+function getLatestFileInFolder(oldFileId) {
+  try {
+    // 古いファイルの情報を取得
+    let oldFile;
+    let oldFileName = null;
+    let folderId = null;
+
+    try {
+      oldFile = DriveApp.getFileById(oldFileId);
+      oldFileName = oldFile.getName();
+      const parents = oldFile.getParents();
+      if (parents.hasNext()) {
+        folderId = parents.next().getId();
+      }
+    } catch (e) {
+      // 古いファイルが見つからない場合はエラー
+      return { error: 'Original file not found: ' + oldFileId };
+    }
+
+    if (!folderId) {
+      // フォルダが見つからない場合は元のファイル情報を返す
+      return {
+        success: true,
+        fileId: oldFileId,
+        fileName: oldFileName,
+        folderId: null,
+        modifiedTime: oldFile.getLastUpdated().toISOString(),
+        isLatest: true
+      };
+    }
+
+    const folder = DriveApp.getFolderById(folderId);
+    const files = folder.getFilesByType(MimeType.PDF);
+
+    let latestFile = null;
+    let latestTime = null;
+    let sameNameFile = null;
+
+    while (files.hasNext()) {
+      const file = files.next();
+      const fileTime = file.getLastUpdated();
+
+      // 同名ファイルを探す
+      if (file.getName() === oldFileName) {
+        sameNameFile = file;
+      }
+
+      // 最新のファイルを追跡
+      if (!latestTime || fileTime > latestTime) {
+        latestTime = fileTime;
+        latestFile = file;
+      }
+    }
+
+    // 同名ファイルがあればそれを優先、なければ最新のファイル
+    const targetFile = sameNameFile || latestFile;
+
+    if (!targetFile) {
+      return { error: 'No PDF files found in folder' };
+    }
+
+    const isUpdated = targetFile.getId() !== oldFileId;
+
+    return {
+      success: true,
+      fileId: targetFile.getId(),
+      fileName: targetFile.getName(),
+      folderId: folderId,
+      modifiedTime: targetFile.getLastUpdated().toISOString(),
+      isLatest: true,
+      wasUpdated: isUpdated,
+      oldFileId: isUpdated ? oldFileId : undefined
+    };
+  } catch (err) {
+    return { error: 'Failed to get latest file: ' + err.message };
+  }
+}
+
+// ドキュメントURLを更新（fileId変更時にProjectDataを更新）
+function updateDocUrl(contractorId, docKey, newFileId) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let dataSheet = ss.getSheetByName(CONFIG.DATA_SHEET);
+    if (!dataSheet) {
+      return { error: 'ProjectData sheet not found' };
+    }
+
+    const data = dataSheet.getRange('A1').getValue();
+    if (!data) {
+      return { error: 'No project data found' };
+    }
+
+    const project = JSON.parse(data);
+
+    // 対象のcontractorとdocを探してURLを更新
+    let updated = false;
+    for (const contractor of (project.contractors || [])) {
+      if (contractor.id === contractorId && contractor.docs && contractor.docs[docKey]) {
+        const newUrl = `https://drive.google.com/file/d/${newFileId}/view?usp=drivesdk`;
+        contractor.docs[docKey].url = newUrl;
+        updated = true;
+        break;
+      }
+    }
+
+    if (!updated) {
+      return { error: `Document not found: ${contractorId}/${docKey}` };
+    }
+
+    // 更新したデータを保存
+    dataSheet.getRange('A1').setValue(JSON.stringify(project, null, 2));
+
+    return {
+      success: true,
+      message: `URL updated for ${contractorId}/${docKey}`,
+      newFileId: newFileId
+    };
+  } catch (err) {
+    return { error: 'Failed to update doc URL: ' + err.message };
   }
 }
 

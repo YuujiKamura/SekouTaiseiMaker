@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { getCachedPdfAsync, setCachedPdf } from '../services/pdfCache';
+import { getCachedPdfAsync, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
 import './PdfViewer.css';
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -23,6 +23,7 @@ export function PdfViewer() {
   const [pdfLoaded, setPdfLoaded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
+  const [fileModifiedTime, setFileModifiedTime] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
@@ -30,6 +31,8 @@ export function PdfViewer() {
   const fileId = getUrlParam('fileId');
   const docType = getUrlParam('docType') || '書類';
   const contractor = getUrlParam('contractor') || '業者';
+  const contractorId = getUrlParam('contractorId') || '';
+  const docKey = getUrlParam('docKey') || '';
 
   // PDF読み込み
   useEffect(() => {
@@ -43,22 +46,73 @@ export function PdfViewer() {
 
     const loadPdf = async () => {
       try {
-        let pdfBytes: ArrayBuffer;
+        let pdfBytes: ArrayBuffer | undefined;
+        let modifiedTime: string | undefined;
 
-        // キャッシュをチェック（親ウィンドウのprefetchから、フェッチ中なら待機）
-        const cached = await getCachedPdfAsync(fileId);
-        if (cached) {
-          console.log('[PdfViewer] PDF found in cache:', fileId);
-          pdfBytes = cached;
-        } else {
-          // キャッシュになければGAS経由で取得
-          if (!gasUrl) {
-            setError('シート連携が未設定です。メニュー → シート連携設定 からGAS URLを設定してください。');
-            setLoading(false);
-            return;
+        // GAS URLが必要
+        if (!gasUrl) {
+          setError('シート連携が未設定です。メニュー → シート連携設定 からGAS URLを設定してください。');
+          setLoading(false);
+          return;
+        }
+
+        // GASから最新ファイル情報を取得（フォルダ内の同名or最新ファイルを探す）
+        let actualFileId = fileId;
+        try {
+          const infoRes = await fetch(`${gasUrl}?action=getLatestFile&fileId=${fileId}`, { cache: 'no-store' });
+          const info = await infoRes.json();
+          console.log('[PdfViewer] GAS getLatestFile response:', info);
+          if (!info.error) {
+            modifiedTime = info.modifiedTime;
+            setFileModifiedTime(modifiedTime || null);
+            // ファイルIDが更新された場合は新しいIDを使用
+            if (info.wasUpdated && info.fileId) {
+              console.log('[PdfViewer] File updated:', fileId, '->', info.fileId);
+              actualFileId = info.fileId;
+              // スプレッドシートのURLを更新（GETリクエスト）
+              if (contractorId && docKey) {
+                try {
+                  const updateUrl = `${gasUrl}?action=updateDocUrl&contractorId=${encodeURIComponent(contractorId)}&docKey=${encodeURIComponent(docKey)}&newFileId=${encodeURIComponent(info.fileId)}`;
+                  await fetch(updateUrl, { cache: 'no-store' });
+                  console.log('[PdfViewer] Spreadsheet URL updated');
+                } catch (e) {
+                  console.error('[PdfViewer] Failed to update spreadsheet URL:', e);
+                }
+              }
+            }
           }
-          console.log('[PdfViewer] PDF not in cache, fetching from GAS:', fileId);
-          const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${fileId}`);
+        } catch (e) {
+          console.error('[PdfViewer] getLatestFile failed:', e);
+        }
+
+        // キャッシュの有効性をチェック（actualFileIdを使用）
+        let useCache = false;
+        console.log('[PdfViewer] modifiedTime from GAS:', modifiedTime, 'actualFileId:', actualFileId);
+        if (modifiedTime) {
+          useCache = await isCacheValid(actualFileId, modifiedTime);
+          console.log('[PdfViewer] Cache valid:', useCache);
+          if (!useCache) {
+            await invalidateCache(actualFileId);
+            console.log('[PdfViewer] Cache invalidated: file was modified');
+          }
+        } else {
+          // modifiedTimeが取得できない場合はキャッシュを使わない
+          console.log('[PdfViewer] No modifiedTime, skipping cache');
+          await invalidateCache(actualFileId);
+        }
+
+        if (useCache) {
+          const cached = await getCachedPdfAsync(actualFileId);
+          if (cached) {
+            console.log('[PdfViewer] PDF found in valid cache:', actualFileId);
+            pdfBytes = cached;
+          }
+        }
+
+        if (!pdfBytes) {
+          // GAS経由で取得（actualFileIdを使用）
+          console.log('[PdfViewer] Fetching PDF from GAS:', actualFileId);
+          const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${actualFileId}`, { cache: 'no-store' });
           if (!response.ok) throw new Error('PDF取得失敗');
           const data = await response.json();
           if (data.error) throw new Error(data.error);
@@ -70,9 +124,9 @@ export function PdfViewer() {
             bytes[i] = binary.charCodeAt(i);
           }
           pdfBytes = bytes.buffer;
-          // キャッシュに保存
-          await setCachedPdf(fileId, pdfBytes);
-          console.log('[PdfViewer] PDF cached:', fileId);
+          // キャッシュに保存（modifiedTime付き）
+          await setCachedPdf(actualFileId, pdfBytes, modifiedTime || data.modifiedTime);
+          console.log('[PdfViewer] PDF cached:', actualFileId);
         }
 
         const pdf = await getDocument({ data: pdfBytes }).promise;
@@ -125,11 +179,42 @@ export function PdfViewer() {
     window.parent.postMessage({ type: 'viewer-check' }, '*');
   };
 
+  const handleForceReload = async () => {
+    if (!fileId) return;
+    setLoading(true);
+    await invalidateCache(fileId);
+    location.reload();
+  };
+
+  // ファイル更新日時をフォーマット
+  const formatModifiedTime = (isoString: string | null): string => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return isoString;
+    }
+  };
+
+  const driveUrl = fileId ? `https://drive.google.com/file/d/${fileId}/view` : '';
+
   return (
     <div className="pdf-viewer">
       <div className="viewer-toolbar">
         <button className="back-btn" onClick={handleBack}>← 戻る</button>
         <span className="doc-info">{contractor} / {docType}</span>
+        {fileModifiedTime && (
+          <span className="file-modified-time" title={driveUrl}>
+            更新: {formatModifiedTime(fileModifiedTime)}
+          </span>
+        )}
         <div className="page-nav">
           <button
             onClick={() => renderPage(currentPage - 1)}
@@ -147,6 +232,9 @@ export function PdfViewer() {
           </button>
           <button className="check-btn" onClick={handleCheck} disabled={loading}>
             AIチェック
+          </button>
+          <button className="reload-btn" onClick={handleForceReload} disabled={loading} title="キャッシュを無視して再読み込み">
+            🔄
           </button>
         </div>
       </div>

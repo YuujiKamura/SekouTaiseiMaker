@@ -753,6 +753,26 @@ button:disabled {
     color: #333;
 }
 
+.editor-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.editor-header .back-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.editor-header .back-btn:hover {
+    background: #5a6268;
+}
+
 .save-btn {
     background: #4caf50;
     font-weight: bold;
@@ -760,6 +780,30 @@ button:disabled {
 
 .save-btn:hover {
     background: #43a047;
+}
+
+.save-btn:disabled {
+    background: #a5d6a7;
+    cursor: not-allowed;
+}
+
+.save-message {
+    padding: 10px 16px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.save-message.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+
+.save-message.error {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
 }
 
 .editor-section {

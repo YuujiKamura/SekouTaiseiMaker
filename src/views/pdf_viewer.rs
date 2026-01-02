@@ -76,11 +76,13 @@ pub fn PdfViewer(
         let file_id = extract_drive_file_id(&url).unwrap_or_default();
         let gas_url = get_gas_url().unwrap_or_default();
         format!(
-            "editor/index.html?mode=view&fileId={}&docType={}&contractor={}&gasUrl={}",
+            "editor/index.html?mode=view&fileId={}&docType={}&contractor={}&gasUrl={}&contractorId={}&docKey={}",
             js_sys::encode_uri_component(&file_id),
             js_sys::encode_uri_component(&doc_type),
             js_sys::encode_uri_component(&contractor),
-            js_sys::encode_uri_component(&gas_url)
+            js_sys::encode_uri_component(&gas_url),
+            js_sys::encode_uri_component(&contractor_id),
+            js_sys::encode_uri_component(&doc_key)
         )
     };
 

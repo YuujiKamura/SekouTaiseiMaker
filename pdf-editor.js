@@ -860,7 +860,7 @@ function openPdfCacheDB() {
 }
 
 /**
- * IndexedDBからPDFを取得
+ * IndexedDBからPDFエントリを取得（modifiedTime含む）
  */
 async function getFromIndexedDB(fileId) {
     try {
@@ -884,7 +884,8 @@ async function getFromIndexedDB(fileId) {
                     resolve(null);
                     return;
                 }
-                resolve(entry.base64);
+                // エントリ全体を返す（base64, timestamp, modifiedTime）
+                resolve(entry);
             };
         });
     } catch (e) {
@@ -894,9 +895,9 @@ async function getFromIndexedDB(fileId) {
 }
 
 /**
- * IndexedDBにPDFを保存
+ * IndexedDBにPDFを保存（modifiedTime付き）
  */
-async function saveToIndexedDB(fileId, base64) {
+async function saveToIndexedDB(fileId, base64, modifiedTime) {
     try {
         const db = await openPdfCacheDB();
         return new Promise((resolve, reject) => {
@@ -905,7 +906,8 @@ async function saveToIndexedDB(fileId, base64) {
             const request = store.put({
                 fileId: fileId,
                 base64: base64,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                modifiedTime: modifiedTime
             });
 
             request.onerror = () => reject(request.error);
@@ -938,7 +940,7 @@ async function deleteFromIndexedDB(fileId) {
 }
 
 /**
- * PDFをプリフェッチ（IndexedDB版）
+ * PDFをプリフェッチ（IndexedDB版、modifiedTime検証付き）
  */
 window.prefetchPdf = async function(fileId, gasUrl) {
     // 既にフェッチ中なら、そのPromiseを返す
@@ -947,26 +949,49 @@ window.prefetchPdf = async function(fileId, gasUrl) {
         return window.__pdfCachePending[fileId];
     }
 
-    // IndexedDBにキャッシュがあればスキップ
-    const cached = await getFromIndexedDB(fileId);
-    if (cached) {
-        console.log('[prefetch] PDF found in IndexedDB:', fileId);
-        return true;
-    }
-
     // フェッチを開始してPromiseを保存
     const fetchPromise = (async () => {
         try {
+            // まずGASからファイル情報（modifiedTime）を取得
+            let serverModifiedTime = null;
+            try {
+                const infoRes = await fetch(`${gasUrl}?action=getFileInfo&fileId=${encodeURIComponent(fileId)}`, { cache: 'no-store' });
+                const info = await infoRes.json();
+                if (!info.error && info.modifiedTime) {
+                    serverModifiedTime = info.modifiedTime;
+                }
+            } catch (e) {
+                console.warn('[prefetch] getFileInfo failed:', e);
+            }
+
+            // キャッシュの有効性をチェック
+            const cached = await getFromIndexedDB(fileId);
+            if (cached && serverModifiedTime) {
+                const cacheTime = cached.modifiedTime ? new Date(cached.modifiedTime).getTime() : 0;
+                const serverTime = new Date(serverModifiedTime).getTime();
+                if (cacheTime >= serverTime) {
+                    console.log('[prefetch] PDF found in valid cache:', fileId);
+                    return true;
+                }
+                console.log('[prefetch] Cache outdated, refetching:', fileId);
+            } else if (cached && !serverModifiedTime) {
+                // modifiedTimeが取得できない場合は既存キャッシュを使う
+                console.log('[prefetch] PDF found in IndexedDB (no server time):', fileId);
+                return true;
+            }
+
+            // GASからPDFを取得
             console.log('[prefetch] Fetching PDF:', fileId);
-            const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${encodeURIComponent(fileId)}`);
+            const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${encodeURIComponent(fileId)}`, { cache: 'no-store' });
             if (!response.ok) throw new Error('PDF fetch failed');
             const data = await response.json();
             if (data.error) throw new Error(data.error);
             if (!data.base64) throw new Error('No PDF data');
 
-            // IndexedDBに保存
-            await saveToIndexedDB(fileId, data.base64);
-            console.log('[prefetch] PDF cached to IndexedDB:', fileId);
+            // IndexedDBに保存（modifiedTime付き）
+            const modifiedTime = serverModifiedTime || data.modifiedTime;
+            await saveToIndexedDB(fileId, data.base64, modifiedTime);
+            console.log('[prefetch] PDF cached to IndexedDB:', fileId, 'modifiedTime:', modifiedTime);
             return true;
         } catch (e) {
             console.error('[prefetch] Error:', e);
@@ -987,12 +1012,13 @@ window.getPdfCachePending = function(fileId) {
 
 // キャッシュからBase64を取得（非同期版）
 window.getCachedPdfBase64Async = async function(fileId) {
-    return await getFromIndexedDB(fileId);
+    const entry = await getFromIndexedDB(fileId);
+    return entry ? entry.base64 : null;
 };
 
-// キャッシュにPDFを保存
-window.setCachedPdfBase64 = async function(fileId, base64) {
-    return await saveToIndexedDB(fileId, base64);
+// キャッシュにPDFを保存（modifiedTime付き）
+window.setCachedPdfBase64 = async function(fileId, base64, modifiedTime) {
+    return await saveToIndexedDB(fileId, base64, modifiedTime);
 };
 
 // キャッシュをクリア

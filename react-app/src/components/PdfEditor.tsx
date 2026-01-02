@@ -3,7 +3,8 @@ import { PDFDocument, rgb, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { getDocument, GlobalWorkerOptions, AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { getCachedPdf, setCachedPdf } from '../services/pdfCache';
+import { getCachedPdf, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
+import { createFontSubset } from '../utils/fontSubset';
 import './PdfEditor.css';
 
 // PDF.js worker設定 (v5.x - use bundled worker)
@@ -350,32 +351,60 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
   useEffect(() => {
     if (fileIdParam && gasUrlParam) {
       const loadFromDrive = async () => {
-        // キャッシュをチェック
-        const cached = await getCachedPdf(fileIdParam);
-        if (cached) {
-          setStatus('キャッシュから読み込み中...');
-          await loadPdf(cached);
-          setStatus('読み込み完了 (キャッシュ)');
-          return;
+        // まずGASからファイル情報（modifiedTime）を取得
+        setStatus('ファイル情報を確認中...');
+        const infoUrl = `${gasUrlParam}?action=getFileInfo&fileId=${encodeURIComponent(fileIdParam)}`;
+        let modifiedTime: string | undefined;
+        let fileName = 'document.pdf';
+        
+        try {
+          const infoRes = await fetch(infoUrl, { cache: 'no-store' });
+          const info = await infoRes.json();
+          if (!info.error) {
+            modifiedTime = info.modifiedTime;
+            fileName = info.fileName || fileName;
+            setDriveFileName(fileName);
+          }
+        } catch {
+          // ファイル情報取得失敗は無視（キャッシュ検証をスキップ）
         }
 
+        // キャッシュをチェック（modifiedTimeで検証）
+        if (modifiedTime) {
+          const cacheValid = await isCacheValid(fileIdParam, modifiedTime);
+          if (cacheValid) {
+            const cached = await getCachedPdf(fileIdParam);
+            if (cached) {
+              setStatus('キャッシュから読み込み中...');
+              await loadPdf(cached);
+              setStatus('読み込み完了 (キャッシュ)');
+              return;
+            }
+          } else {
+            // キャッシュが古い場合は削除
+            await invalidateCache(fileIdParam);
+            console.log('Cache invalidated: file was modified');
+          }
+        }
+
+        // GASからPDFを取得
         setStatus('Google Driveから読み込み中...');
         const fetchUrl = `${gasUrlParam}?action=fetchPdf&fileId=${encodeURIComponent(fileIdParam)}`;
-        const res = await fetch(fetchUrl);
+        const res = await fetch(fetchUrl, { cache: 'no-store' });
         const result = await res.json();
         if (result.error) throw new Error(result.error);
         if (result.base64) {
-          setDriveFileName(result.fileName || 'document.pdf');
+          setDriveFileName(result.fileName || fileName);
           const binary = atob(result.base64);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) {
             bytes[i] = binary.charCodeAt(i);
           }
           const pdfBytes = bytes.buffer;
-          // キャッシュに保存
-          await setCachedPdf(fileIdParam, pdfBytes);
+          // キャッシュに保存（modifiedTime付き）
+          await setCachedPdf(fileIdParam, pdfBytes, modifiedTime || result.modifiedTime);
           await loadPdf(pdfBytes);
-          setStatus(`読み込み完了: ${result.fileName}`);
+          setStatus(`読み込み完了: ${result.fileName || fileName}`);
         }
       };
       loadFromDrive().catch(e => setStatus(`読み込みエラー: ${e.message}`));
@@ -671,24 +700,44 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
       console.log('Annotations to save:', annotations);
       console.log('Rectangles to save:', rectangles);
 
-      // 使用するフォントのみを埋め込む（サイズ削減）
-      const needsMincho = annotations.some(a => a.fontFamily === 'mincho');
-      const needsGothic = annotations.some(a => a.fontFamily === 'gothic');
+      // 使用する文字だけを含むサブセットフォントを動的に作成
+      const minchoTexts = annotations.filter(a => a.fontFamily === 'mincho').map(a => a.text);
+      const gothicTexts = annotations.filter(a => a.fontFamily === 'gothic').map(a => a.text);
+      const minchoChars = [...new Set(minchoTexts.join(''))].join('');
+      const gothicChars = [...new Set(gothicTexts.join(''))].join('');
 
       let minchoFont: Awaited<ReturnType<typeof pdfDoc.embedFont>> | null = null;
       let gothicFont: Awaited<ReturnType<typeof pdfDoc.embedFont>> | null = null;
 
-      if (needsMincho || needsGothic) {
+      if (minchoChars || gothicChars) {
         if (!fontsRef.current.mincho || !fontsRef.current.gothic) {
           setStatus('フォント読み込み中...');
           return;
         }
-        if (needsMincho) {
-          // subset: true で使用文字のみ埋め込み（ファイルサイズ削減）
-          minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho, { subset: true });
-        }
-        if (needsGothic) {
-          gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic, { subset: true });
+
+        try {
+          // 動的サブセット作成（使用文字のみ）
+          if (minchoChars) {
+            console.log(`Creating mincho subset: "${minchoChars}" (${minchoChars.length} chars)`);
+            const minchoSubset = await createFontSubset(fontsRef.current.mincho, minchoChars);
+            console.log(`Mincho subset: ${minchoSubset.byteLength} bytes`);
+            minchoFont = await pdfDoc.embedFont(minchoSubset);
+          }
+          if (gothicChars) {
+            console.log(`Creating gothic subset: "${gothicChars}" (${gothicChars.length} chars)`);
+            const gothicSubset = await createFontSubset(fontsRef.current.gothic, gothicChars);
+            console.log(`Gothic subset: ${gothicSubset.byteLength} bytes`);
+            gothicFont = await pdfDoc.embedFont(gothicSubset);
+          }
+        } catch (subsetError) {
+          console.error('Subset error, falling back to full font:', subsetError);
+          // フォールバック: フル埋め込み
+          if (minchoChars) {
+            minchoFont = await pdfDoc.embedFont(fontsRef.current.mincho);
+          }
+          if (gothicChars) {
+            gothicFont = await pdfDoc.embedFont(fontsRef.current.gothic);
+          }
         }
       }
 
@@ -785,12 +834,23 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
 
       const savedBytes = await pdfDoc.save();
 
+      // キャッシュを更新（fileIdがある場合）
+      // 現在時刻をmodifiedTimeとして設定
+      if (fileIdParam) {
+        const nowModifiedTime = new Date().toISOString();
+        await setCachedPdf(fileIdParam, savedBytes.slice().buffer, nowModifiedTime);
+        console.log('Cache updated for:', fileIdParam, 'with modifiedTime:', nowModifiedTime);
+      }
+
+      // 内部状態も更新（再編集に備える）
+      pdfBytesRef.current = new Uint8Array(savedBytes);
+
       // ダウンロード
       const blob = new Blob([new Uint8Array(savedBytes)], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'edited.pdf';
+      a.download = driveFileName || 'edited.pdf';
       a.click();
       URL.revokeObjectURL(url);
 
@@ -851,11 +911,11 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
           className="back-btn"
           onClick={() => {
             // 親ウィンドウに戻るメッセージを送信（iframe統合用）
-            window.parent.postMessage({ type: 'back' }, '*');
-            // 直接アクセスの場合はhistory.back()
-            if (window.parent === window) {
-              window.history.back();
+            if (window.parent !== window) {
+              window.parent.postMessage({ type: 'back' }, '*');
             }
+            // 常にhistory.back()を試行
+            window.history.back();
           }}
           title="ダッシュボードに戻る"
         >

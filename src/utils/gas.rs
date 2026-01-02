@@ -9,6 +9,56 @@ use crate::models::ProjectData;
 
 const GAS_URL_KEY: &str = "sekou_taisei_gas_url";
 
+/// GASスクリプトの更新日時を取得（ビルド時に埋め込み）
+pub fn format_gas_modified_time() -> String {
+    let timestamp_str = option_env!("GAS_SCRIPT_MODIFIED").unwrap_or("0");
+    let timestamp: i64 = timestamp_str.parse().unwrap_or(0);
+    if timestamp == 0 {
+        return "GASコード更新: 不明".to_string();
+    }
+    // JST (UTC+9) に変換して表示
+    let secs = timestamp + 9 * 3600;
+    let days = secs / 86400;
+    let remaining = secs % 86400;
+    let hours = remaining / 3600;
+    let minutes = (remaining % 3600) / 60;
+    // 1970-01-01 からの日数を年月日に変換（簡易計算）
+    let (year, month, day) = days_to_ymd(days);
+    format!("GASコード更新: {}-{:02}-{:02} {:02}:{:02}", year, month, day, hours, minutes)
+}
+
+fn days_to_ymd(days: i64) -> (i64, i64, i64) {
+    // 簡易的なグレゴリオ暦変換
+    let mut remaining = days;
+    let mut year = 1970;
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        year += 1;
+    }
+    let days_in_months: [i64; 12] = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut month = 1;
+    for &d in &days_in_months {
+        if remaining < d {
+            break;
+        }
+        remaining -= d;
+        month += 1;
+    }
+    (year, month, remaining + 1)
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
 /// GAS URLを保存
 pub fn save_gas_url(url: &str) {
     if let Some(window) = web_sys::window() {
@@ -146,8 +196,10 @@ pub async fn save_to_gas(project: &ProjectData) -> Result<String, String> {
     let request = Request::new_with_str_and_init(&gas_url, &opts)
         .map_err(|e| format!("Request作成失敗: {:?}", e))?;
 
+    // Content-Type: text/plain を使ってCORSプリフライトを回避
+    // GAS側はpostData.contentsをJSONとしてパースするので問題ない
     request.headers()
-        .set("Content-Type", "application/json")
+        .set("Content-Type", "text/plain")
         .map_err(|e| format!("ヘッダー設定失敗: {:?}", e))?;
 
     let window = web_sys::window().ok_or("windowがありません")?;

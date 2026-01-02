@@ -5,6 +5,16 @@ dist = "dist"
 # See: https://crbug.com/981419
 no_sri = true
 
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "mkdir -p dist/gas && cp gas/SekouTaiseiSync.gs dist/gas/"]
+
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "mkdir -p dist/editor && cp -r react-app/dist/* dist/editor/"]
+
 [watch]
 ignore = ["dist", "react-app"]
 

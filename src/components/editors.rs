@@ -4,8 +4,11 @@
 
 use leptos::*;
 use std::collections::HashMap;
+use wasm_bindgen_futures::spawn_local;
 use crate::models::{Contractor, DocStatus, ProjectData, DocLink};
 use crate::ProjectContext;
+use crate::utils::gas::{get_gas_url, save_to_gas};
+use crate::utils::cache::save_to_cache;
 
 /// 標準的な書類リスト
 pub const STANDARD_DOCS: &[(&str, &str)] = &[
@@ -86,7 +89,11 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
     let (contractors, set_contractors) = create_signal(project.contractors.clone());
     let (contracts, _) = create_signal(project.contracts.clone());
 
-    // 変更を保存
+    // 保存状態
+    let (saving, set_saving) = create_signal(false);
+    let (save_message, set_save_message) = create_signal(None::<String>);
+
+    // 変更を保存（ローカル + GAS）
     let save_changes = move |_| {
         let updated = ProjectData {
             project_name: project_name.get(),
@@ -96,7 +103,35 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
             contractors: contractors.get(),
             contracts: contracts.get(),
         };
-        ctx.set_project.set(Some(updated));
+
+        // ローカル状態を更新
+        ctx.set_project.set(Some(updated.clone()));
+        // キャッシュに保存
+        save_to_cache(&updated);
+
+        // GASに保存（接続している場合）
+        if get_gas_url().is_some() {
+            set_saving.set(true);
+            set_save_message.set(None);
+            spawn_local(async move {
+                match save_to_gas(&updated).await {
+                    Ok(_) => {
+                        set_save_message.set(Some("保存しました".to_string()));
+                    }
+                    Err(e) => {
+                        set_save_message.set(Some(format!("保存エラー: {}", e)));
+                    }
+                }
+                set_saving.set(false);
+            });
+        } else {
+            set_save_message.set(Some("ローカルに保存しました（シート未接続）".to_string()));
+        }
+    };
+
+    // 編集を終了
+    let exit_edit = move |_| {
+        ctx.set_edit_mode.set(false);
     };
 
     // 業者追加
@@ -134,8 +169,18 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
         <div class="project-editor">
             <div class="editor-header">
                 <h2>"プロジェクト編集"</h2>
-                <button class="save-btn" on:click=save_changes>"変更を保存"</button>
+                <div class="editor-actions">
+                    <button class="back-btn" on:click=exit_edit>"← 戻る"</button>
+                    <button class="save-btn" on:click=save_changes disabled=move || saving.get()>
+                        {move || if saving.get() { "保存中..." } else { "変更を保存" }}
+                    </button>
+                </div>
             </div>
+            {move || save_message.get().map(|msg| view! {
+                <div class=format!("save-message {}", if msg.contains("エラー") { "error" } else { "success" })>
+                    {msg}
+                </div>
+            })}
 
             <div class="editor-section">
                 <h3>"基本情報"</h3>
@@ -385,25 +430,22 @@ where
     let original_check_result = status.check_result.clone();
     let original_last_checked = status.last_checked.clone();
 
-    let label = doc_key
-        .trim_start_matches(|c: char| c.is_ascii_digit() || c == '_')
-        .replace('_', " ");
+    let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+    let label = label.trim_start_matches('_').to_string();
 
-    let make_status = {
-        let original_valid_from = original_valid_from.clone();
-        let original_check_result = original_check_result.clone();
-        let original_last_checked = original_last_checked.clone();
-        move || DocStatus {
-            status: doc_status.get(),
-            file: if file.get().is_empty() { None } else { Some(file.get()) },
-            url: if url.get().is_empty() { None } else { Some(url.get()) },
-            note: if note.get().is_empty() { None } else { Some(note.get()) },
-            valid_from: original_valid_from.clone(),
-            valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
-            check_result: original_check_result.clone(),
-            last_checked: original_last_checked.clone(),
-        }
-    };
+    // 各イベント用にon_updateをクローン
+    let on_update_1 = on_update.clone();
+    let on_update_2 = on_update.clone();
+    let on_update_3 = on_update.clone();
+    let on_update_4 = on_update.clone();
+    let on_update_5 = on_update;
+
+    // 各ハンドラ用に既存値をクローン
+    let (vf1, cr1, lc1) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
+    let (vf2, cr2, lc2) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
+    let (vf3, cr3, lc3) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
+    let (vf4, cr4, lc4) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
+    let (vf5, cr5, lc5) = (original_valid_from, original_check_result, original_last_checked);
 
     view! {
         <div class=format!("doc-editor {}", if doc_status.get() { "complete" } else { "incomplete" })>
@@ -411,13 +453,18 @@ where
                 <label class="checkbox-label">
                     <input type="checkbox"
                         prop:checked=move || doc_status.get()
-                        on:change={
-                            let on_update = on_update.clone();
-                            let make_status = make_status.clone();
-                            move |ev| {
-                                set_doc_status.set(event_target_checked(&ev));
-                                on_update(make_status());
-                            }
+                        on:change=move |ev| {
+                            set_doc_status.set(event_target_checked(&ev));
+                            on_update_1(DocStatus {
+                                status: doc_status.get(),
+                                file: if file.get().is_empty() { None } else { Some(file.get()) },
+                                url: if url.get().is_empty() { None } else { Some(url.get()) },
+                                note: if note.get().is_empty() { None } else { Some(note.get()) },
+                                valid_from: vf1.clone(),
+                                valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+                                check_result: cr1.clone(),
+                                last_checked: lc1.clone(),
+                            });
                         }
                     />
                     <span class="doc-label">{label}</span>
@@ -427,46 +474,66 @@ where
             <div class="doc-editor-fields">
                 <input type="text" placeholder="ファイル名"
                     prop:value=move || file.get()
-                    on:input={
-                        let on_update = on_update.clone();
-                        let make_status = make_status.clone();
-                        move |ev| {
-                            set_file.set(event_target_value(&ev));
-                            on_update(make_status());
-                        }
+                    on:input=move |ev| {
+                        set_file.set(event_target_value(&ev));
+                        on_update_2(DocStatus {
+                            status: doc_status.get(),
+                            file: if file.get().is_empty() { None } else { Some(file.get()) },
+                            url: if url.get().is_empty() { None } else { Some(url.get()) },
+                            note: if note.get().is_empty() { None } else { Some(note.get()) },
+                            valid_from: vf2.clone(),
+                            valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+                            check_result: cr2.clone(),
+                            last_checked: lc2.clone(),
+                        });
                     }
                 />
                 <input type="text" placeholder="URL"
                     prop:value=move || url.get()
-                    on:input={
-                        let on_update = on_update.clone();
-                        let make_status = make_status.clone();
-                        move |ev| {
-                            set_url.set(event_target_value(&ev));
-                            on_update(make_status());
-                        }
+                    on:input=move |ev| {
+                        set_url.set(event_target_value(&ev));
+                        on_update_3(DocStatus {
+                            status: doc_status.get(),
+                            file: if file.get().is_empty() { None } else { Some(file.get()) },
+                            url: if url.get().is_empty() { None } else { Some(url.get()) },
+                            note: if note.get().is_empty() { None } else { Some(note.get()) },
+                            valid_from: vf3.clone(),
+                            valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+                            check_result: cr3.clone(),
+                            last_checked: lc3.clone(),
+                        });
                     }
                 />
                 <input type="date" placeholder="有効期限"
                     prop:value=move || valid_until.get()
-                    on:input={
-                        let on_update = on_update.clone();
-                        let make_status = make_status.clone();
-                        move |ev| {
-                            set_valid_until.set(event_target_value(&ev));
-                            on_update(make_status());
-                        }
+                    on:input=move |ev| {
+                        set_valid_until.set(event_target_value(&ev));
+                        on_update_4(DocStatus {
+                            status: doc_status.get(),
+                            file: if file.get().is_empty() { None } else { Some(file.get()) },
+                            url: if url.get().is_empty() { None } else { Some(url.get()) },
+                            note: if note.get().is_empty() { None } else { Some(note.get()) },
+                            valid_from: vf4.clone(),
+                            valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+                            check_result: cr4.clone(),
+                            last_checked: lc4.clone(),
+                        });
                     }
                 />
                 <input type="text" placeholder="備考"
                     prop:value=move || note.get()
-                    on:input={
-                        let on_update = on_update.clone();
-                        let make_status = make_status.clone();
-                        move |ev| {
-                            set_note.set(event_target_value(&ev));
-                            on_update(make_status());
-                        }
+                    on:input=move |ev| {
+                        set_note.set(event_target_value(&ev));
+                        on_update_5(DocStatus {
+                            status: doc_status.get(),
+                            file: if file.get().is_empty() { None } else { Some(file.get()) },
+                            url: if url.get().is_empty() { None } else { Some(url.get()) },
+                            note: if note.get().is_empty() { None } else { Some(note.get()) },
+                            valid_from: vf5.clone(),
+                            valid_until: if valid_until.get().is_empty() { None } else { Some(valid_until.get()) },
+                            check_result: cr5.clone(),
+                            last_checked: lc5.clone(),
+                        });
                     }
                 />
             </div>

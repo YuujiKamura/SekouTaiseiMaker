@@ -36,10 +36,17 @@ function openPdfCacheDB(): Promise<IDBDatabase> {
   });
 }
 
+interface CacheEntry {
+  fileId: string;
+  base64: string;
+  timestamp: number;
+  modifiedTime?: string;  // Google DriveのmodifiedTime
+}
+
 /**
- * IndexedDBからPDFを取得（Base64形式）
+ * IndexedDBからキャッシュエントリを取得
  */
-async function getFromIndexedDB(fileId: string): Promise<string | null> {
+async function getEntryFromIndexedDB(fileId: string): Promise<CacheEntry | null> {
   try {
     const db = await openPdfCacheDB();
     return new Promise((resolve, reject) => {
@@ -49,7 +56,7 @@ async function getFromIndexedDB(fileId: string): Promise<string | null> {
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        const entry = request.result;
+        const entry = request.result as CacheEntry | undefined;
         if (!entry) {
           resolve(null);
           return;
@@ -61,29 +68,39 @@ async function getFromIndexedDB(fileId: string): Promise<string | null> {
           resolve(null);
           return;
         }
-        resolve(entry.base64);
+        resolve(entry);
       };
     });
   } catch (e) {
-    console.error('[pdfCache] getFromIndexedDB error:', e);
+    console.error('[pdfCache] getEntryFromIndexedDB error:', e);
     return null;
   }
 }
 
 /**
+ * IndexedDBからPDFを取得（Base64形式）
+ */
+async function getFromIndexedDB(fileId: string): Promise<string | null> {
+  const entry = await getEntryFromIndexedDB(fileId);
+  return entry?.base64 || null;
+}
+
+/**
  * IndexedDBにPDFを保存
  */
-async function saveToIndexedDB(fileId: string, base64: string): Promise<boolean> {
+async function saveToIndexedDB(fileId: string, base64: string, modifiedTime?: string): Promise<boolean> {
   try {
     const db = await openPdfCacheDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(PDF_CACHE_STORE_NAME, 'readwrite');
       const store = tx.objectStore(PDF_CACHE_STORE_NAME);
-      const request = store.put({
+      const entry: CacheEntry = {
         fileId: fileId,
         base64: base64,
-        timestamp: Date.now()
-      });
+        timestamp: Date.now(),
+        modifiedTime: modifiedTime
+      };
+      const request = store.put(entry);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(true);
@@ -177,14 +194,14 @@ export async function getCachedPdf(fileId: string): Promise<ArrayBuffer | null> 
 /**
  * キャッシュにPDFを保存（Base64形式）
  */
-export async function setCachedPdfBase64(fileId: string, base64: string): Promise<void> {
-  await saveToIndexedDB(fileId, base64);
+export async function setCachedPdfBase64(fileId: string, base64: string, modifiedTime?: string): Promise<void> {
+  await saveToIndexedDB(fileId, base64, modifiedTime);
 }
 
 /**
  * キャッシュにPDFを保存（ArrayBuffer形式）
  */
-export async function setCachedPdf(fileId: string, data: ArrayBuffer): Promise<void> {
+export async function setCachedPdf(fileId: string, data: ArrayBuffer, modifiedTime?: string): Promise<void> {
   // ArrayBuffer → Base64
   const bytes = new Uint8Array(data);
   let binary = '';
@@ -192,7 +209,39 @@ export async function setCachedPdf(fileId: string, data: ArrayBuffer): Promise<v
     binary += String.fromCharCode(bytes[i]);
   }
   const base64 = btoa(binary);
-  await saveToIndexedDB(fileId, base64);
+  await saveToIndexedDB(fileId, base64, modifiedTime);
+}
+
+/**
+ * キャッシュが有効か確認（modifiedTimeで比較）
+ * キャッシュのmodifiedTimeがGASのmodifiedTime以上なら有効
+ * （編集保存後はキャッシュの方が新しくなる）
+ * @returns キャッシュが有効ならtrue、無効または存在しなければfalse
+ */
+export async function isCacheValid(fileId: string, currentModifiedTime: string): Promise<boolean> {
+  const entry = await getEntryFromIndexedDB(fileId);
+  if (!entry) return false;
+  if (!entry.modifiedTime) return false;  // modifiedTimeがない古いキャッシュは無効
+  // キャッシュのmodifiedTimeがGASのmodifiedTime以上なら有効
+  const cacheTime = new Date(entry.modifiedTime).getTime();
+  const serverTime = new Date(currentModifiedTime).getTime();
+  console.log('[pdfCache] Cache time:', entry.modifiedTime, 'Server time:', currentModifiedTime);
+  return cacheTime >= serverTime;
+}
+
+/**
+ * キャッシュのmodifiedTimeを取得
+ */
+export async function getCachedModifiedTime(fileId: string): Promise<string | null> {
+  const entry = await getEntryFromIndexedDB(fileId);
+  return entry?.modifiedTime || null;
+}
+
+/**
+ * 特定のキャッシュを削除
+ */
+export async function invalidateCache(fileId: string): Promise<void> {
+  await deleteFromIndexedDB(fileId);
 }
 
 /**

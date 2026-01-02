@@ -6,7 +6,7 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { checkDocumentImage, type CheckResult } from '../services/gemini';
 import { getApiKey } from '../services/apiKey';
-import { getCachedPdfAsync, setCachedPdf } from '../services/pdfCache';
+import { getCachedPdfAsync, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
 import './AiChecker.css';
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -47,22 +47,65 @@ export function AiChecker() {
 
     const loadPdf = async () => {
       try {
-        let pdfBytes: ArrayBuffer;
+        let pdfBytes: ArrayBuffer | undefined;
+        let modifiedTime: string | undefined;
 
-        // キャッシュをチェック（親ウィンドウのprefetchから、フェッチ中なら待機）
-        const cached = await getCachedPdfAsync(fileId);
-        if (cached) {
-          console.log('[AiChecker] PDF found in cache:', fileId);
-          pdfBytes = cached;
-        } else {
-          // キャッシュになければGAS経由で取得
-          if (!gasUrl) {
-            setError('シート連携が未設定です。メニュー → シート連携設定 からGAS URLを設定してください。');
-            return;
+        // GAS URLが必要
+        if (!gasUrl) {
+          setError('シート連携が未設定です。メニュー → シート連携設定 からGAS URLを設定してください。');
+          return;
+        }
+
+        // GASから最新ファイル情報を取得（フォルダ内の同名or最新ファイルを探す）
+        let actualFileId = fileId;
+        try {
+          const infoRes = await fetch(`${gasUrl}?action=getLatestFile&fileId=${fileId}`, { cache: 'no-store' });
+          const info = await infoRes.json();
+          console.log('[AiChecker] GAS getLatestFile response:', info);
+          if (!info.error) {
+            modifiedTime = info.modifiedTime;
+            // ファイルIDが更新された場合は新しいIDを使用
+            if (info.wasUpdated && info.fileId) {
+              console.log('[AiChecker] File updated:', fileId, '->', info.fileId);
+              actualFileId = info.fileId;
+              // スプレッドシートのURLを更新（GETリクエスト）
+              if (contractorId && docKey) {
+                try {
+                  const updateUrl = `${gasUrl}?action=updateDocUrl&contractorId=${encodeURIComponent(contractorId)}&docKey=${encodeURIComponent(docKey)}&newFileId=${encodeURIComponent(info.fileId)}`;
+                  await fetch(updateUrl, { cache: 'no-store' });
+                  console.log('[AiChecker] Spreadsheet URL updated');
+                } catch (e) {
+                  console.error('[AiChecker] Failed to update spreadsheet URL:', e);
+                }
+              }
+            }
           }
-          console.log('[AiChecker] PDF not in cache, fetching from GAS:', fileId);
-          // GAS経由でPDFを取得
-          const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${fileId}`);
+        } catch {
+          // ファイル情報取得失敗は無視
+        }
+
+        // キャッシュの有効性をチェック（actualFileIdを使用）
+        let useCache = false;
+        if (modifiedTime) {
+          useCache = await isCacheValid(actualFileId, modifiedTime);
+          if (!useCache) {
+            await invalidateCache(actualFileId);
+            console.log('[AiChecker] Cache invalidated: file was modified');
+          }
+        }
+
+        if (useCache) {
+          const cached = await getCachedPdfAsync(actualFileId);
+          if (cached) {
+            console.log('[AiChecker] PDF found in valid cache:', actualFileId);
+            pdfBytes = cached;
+          }
+        }
+
+        if (!pdfBytes) {
+          console.log('[AiChecker] Fetching PDF from GAS:', actualFileId);
+          // GAS経由でPDFを取得（actualFileIdを使用）
+          const response = await fetch(`${gasUrl}?action=fetchPdf&fileId=${actualFileId}`, { cache: 'no-store' });
           if (!response.ok) throw new Error('PDF取得失敗');
           const data = await response.json();
           if (data.error) throw new Error(data.error);
@@ -74,9 +117,9 @@ export function AiChecker() {
             bytes[i] = binary.charCodeAt(i);
           }
           pdfBytes = bytes.buffer;
-          // キャッシュに保存
-          await setCachedPdf(fileId, pdfBytes);
-          console.log('[AiChecker] PDF cached:', fileId);
+          // キャッシュに保存（modifiedTime付き）
+          await setCachedPdf(actualFileId, pdfBytes, modifiedTime || data.modifiedTime);
+          console.log('[AiChecker] PDF cached:', actualFileId);
         }
 
         const pdf = await getDocument({ data: pdfBytes }).promise;
