@@ -1449,6 +1449,30 @@ button:disabled {
     font-family: monospace;
 }
 
+/* Excelプレビュー不可メッセージ */
+.excel-no-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px;
+    text-align: center;
+    background: linear-gradient(135deg, #e8f5e9 0%, #fff 100%);
+}
+
+.excel-no-preview .no-preview-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #2e7d32;
+    margin-bottom: 16px;
+}
+
+.excel-no-preview .no-preview-hint {
+    font-size: 14px;
+    color: #555;
+}
+
 .viewer-content {
     flex: 1;
     display: flex;
