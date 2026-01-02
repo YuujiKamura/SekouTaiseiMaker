@@ -137,6 +137,8 @@ struct GasResponse {
 struct GasSettings {
     #[serde(rename = "encryptedApiKey")]
     encrypted_api_key: Option<String>,
+    #[serde(rename = "gasUrl")]
+    gas_url: Option<String>,
 }
 
 /// GASからプロジェクトデータを取得
@@ -168,11 +170,18 @@ pub async fn fetch_from_gas() -> Result<ProjectData, String> {
     let response: GasResponse = serde_wasm_bindgen::from_value(json)
         .map_err(|e| format!("JSONパース失敗: {:?}", e))?;
 
-    // 暗号化APIキーがあれば復号してセット
+    // 設定を復元
     if let Some(ref settings) = response.settings {
+        // 暗号化APIキーがあれば復号してセット
         if let Some(ref encrypted) = settings.encrypted_api_key {
             if !encrypted.is_empty() {
                 load_encrypted_api_key(encrypted).await;
+            }
+        }
+        // GAS URLがあればlocalStorageに保存（バックアップ復元用）
+        if let Some(ref url) = settings.gas_url {
+            if !url.is_empty() {
+                save_gas_url(url);
             }
         }
     }
@@ -278,4 +287,39 @@ pub async fn auto_save_api_key_to_sheet(gas_url: &str) {
             }
         }
     }
+}
+
+/// GAS URLをスプレッドシートの設定シートに保存
+pub async fn save_gas_url_to_sheet(gas_url: &str) -> Result<(), String> {
+    let body = serde_json::json!({
+        "action": "saveSettings",
+        "settings": {
+            "gasUrl": gas_url
+        }
+    });
+
+    let opts = RequestInit::new();
+    opts.set_method("POST");
+    opts.set_body(&JsValue::from_str(&body.to_string()));
+
+    let request = Request::new_with_str_and_init(gas_url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    request.headers()
+        .set("Content-Type", "text/plain")
+        .map_err(|e| format!("ヘッダー設定失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    if !resp.ok() {
+        return Err(format!("APIエラー: {}", resp.status()));
+    }
+
+    Ok(())
 }

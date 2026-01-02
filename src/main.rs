@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use models::*;
 use components::{CheckResultTooltip, ContextMenu};
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
-use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time};
+use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time, save_gas_url_to_sheet};
 use utils::{encode_base64, decode_base64};
 use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
 use views::ocr_viewer::{OcrDocument, OcrToken, OcrViewContext, OcrViewer};
@@ -1456,14 +1456,16 @@ fn App() -> impl IntoView {
                                                     set_gas_message.set(Some(format!("連携設定完了、保存エラー: {}", e)));
                                                 }
                                             }
-                                            // APIキーも自動保存
+                                            // APIキーとGAS URL自体も自動保存
                                             auto_save_api_key_to_sheet(&url_clone).await;
+                                            let _ = save_gas_url_to_sheet(&url_clone).await;
                                             set_gas_syncing.set(false);
                                         });
                                     } else {
-                                        // プロジェクトデータがなくてもAPIキーは保存
+                                        // プロジェクトデータがなくてもAPIキーとGAS URLは保存
                                         spawn_local(async move {
                                             auto_save_api_key_to_sheet(&url_clone).await;
+                                            let _ = save_gas_url_to_sheet(&url_clone).await;
                                         });
                                         set_gas_message.set(Some("シート連携を設定しました".to_string()));
                                     }
