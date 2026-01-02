@@ -1,4 +1,7 @@
 //! スプレッドシートビューワモジュール
+//!
+//! ## 変更履歴
+//! - 2026-01-02: AIチェック機能追加（プレビュー画面からSpreadsheetCheckerを呼び出し）
 
 use leptos::*;
 use crate::models::ViewMode;
