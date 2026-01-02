@@ -124,12 +124,17 @@ export function PdfViewer() {
           if (data.error) throw new Error(data.error);
           if (!data.base64) throw new Error('PDFデータがありません');
           // Base64をArrayBufferに変換
-          const binary = atob(data.base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
+          try {
+            const binary = atob(data.base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i);
+            }
+            pdfBytes = bytes.buffer;
+          } catch (decodeError) {
+            console.error('[PdfViewer] Base64 decode failed:', decodeError);
+            throw new Error('PDFデータのデコードに失敗しました。ファイルを再取得してください。');
           }
-          pdfBytes = bytes.buffer;
           // キャッシュに保存（modifiedTime付き）
           await setCachedPdf(actualFileId, pdfBytes, modifiedTime || data.modifiedTime);
           console.log('[PdfViewer] PDF cached:', actualFileId);
