@@ -3,6 +3,8 @@
  * 
  * ■ 変更履歴 (要再デプロイ)
  * ─────────────────────────────────────
+ * 2026-01-02: fetchExcelAsBase64 アクション追加
+ *             → ExcelファイルをBase64で取得（フロントエンドでパース用）
  * 2026-01-02: listSheets アクション追加
  *             → スプレッドシートの全シート一覧を取得
  * 2026-01-02: fetchSpreadsheet アクション追加
@@ -123,6 +125,16 @@ function doGet(e) {
         return jsonResponse({ error: 'spreadsheetId is required' });
       }
       const result = listSpreadsheetSheets(spreadsheetId);
+      return jsonResponse(result);
+    }
+
+    // ExcelファイルをBase64で取得（フロントエンドでSheetJSパース用）
+    if (action === 'fetchExcelAsBase64') {
+      const fileId = e.parameter.fileId;
+      if (!fileId) {
+        return jsonResponse({ error: 'fileId is required' });
+      }
+      const result = fetchExcelAsBase64(fileId);
       return jsonResponse(result);
     }
 
@@ -303,6 +315,39 @@ function getLatestFileInFolder(oldFileId) {
     };
   } catch (err) {
     return { error: 'Failed to get latest file: ' + err.message };
+  }
+}
+
+// ExcelファイルをBase64で取得（フロントエンドでSheetJSパース用）
+function fetchExcelAsBase64(fileId) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const fileName = file.getName();
+    const mimeType = file.getMimeType();
+
+    // Drive API v3で直接取得
+    const url = 'https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media';
+    const response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+
+    if (response.getResponseCode() !== 200) {
+      return { error: 'Failed to fetch file: ' + response.getContentText() };
+    }
+
+    const blob = response.getBlob();
+    const base64 = Utilities.base64Encode(blob.getBytes());
+
+    return {
+      success: true,
+      fileId: fileId,
+      fileName: fileName,
+      mimeType: mimeType,
+      base64: base64
+    };
+  } catch (err) {
+    return { error: 'Failed to fetch Excel: ' + err.message };
   }
 }
 

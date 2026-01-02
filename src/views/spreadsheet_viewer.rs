@@ -1,6 +1,7 @@
 //! スプレッドシートビューワモジュール
 //!
 //! ## 変更履歴
+//! - 2026-01-02: Excelファイル判定（isExcel, fileId）をAIチェックURLに追加
 //! - 2026-01-02: AIチェック機能追加（プレビュー画面からSpreadsheetCheckerを呼び出し）
 
 use leptos::*;
@@ -122,6 +123,10 @@ pub fn SpreadsheetViewer(
         );
         if let Some(g) = gid {
             check_url.push_str(&format!("&gid={}", js_sys::encode_uri_component(g)));
+        }
+        // Excelファイルの場合はfileIdとフラグを追加
+        if is_excel_compat {
+            check_url.push_str(&format!("&isExcel=true&fileId={}", js_sys::encode_uri_component(id)));
         }
         check_url
     });

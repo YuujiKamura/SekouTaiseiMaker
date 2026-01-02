@@ -1,13 +1,15 @@
 /**
- * Spreadsheet AI Checker - スプレッドシートのAIチェック
+ * Spreadsheet AI Checker - スプレッドシート/ExcelのAIチェック
  *
  * ## 変更履歴
+ * - 2026-01-02: Excelファイル対応（SheetJSでパース）
  * - 2026-01-02: シート選択UI追加（複数シートから対象を選択可能に）
  * - 2026-01-02: 初期実装
  */
 import { useState, useEffect } from 'react';
 import { checkSpreadsheet, type CheckResult } from '../services/gemini';
 import { getApiKey } from '../services/apiKey';
+import * as XLSX from 'xlsx';
 import './AiChecker.css';
 
 interface SheetInfo {
@@ -24,6 +26,14 @@ interface SheetListResponse {
   spreadsheetId: string;
   spreadsheetName: string;
   sheets: SheetInfo[];
+}
+
+interface ExcelResponse {
+  success?: boolean;
+  error?: string;
+  fileId: string;
+  fileName: string;
+  base64: string;
 }
 
 function getUrlParam(name: string): string | null {
@@ -48,7 +58,12 @@ export function SpreadsheetChecker() {
   const [sheetData, setSheetData] = useState<string[][] | null>(null);
   const [currentSheetName, setCurrentSheetName] = useState('');
 
+  // Excel用のワークブック
+  const [excelWorkbook, setExcelWorkbook] = useState<XLSX.WorkBook | null>(null);
+
   const spreadsheetId = getUrlParam('spreadsheetId');
+  const fileId = getUrlParam('fileId');
+  const isExcel = getUrlParam('isExcel') === 'true';
   const gid = getUrlParam('gid');
   const docType = getUrlParam('docType') || '書類';
   const contractor = getUrlParam('contractor') || '業者';
@@ -56,50 +71,103 @@ export function SpreadsheetChecker() {
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || docType;
 
-  // シート一覧を取得
+  // データ取得（Excel or スプレッドシート）
   useEffect(() => {
-    if (!spreadsheetId) {
-      setError('スプレッドシートIDが指定されていません');
-      setLoading(false);
-      return;
-    }
-
     if (!gasUrl) {
       setError('GAS URLが設定されていません');
       setLoading(false);
       return;
     }
 
-    const fetchSheetList = async () => {
-      try {
-        const url = `${gasUrl}?action=listSheets&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
-        const response = await fetch(url, { cache: 'no-store' });
-        const data: SheetListResponse = await response.json();
+    if (isExcel && fileId) {
+      // Excelファイルを取得してSheetJSでパース
+      fetchExcelFile();
+    } else if (spreadsheetId) {
+      // Google スプレッドシートのシート一覧を取得
+      fetchSheetList();
+    } else {
+      setError('ファイルIDが指定されていません');
+      setLoading(false);
+    }
+  }, [spreadsheetId, fileId, isExcel, gasUrl]);
 
-        if (data.error) {
-          throw new Error(data.error);
-        }
+  const fetchExcelFile = async () => {
+    try {
+      const url = `${gasUrl}?action=fetchExcelAsBase64&fileId=${encodeURIComponent(fileId!)}`;
+      const response = await fetch(url, { cache: 'no-store' });
+      const data: ExcelResponse = await response.json();
 
-        setSheetList(data.sheets);
-        setSpreadsheetName(data.spreadsheetName);
-
-        // gidが指定されていれば、そのシートを初期選択
-        if (gid) {
-          const gidNum = parseInt(gid, 10);
-          if (data.sheets.some(s => s.sheetId === gidNum)) {
-            setSelectedSheetIds(new Set([gidNum]));
-          }
-        }
-
-        setLoading(false);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'シート一覧取得エラー');
-        setLoading(false);
+      if (data.error) {
+        throw new Error(data.error);
       }
-    };
 
-    fetchSheetList();
-  }, [spreadsheetId, gid, gasUrl]);
+      // Base64をデコードしてSheetJSでパース
+      const binaryString = atob(data.base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const workbook = XLSX.read(bytes, { type: 'array' });
+      setExcelWorkbook(workbook);
+      setSpreadsheetName(data.fileName);
+
+      // シート一覧を構築
+      const sheets: SheetInfo[] = workbook.SheetNames.map((name, index) => {
+        const sheet = workbook.Sheets[name];
+        const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+        const rowCount = jsonData.length;
+        const colCount = jsonData[0]?.length || 0;
+
+        // プレビュー（先頭3行5列）
+        const preview = jsonData.slice(0, 3).map(row =>
+          (row as string[]).slice(0, 5).map(cell => String(cell ?? ''))
+        );
+
+        return {
+          sheetId: index,
+          name,
+          rowCount,
+          colCount,
+          preview
+        };
+      });
+
+      setSheetList(sheets);
+      setLoading(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Excelファイル取得エラー');
+      setLoading(false);
+    }
+  };
+
+  const fetchSheetList = async () => {
+    try {
+      const url = `${gasUrl}?action=listSheets&spreadsheetId=${encodeURIComponent(spreadsheetId!)}`;
+      const response = await fetch(url, { cache: 'no-store' });
+      const data: SheetListResponse = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setSheetList(data.sheets);
+      setSpreadsheetName(data.spreadsheetName);
+
+      // gidが指定されていれば、そのシートを初期選択
+      if (gid) {
+        const gidNum = parseInt(gid, 10);
+        if (data.sheets.some(s => s.sheetId === gidNum)) {
+          setSelectedSheetIds(new Set([gidNum]));
+        }
+      }
+
+      setLoading(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'シート一覧取得エラー');
+      setLoading(false);
+    }
+  };
 
   const toggleSheetSelection = (sheetId: number) => {
     setSelectedSheetIds(prev => {
@@ -123,28 +191,48 @@ export function SpreadsheetChecker() {
     setError(null);
 
     try {
-      // 選択されたシートのデータを取得（複数の場合は結合）
       const allData: string[][] = [];
       const sheetNames: string[] = [];
 
-      for (const sheetId of selectedSheetIds) {
-        const url = `${gasUrl}?action=fetchSpreadsheet&spreadsheetId=${encodeURIComponent(spreadsheetId!)}&gid=${sheetId}`;
-        const response = await fetch(url, { cache: 'no-store' });
-        const data = await response.json();
+      if (isExcel && excelWorkbook) {
+        // Excelの場合はローカルでパース
+        for (const sheetId of selectedSheetIds) {
+          const sheetName = excelWorkbook.SheetNames[sheetId];
+          const sheet = excelWorkbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
 
-        if (data.error) {
-          throw new Error(data.error);
-        }
+          if (allData.length > 0) {
+            allData.push(['']);
+            allData.push([`=== ${sheetName} ===`]);
+          } else {
+            allData.push([`=== ${sheetName} ===`]);
+          }
 
-        // シート名を区切りとして追加
-        if (allData.length > 0) {
-          allData.push(['']); // 空行で区切り
-          allData.push([`=== ${data.sheetName} ===`]);
-        } else {
-          allData.push([`=== ${data.sheetName} ===`]);
+          jsonData.forEach(row => {
+            allData.push((row as string[]).map(cell => String(cell ?? '')));
+          });
+          sheetNames.push(sheetName);
         }
-        allData.push(...data.data);
-        sheetNames.push(data.sheetName);
+      } else {
+        // スプレッドシートの場合はGAS経由
+        for (const sheetId of selectedSheetIds) {
+          const url = `${gasUrl}?action=fetchSpreadsheet&spreadsheetId=${encodeURIComponent(spreadsheetId!)}&gid=${sheetId}`;
+          const response = await fetch(url, { cache: 'no-store' });
+          const data = await response.json();
+
+          if (data.error) {
+            throw new Error(data.error);
+          }
+
+          if (allData.length > 0) {
+            allData.push(['']);
+            allData.push([`=== ${data.sheetName} ===`]);
+          } else {
+            allData.push([`=== ${data.sheetName} ===`]);
+          }
+          allData.push(...data.data);
+          sheetNames.push(data.sheetName);
+        }
       }
 
       setSheetData(allData);
@@ -198,10 +286,13 @@ export function SpreadsheetChecker() {
         contractorId,
         docType,
         docKey,
-        spreadsheetId,
+        spreadsheetId: spreadsheetId || fileId,
       }, '*');
     }
   };
+
+  // ファイルタイプ表示
+  const fileTypeLabel = isExcel ? 'Excel' : 'スプレッドシート';
 
   // シート選択フェーズ
   if (phase === 'select') {
@@ -209,7 +300,10 @@ export function SpreadsheetChecker() {
       <div className="ai-checker">
         <div className="checker-toolbar">
           <button className="back-btn" onClick={handleBack}>← 戻る</button>
-          <span className="doc-info">{contractor} / {docType}</span>
+          <span className="doc-info">
+            {contractor} / {docType}
+            <span className={`file-type-label ${isExcel ? 'excel' : 'sheet'}`}>{fileTypeLabel}</span>
+          </span>
           <button
             className="check-btn"
             onClick={handleProceedToCheck}
@@ -224,7 +318,7 @@ export function SpreadsheetChecker() {
         <div className="checker-content">
           <div className="preview-area spreadsheet-preview">
             {loading ? (
-              <div className="loading-message">シート一覧を読み込み中...</div>
+              <div className="loading-message">{fileTypeLabel}を読み込み中...</div>
             ) : sheetList.length > 0 ? (
               <div className="sheet-selector">
                 <div className="sheet-selector-header">
@@ -280,7 +374,10 @@ export function SpreadsheetChecker() {
     <div className="ai-checker">
       <div className="checker-toolbar">
         <button className="back-btn" onClick={handleBack}>← シート選択に戻る</button>
-        <span className="doc-info">{contractor} / {docType} - {currentSheetName}</span>
+        <span className="doc-info">
+          {contractor} / {docType} - {currentSheetName}
+          <span className={`file-type-label ${isExcel ? 'excel' : 'sheet'}`}>{fileTypeLabel}</span>
+        </span>
         <button
           className="check-btn"
           onClick={runCheck}
@@ -295,7 +392,7 @@ export function SpreadsheetChecker() {
       <div className="checker-content">
         <div className="preview-area spreadsheet-preview">
           {loading ? (
-            <div className="loading-message">スプレッドシートを読み込み中...</div>
+            <div className="loading-message">{fileTypeLabel}を読み込み中...</div>
           ) : sheetData ? (
             <div className="sheet-data-preview">
               <div className="sheet-info">
@@ -308,7 +405,7 @@ export function SpreadsheetChecker() {
                       <tr key={rowIndex} className={row[0]?.startsWith('===') ? 'sheet-separator' : ''}>
                         {row.slice(0, 15).map((cell, colIndex) => (
                           <td key={colIndex} title={cell}>
-                            {cell.length > 20 ? cell.slice(0, 20) + '...' : cell}
+                            {cell && cell.length > 20 ? cell.slice(0, 20) + '...' : cell}
                           </td>
                         ))}
                         {row.length > 15 && <td>...</td>}

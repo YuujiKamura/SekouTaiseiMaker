@@ -184,10 +184,16 @@ pub enum DocFileType {
 }
 
 /// ファイルタイプ判定
+///
+/// ## 変更履歴
+/// - 2026-01-02: rtpof=trueでExcelファイルを判定するロジック追加
 pub fn detect_file_type(url: &str) -> DocFileType {
     let url_lower = url.to_lowercase();
 
-    if url_lower.contains("docs.google.com/spreadsheets") {
+    // Google Spreadsheetとして開かれているExcelファイル（rtpof=true）
+    if url_lower.contains("docs.google.com/spreadsheets") && url_lower.contains("rtpof=true") {
+        DocFileType::Excel
+    } else if url_lower.contains("docs.google.com/spreadsheets") {
         DocFileType::GoogleSpreadsheet
     } else if url_lower.contains("docs.google.com/document") {
         DocFileType::GoogleDoc
