@@ -175,6 +175,44 @@ const ROUDOU_HOKEN_PROMPT = `あなたは建設業の書類チェック専門家
     ]
 }`;
 
+// 法定外労災加入証明用プロンプト
+const HOUTEI_GAI_ROUSAI_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「法定外労災」の加入証明として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【重要】法定外労災加入証明として有効な条件:
+1. 保険会社名・保険種別が確認できること
+2. 被保険者（加入者）が業者名と一致すること
+3. 保険期間（始期・終期）が明記されていること
+
+【保険期間に関する重要な判定基準】
+- 保険期間が工事期間をカバーしている場合 → OK
+- 保険期間が工事期間内に終了する場合 → WARNING（要更新確認）
+- 保険が既に失効している場合 → ERROR
+
+※現在の日付と保険終期を比較し、近い将来（3ヶ月以内など）に期限切れになる場合は警告してください
+※保険証券番号等がマスキングされていても問題ありません
+
+チェック項目:
+1. 保険会社名が確認できるか
+2. 被保険者名が業者名（{contractor_name}）と一致するか
+3. 保険期間の始期・終期が確認できるか
+4. 保険期間が現在有効か（終期が過去でないか）
+5. 保険期間が近い将来に終了しないか（警告対象）
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）- 保険期間の終期が近い場合は必ず言及すること",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ]
+}`;
+
 // 在籍証明系プロンプト（「在籍」を含む書類タイプ用）
 const ZAISEKI_PROMPT = `あなたは建設業の書類チェック専門家です。
 この書類が「{doc_type}」の証明として有効かどうかを確認してください。
@@ -239,6 +277,9 @@ function getPrompt(docType: string, contractorName: string): string {
   let template: string;
   if (PROMPTS[docType]) {
     template = PROMPTS[docType];
+  } else if (docType.includes('法定外労災') || docType.includes('法廷外労災')) {
+    // 「法定外労災」を含む書類は法定外労災加入証明用プロンプトを使用
+    template = HOUTEI_GAI_ROUSAI_PROMPT;
   } else if (docType.includes('労働保険')) {
     // 「労働保険」を含む書類は労働保険番号確認用プロンプトを使用
     template = ROUDOU_HOKEN_PROMPT;
