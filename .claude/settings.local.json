@@ -33,7 +33,8 @@
       "Bash(taskkill:*)",
       "WebFetch(domain:api.github.com)",
       "Bash(cmd //c:*)",
-      "Bash(tasklist:*)"
+      "Bash(tasklist:*)",
+      "Bash(GIT_EDITOR=true git rebase:*)"
     ]
   }
 }
