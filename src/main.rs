@@ -147,6 +147,33 @@ fn generate_gas_share_url() -> Option<String> {
     Some(format!("{}?gas={}", base_url, encoded))
 }
 
+/// URLからテキストを取得
+async fn fetch_text(url: &str) -> Result<String, String> {
+    let opts = RequestInit::new();
+    opts.set_method("GET");
+
+    let request = Request::new_with_str_and_init(url, &opts)
+        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
+
+    let window = web_sys::window().ok_or("windowがありません")?;
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch失敗: {:?}", e))?;
+
+    let resp: Response = resp_value.dyn_into()
+        .map_err(|_| "Responseへの変換失敗")?;
+
+    if !resp.ok() {
+        return Err(format!("HTTPエラー: {}", resp.status()));
+    }
+
+    let text = JsFuture::from(resp.text().map_err(|e| format!("text()失敗: {:?}", e))?)
+        .await
+        .map_err(|e| format!("テキスト取得失敗: {:?}", e))?;
+
+    text.as_string().ok_or("テキスト変換失敗".to_string())
+}
+
 /// GASからプロジェクトデータを取得
 async fn fetch_from_gas() -> Result<ProjectData, String> {
     let gas_url = get_gas_url().ok_or("GAS URLが設定されていません")?;
@@ -2824,6 +2851,9 @@ fn App() -> impl IntoView {
     let (gas_connected, set_gas_connected) = create_signal(get_gas_url().is_some());
     let (gas_syncing, set_gas_syncing) = create_signal(false);
     let (gas_message, set_gas_message) = create_signal(None::<String>);
+    let (gas_code, set_gas_code) = create_signal(None::<String>);
+    let (gas_code_loading, set_gas_code_loading) = create_signal(false);
+    let (gas_code_copied, set_gas_code_copied) = create_signal(false);
 
     // プロジェクトデータのグローバル状態
     let (project, set_project) = create_signal(None::<ProjectData>);
@@ -3532,10 +3562,60 @@ fn App() -> impl IntoView {
                                 <span class="step-num">"2"</span>
                                 <div class="step-content">
                                     <p class="step-title">"GASコードを貼り付け"</p>
-                                    <a href="https://github.com/YuujiKamura/SekouTaiseiMaker/blob/main/gas/SekouTaiseiSync.gs"
-                                       target="_blank" rel="noopener" class="gas-link">
-                                        "GASコードを開く ↗"
-                                    </a>
+                                    <div class="gas-code-actions">
+                                        <button
+                                            class="gas-btn"
+                                            disabled=move || gas_code_loading.get()
+                                            on:click=move |_| {
+                                                set_gas_code_loading.set(true);
+                                                set_gas_code_copied.set(false);
+                                                spawn_local(async move {
+                                                    let url = "https://raw.githubusercontent.com/YuujiKamura/SekouTaiseiMaker/main/gas/SekouTaiseiSync.gs";
+                                                    match fetch_text(url).await {
+                                                        Ok(code) => {
+                                                            set_gas_code.set(Some(code));
+                                                        }
+                                                        Err(e) => {
+                                                            web_sys::console::log_1(&format!("Failed to fetch GAS code: {}", e).into());
+                                                            set_gas_message.set(Some("コード取得に失敗しました".to_string()));
+                                                        }
+                                                    }
+                                                    set_gas_code_loading.set(false);
+                                                });
+                                            }
+                                        >
+                                            {move || if gas_code_loading.get() { "読み込み中..." } else { "GASコードを取得" }}
+                                        </button>
+                                        {move || gas_code.get().map(|code| {
+                                            let code_for_copy = code.clone();
+                                            view! {
+                                                <button
+                                                    class=move || if gas_code_copied.get() { "gas-btn copied" } else { "gas-btn primary" }
+                                                    on:click=move |_| {
+                                                        if let Some(window) = web_sys::window() {
+                                                            let clipboard = window.navigator().clipboard();
+                                                            let promise = clipboard.write_text(&code_for_copy);
+                                                            let set_copied = set_gas_code_copied.clone();
+                                                            spawn_local(async move {
+                                                                if JsFuture::from(promise).await.is_ok() {
+                                                                    set_copied.set(true);
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                >
+                                                    {move || if gas_code_copied.get() { "コピーしました!" } else { "コードをコピー" }}
+                                                </button>
+                                            }
+                                        })}
+                                    </div>
+                                    {move || gas_code.get().map(|code| view! {
+                                        <textarea
+                                            class="gas-code-display"
+                                            readonly=true
+                                            rows="8"
+                                        >{code}</textarea>
+                                    })}
                                 </div>
                             </div>
                             <div class="gas-step">

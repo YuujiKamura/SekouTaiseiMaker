@@ -3232,3 +3232,31 @@ button:disabled {
 .context-menu-content .issues li.item-info {
     color: #1565c0;
 }
+
+/* ============================================
+   GASコード表示
+   ============================================ */
+
+.gas-code-actions {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.gas-code-display {
+    width: 100%;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 8px;
+    resize: vertical;
+    margin-top: 8px;
+}
+
+.gas-btn.copied {
+    background: #4caf50;
+    color: white;
+}
