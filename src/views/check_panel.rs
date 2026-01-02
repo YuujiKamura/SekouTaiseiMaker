@@ -141,18 +141,26 @@ pub fn CheckResultsPanel() -> impl IntoView {
         {move || {
             let mode = ctx.check_mode.get();
             let results = ctx.check_results.get();
+            let tooltip = ctx.check_result_tooltip.get();
 
-            (mode != CheckMode::None && !results.is_empty()).then(|| {
+            // ホバー中の業者に関連する結果だけフィルタリング
+            let filtered_results: Vec<_> = results.iter()
+                .filter(|r| r.contractor_name == tooltip.contractor_name)
+                .cloned()
+                .collect();
+
+            // ホバー中 かつ チェック結果がある時だけ表示
+            (tooltip.visible && mode != CheckMode::None && !filtered_results.is_empty()).then(|| {
                 let title = match mode {
                     CheckMode::Existence => "書類存在チェック結果",
                     CheckMode::Date => "日付チェック結果",
                     CheckMode::None => "",
                 };
 
-                // 結果を分類
-                let errors: Vec<_> = results.iter().filter(|r| r.status == CheckStatus::Error).collect();
-                let warnings: Vec<_> = results.iter().filter(|r| r.status == CheckStatus::Warning).collect();
-                let oks: Vec<_> = results.iter().filter(|r| r.status == CheckStatus::Ok).collect();
+                // 結果を分類（フィルタ後の結果を使用）
+                let errors: Vec<_> = filtered_results.iter().filter(|r| r.status == CheckStatus::Error).cloned().collect();
+                let warnings: Vec<_> = filtered_results.iter().filter(|r| r.status == CheckStatus::Warning).cloned().collect();
+                let oks: Vec<_> = filtered_results.iter().filter(|r| r.status == CheckStatus::Ok).cloned().collect();
 
                 view! {
                     <div class="check-results-panel">
