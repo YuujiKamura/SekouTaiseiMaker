@@ -34,7 +34,8 @@
       "WebFetch(domain:api.github.com)",
       "Bash(cmd //c:*)",
       "Bash(tasklist:*)",
-      "Bash(GIT_EDITOR=true git rebase:*)"
+      "Bash(GIT_EDITOR=true git rebase:*)",
+      "Bash(git rebase:*)"
     ]
   }
 }

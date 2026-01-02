@@ -19,7 +19,7 @@ use components::ContextMenu;
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
 use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, save_to_gas, auto_save_api_key_to_sheet};
 use utils::{encode_base64, decode_base64};
-use views::{CheckResultsPanel, PdfViewer};
+use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
 use views::ocr_viewer::{OcrDocument, OcrToken, OcrViewContext, OcrViewer};
 use components::ProjectView;
 
@@ -125,70 +125,6 @@ const API_KEY_STORAGE_KEY: &str = "sekou_taisei_api_key";
 // ContextMenuStateはmodels::TooltipStateとしてエクスポート済み
 // main.rsでは互換性のためエイリアスを定義
 pub type ContextMenuState = models::TooltipState;
-
-// ============================================
-// Google Drive/Sheets URL解析ヘルパー関数
-// ============================================
-
-/// Google DriveファイルIDからプレビューURLを構築
-fn build_drive_preview_url(file_id: &str) -> String {
-    format!("https://drive.google.com/file/d/{}/preview", file_id)
-}
-
-/// Google Sheets URLからスプレッドシートIDを抽出
-/// パターン: /spreadsheets/d/{SPREADSHEET_ID}/...
-fn extract_spreadsheet_id(url: &str) -> Option<String> {
-    if let Some(start) = url.find("/d/") {
-        let id_start = start + 3;
-        let rest = &url[id_start..];
-        // ID終端: '/', '?', '#' のいずれか
-        let id_end = rest.find(|c| c == '/' || c == '?' || c == '#')
-            .unwrap_or(rest.len());
-        let id = &rest[..id_end];
-        if !id.is_empty() {
-            return Some(id.to_string());
-        }
-    }
-    None
-}
-
-/// URLからgidパラメータを抽出
-fn extract_gid(url: &str) -> Option<String> {
-    // #gid= または ?gid= または &gid= を探す
-    for prefix in ["#gid=", "?gid=", "&gid="] {
-        if let Some(start) = url.find(prefix) {
-            let gid_start = start + prefix.len();
-            let rest = &url[gid_start..];
-            // gid終端: '&', '#', 空白のいずれか
-            let gid_end = rest.find(|c: char| c == '&' || c == '#' || c.is_whitespace())
-                .unwrap_or(rest.len());
-            let gid = &rest[..gid_end];
-            if !gid.is_empty() && gid.chars().all(|c| c.is_ascii_digit()) {
-                return Some(gid.to_string());
-            }
-        }
-    }
-    None
-}
-
-/// Google Sheets URLからスプレッドシートIDとgidを抽出
-fn extract_spreadsheet_info(url: &str) -> Option<(String, Option<String>)> {
-    extract_spreadsheet_id(url).map(|id| (id, extract_gid(url)))
-}
-
-/// Google Sheets埋め込みURLを構築
-fn build_sheets_embed_url(spreadsheet_id: &str, gid: Option<&str>) -> String {
-    match gid {
-        Some(g) => format!(
-            "https://docs.google.com/spreadsheets/d/{}/preview?gid={}",
-            spreadsheet_id, g
-        ),
-        None => format!(
-            "https://docs.google.com/spreadsheets/d/{}/preview",
-            spreadsheet_id
-        ),
-    }
-}
 
 // チェック結果
 #[derive(Debug, Clone, PartialEq)]
@@ -1128,87 +1064,6 @@ async fn fetch_json(url: &str) -> Result<ProjectData, String> {
 
     serde_wasm_bindgen::from_value(json)
         .map_err(|e| format!("デシリアライズ失敗: {:?}", e))
-}
-
-// ============================================
-// スプレッドシートビューワコンポーネント
-// ============================================
-
-#[component]
-fn SpreadsheetViewer(
-    contractor: String,
-    doc_type: String,
-    url: String,
-    doc_key: String,
-    contractor_id: String,
-) -> impl IntoView {
-    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
-
-    // 未使用パラメータ
-    let _ = (doc_key, contractor_id);
-
-    let on_back = move |_| {
-        ctx.set_view_mode.set(ViewMode::Dashboard);
-    };
-
-    // ローカルパス検出（H:\, C:\, /Users/ など）
-    let is_local_path = url.contains(":\\") || url.starts_with("/Users/") || url.starts_with("/home/");
-
-    // Google Sheets URLを埋め込み用に変換（堅牢なID抽出方式）
-    // rtpof=true がある場合はExcelファイルなのでDrive形式でプレビュー
-    let is_excel_compat = url.contains("rtpof=true");
-    let embed_url = if is_local_path {
-        String::new()
-    } else if url.contains("docs.google.com/spreadsheets") {
-        extract_spreadsheet_info(&url)
-            .map(|(id, gid)| {
-                if is_excel_compat {
-                    // ExcelファイルはGoogle Driveのプレビューを使用
-                    build_drive_preview_url(&id)
-                } else {
-                    build_sheets_embed_url(&id, gid.as_deref())
-                }
-            })
-            .unwrap_or_else(|| url.clone())
-    } else {
-        url.clone()
-    };
-
-    let contractor_display = contractor.clone();
-    let doc_type_display = doc_type.clone();
-    let url_display = url.clone();
-
-    view! {
-        <div class="viewer-container spreadsheet-viewer">
-            <div class="viewer-toolbar">
-                <button class="back-btn" on:click=on_back>"← 戻る"</button>
-                <span class="doc-info">{contractor_display}" / "{doc_type_display}</span>
-                <div class="toolbar-actions">
-                    // スプレッドシートのAIチェックは現在未対応
-                </div>
-            </div>
-
-            <div class="viewer-content">
-                {if is_local_path {
-                    view! {
-                        <div class="local-path-warning">
-                            <p class="warning-title">"ローカルファイルはプレビューできません"</p>
-                            <p class="warning-path">{url_display}</p>
-                            <p class="warning-hint">"目次シートのURLをGoogle Drive Web URL形式に変更してください"</p>
-                            <p class="warning-example">"例: https://docs.google.com/spreadsheets/d/ファイルID/edit"</p>
-                        </div>
-                    }.into_view()
-                } else {
-                    view! {
-                        <iframe
-                            src=embed_url
-                            class="spreadsheet-frame"
-                        ></iframe>
-                    }.into_view()
-                }}
-            </div>
-        </div>
-    }
 }
 
 // ============================================
