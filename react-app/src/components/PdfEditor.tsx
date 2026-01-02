@@ -5,6 +5,7 @@ import { getDocument, GlobalWorkerOptions, AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { getCachedPdf, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
 import { createFontSubset } from '../utils/fontSubset';
+import { safeBase64ToArrayBuffer } from '../utils/base64';
 import './PdfEditor.css';
 
 // PDF.js worker設定 (v5.x - use bundled worker)
@@ -124,7 +125,7 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
         });
 
         if (cachedPdf && cachedPdf.length > 0) {
-          const bytes = Uint8Array.from(atob(cachedPdf), c => c.charCodeAt(0));
+          const bytes = new Uint8Array(safeBase64ToArrayBuffer(cachedPdf));
           console.log('Restored PDF bytes:', bytes.length);
 
           if (cancelled) return;
@@ -443,12 +444,8 @@ export function PdfEditor({ pdfUrl, onSave }: PdfEditorProps) {
         if (result.error) throw new Error(result.error);
         if (result.base64) {
           setDriveFileName(result.fileName || fileName);
-          const binary = atob(result.base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          const pdfBytes = bytes.buffer;
+          // Base64をArrayBufferに変換（sanitization付き）
+          const pdfBytes = safeBase64ToArrayBuffer(result.base64);
           // キャッシュに保存（modifiedTime付き）
           await setCachedPdf(fileIdParam, pdfBytes, modifiedTime || result.modifiedTime);
           await loadPdf(pdfBytes);

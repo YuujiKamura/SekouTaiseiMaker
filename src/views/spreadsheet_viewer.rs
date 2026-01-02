@@ -5,6 +5,15 @@
 //! - 2026-01-02: 工事名（projectName）をAIチェックURLに追加（バリデーション用）
 //! - 2026-01-02: Excelファイル判定（isExcel, fileId）をAIチェックURLに追加
 //! - 2026-01-02: AIチェック機能追加（プレビュー画面からSpreadsheetCheckerを呼び出し）
+//!
+//! ## 既知の動作
+//! ブラウザコンソールに以下のCSP違反エラーが表示されることがありますが、これは
+//! Googleのセキュリティポリシーによるもので、アプリケーションの動作には影響しません：
+//! - "Framing 'https://drive.google.com/' violates Content Security Policy"
+//! - "Framing 'https://accounts.google.com/' violates Content Security Policy"
+//!
+//! Google Sheets/Driveの `/preview` URLは iframe埋め込み用に設計されていますが、
+//! 認証関連のサブフレームはGoogleのCSPによりブロックされます。
 
 use leptos::*;
 use wasm_bindgen::prelude::*;

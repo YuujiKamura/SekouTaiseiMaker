@@ -7,6 +7,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { checkDocumentImage, type CheckResult } from '../services/gemini';
 import { getApiKey } from '../services/apiKey';
 import { getCachedPdfAsync, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
+import { safeBase64ToArrayBuffer } from '../utils/base64';
 import './AiChecker.css';
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -110,13 +111,8 @@ export function AiChecker() {
           const data = await response.json();
           if (data.error) throw new Error(data.error);
           if (!data.base64) throw new Error('PDFデータがありません');
-          // Base64をArrayBufferに変換
-          const binary = atob(data.base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          pdfBytes = bytes.buffer;
+          // Base64をArrayBufferに変換（sanitization付き）
+          pdfBytes = safeBase64ToArrayBuffer(data.base64);
           // キャッシュに保存（modifiedTime付き）
           await setCachedPdf(actualFileId, pdfBytes, modifiedTime || data.modifiedTime);
           console.log('[AiChecker] PDF cached:', actualFileId);
