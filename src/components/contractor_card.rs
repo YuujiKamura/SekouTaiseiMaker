@@ -75,6 +75,18 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         }
                     });
 
+                    // ファイルタイプバッジを決定
+                    let file_type_badge = url.as_ref().map(|u| {
+                        match detect_file_type(u) {
+                            DocFileType::Pdf => ("PDF", "file-badge-pdf"),
+                            DocFileType::Image => ("IMG", "file-badge-img"),
+                            DocFileType::GoogleSpreadsheet => ("シート", "file-badge-sheet"),
+                            DocFileType::Excel => ("Excel", "file-badge-excel"),
+                            DocFileType::GoogleDoc => ("Doc", "file-badge-doc"),
+                            DocFileType::Unknown => ("", ""),
+                        }
+                    }).filter(|(label, _)| !label.is_empty());
+
                     let last_checked = status.last_checked.clone();
 
                     // クリック用の変数クローン
@@ -200,6 +212,13 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                             <span class=format!("doc-name {}", if has_url { "doc-link" } else { "" })>
                                 {label.clone()}
                             </span>
+
+                            // ファイルタイプバッジ
+                            {file_type_badge.map(|(label, class)| view! {
+                                <span class=format!("file-type-badge {}", class)>
+                                    {label}
+                                </span>
+                            })}
 
                             // チェック結果バッジ
                             {check_badge.map(|(icon, class, title)| view! {

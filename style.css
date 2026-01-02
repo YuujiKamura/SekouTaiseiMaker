@@ -2177,6 +2177,53 @@ button:disabled {
 }
 
 /* ============================================
+   ファイルタイプバッジ
+   ============================================ */
+
+.file-type-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    margin-left: 0.4rem;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+
+.file-badge-pdf {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
+}
+
+.file-badge-img {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+
+.file-badge-sheet {
+    background: #e8f5e9;
+    color: #1b5e20;
+    border: 1px solid #81c784;
+}
+
+.file-badge-excel {
+    background: #e8f5e9;
+    color: #1b5e20;
+    border: 1px solid #81c784;
+}
+
+.file-badge-doc {
+    background: #e3f2fd;
+    color: #1565c0;
+    border: 1px solid #90caf9;
+}
+
+/* ============================================
    保存インジケーター (T7)
    ============================================ */
 
