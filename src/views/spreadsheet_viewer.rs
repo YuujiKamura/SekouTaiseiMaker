@@ -1,7 +1,6 @@
 //! スプレッドシートビューワモジュール
 //!
 //! ## 変更履歴
-//! - 2026-01-02: ExcelファイルのCSPエラー対応（プレビュー不可メッセージ表示）
 //! - 2026-01-02: AIチェック時のツールバー重複を修正
 //! - 2026-01-02: 工事名（projectName）をAIチェックURLに追加（バリデーション用）
 //! - 2026-01-02: Excelファイル判定（isExcel, fileId）をAIチェックURLに追加
@@ -229,14 +228,6 @@ pub fn SpreadsheetViewer(
                             <p class="warning-path">{url.clone()}</p>
                             <p class="warning-hint">"目次シートのURLをGoogle Drive Web URL形式に変更してください"</p>
                             <p class="warning-example">"例: https://docs.google.com/spreadsheets/d/ファイルID/edit"</p>
-                        </div>
-                    }.into_view()
-                } else if is_excel_compat {
-                    // ExcelファイルはCSPでiframeプレビュー不可なのでメッセージ表示
-                    view! {
-                        <div class="excel-no-preview">
-                            <p class="no-preview-title">"Excelファイルはプレビューできません"</p>
-                            <p class="no-preview-hint">"「AIチェック」ボタンでシート選択・チェックを実行できます"</p>
                         </div>
                     }.into_view()
                 } else {
