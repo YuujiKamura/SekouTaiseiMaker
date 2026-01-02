@@ -6,3 +6,7 @@
 //! - spreadsheet_viewer.rs
 //! - ocr_viewer.rs
 //! - settings.rs (APIキー設定画面)
+
+pub mod check_panel;
+
+pub use check_panel::{CheckResultPanel, CheckResultsPanel};
