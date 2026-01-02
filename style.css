@@ -629,6 +629,35 @@ button:disabled {
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
+.check-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.check-results-header h3 {
+    color: #333;
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.check-results-header .close-btn {
+    background: transparent;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 10px;
+    color: #666;
+    transition: all 0.2s;
+}
+
+.check-results-header .close-btn:hover {
+    background: #f5f5f5;
+    color: #333;
+}
+
 .check-results-panel h3 {
     color: #333;
     margin-bottom: 16px;

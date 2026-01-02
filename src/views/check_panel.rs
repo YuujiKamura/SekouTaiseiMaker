@@ -1,5 +1,8 @@
 //! チェック結果パネルモジュール
 //!
+//! ## 変更履歴
+//! - 2026-01-02: CheckResultsPanelに閉じるボタン追加（モバイル対応）
+//!
 //! PDFドキュメントのチェック結果を表示するパネルコンポーネント
 
 use leptos::*;
@@ -126,6 +129,13 @@ pub fn CheckResultPanel(
 #[component]
 pub fn CheckResultsPanel() -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+    let set_check_mode = ctx.set_check_mode;
+    let set_check_results = ctx.set_check_results;
+
+    let on_close = move |_| {
+        set_check_mode.set(CheckMode::None);
+        set_check_results.set(Vec::new());
+    };
 
     view! {
         {move || {
@@ -146,7 +156,10 @@ pub fn CheckResultsPanel() -> impl IntoView {
 
                 view! {
                     <div class="check-results-panel">
-                        <h3>{title}</h3>
+                        <div class="check-results-header">
+                            <h3>{title}</h3>
+                            <button class="close-btn" on:click=on_close title="閉じる">"×"</button>
+                        </div>
 
                         <div class="check-summary">
                             <span class="summary-ok">"OK: " {oks.len()}</span>
