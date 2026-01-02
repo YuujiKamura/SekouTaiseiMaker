@@ -172,3 +172,67 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* ============================================
+   モバイル対応
+   ============================================ */
+
+@media (max-width: 768px) {
+  .pdf-viewer {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile */
+  }
+
+  .viewer-toolbar {
+    padding: 8px 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .viewer-toolbar .back-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .viewer-toolbar .doc-info {
+    font-size: 11px;
+    max-width: 30vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .viewer-toolbar .file-modified-time {
+    display: none;
+  }
+
+  .viewer-toolbar .page-nav {
+    gap: 4px;
+  }
+
+  .viewer-toolbar .page-nav button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .viewer-toolbar .toolbar-actions {
+    gap: 4px;
+  }
+
+  .viewer-toolbar .edit-btn,
+  .viewer-toolbar .check-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .viewer-content {
+    padding: 10px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .viewer-content canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
+}
