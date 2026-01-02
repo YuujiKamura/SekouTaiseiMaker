@@ -247,19 +247,21 @@ export function SpreadsheetChecker() {
                         <span className="sheet-name">{sheet.name}</span>
                         <span className="sheet-size">({sheet.rowCount}行 × {sheet.colCount}列)</span>
                       </label>
-                      <div className="sheet-preview-mini">
-                        <table>
-                          <tbody>
-                            {sheet.preview.map((row, ri) => (
-                              <tr key={ri}>
-                                {row.map((cell, ci) => (
-                                  <td key={ci}>{cell.length > 15 ? cell.slice(0, 15) + '...' : cell}</td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      {sheet.preview && sheet.preview.length > 0 && (
+                        <div className="sheet-preview-mini">
+                          <table>
+                            <tbody>
+                              {sheet.preview.map((row, ri) => (
+                                <tr key={ri}>
+                                  {row.map((cell, ci) => (
+                                    <td key={ci}>{cell && cell.length > 15 ? cell.slice(0, 15) + '...' : cell || ''}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
