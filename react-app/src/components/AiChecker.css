@@ -455,3 +455,92 @@
   border-color: #e0a800;
   box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3);
 }
+
+/* ============================================
+   モバイル対応
+   ============================================ */
+
+@media (max-width: 768px) {
+  .checker-toolbar {
+    padding: 8px 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .checker-toolbar .back-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .checker-toolbar .doc-info {
+    font-size: 11px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .checker-toolbar .file-type-label {
+    display: none;
+  }
+
+  .checker-toolbar .check-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .checker-toolbar .page-nav {
+    gap: 4px;
+  }
+
+  .checker-toolbar .page-nav button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  /* シート選択カード */
+  .sheet-selector-header h3 {
+    font-size: 14px;
+  }
+
+  .sheet-selector-header p {
+    font-size: 12px;
+  }
+
+  .sheet-checkbox {
+    font-size: 13px;
+  }
+
+  .sheet-size {
+    font-size: 11px;
+  }
+
+  /* フィールド表示 */
+  .sheet-fields {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .field-label {
+    min-width: 45px;
+  }
+
+  /* プレビューテーブル非表示（モバイルでは情報過多） */
+  .sheet-preview-mini {
+    display: none;
+  }
+
+  /* 結果パネル */
+  .result-panel {
+    width: 100%;
+    max-height: 40vh;
+    border-left: none;
+    border-top: 1px solid #ddd;
+  }
+
+  .checker-content {
+    flex-direction: column;
+  }
+}

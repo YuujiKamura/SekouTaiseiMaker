@@ -1473,6 +1473,36 @@ button:disabled {
     .viewer-container {
         height: calc(100vh - 120px);
     }
+
+    /* ビューワツールバー モバイル対応 */
+    .viewer-toolbar {
+        padding: 6px 8px;
+        gap: 8px;
+    }
+
+    .viewer-toolbar .back-btn {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+
+    /* 戻るボタンのテキストを短縮（矢印のみ表示はRust側で対応） */
+    .viewer-toolbar .doc-info {
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 40vw;
+    }
+
+    .viewer-toolbar .ai-check-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    /* AIチェックボタンのテキストを短縮 */
+    .viewer-toolbar .ai-check-btn::before {
+        content: "AI";
+    }
 }
 
 /* ============================================
