@@ -1012,3 +1012,138 @@ window.clearPdfCache = async function() {
         return false;
     }
 };
+
+// ============================================
+// APIキー暗号化/復号（固定キー）
+// ============================================
+
+const API_KEY_FIXED_PASSWORD = 'SekouTaisei2024!AppKey#Encrypt';
+const API_KEY_STORAGE_KEY = 'sekou_taisei_api_key';
+
+/**
+ * PBKDF2でキーを導出
+ */
+async function deriveApiKeyEncryptionKey(salt) {
+    const encoder = new TextEncoder();
+    const passwordBuffer = encoder.encode(API_KEY_FIXED_PASSWORD);
+    const passwordKey = await crypto.subtle.importKey('raw', passwordBuffer, 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: salt.buffer, iterations: 100000, hash: 'SHA-256' },
+        passwordKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+/**
+ * APIキーを暗号化（スプレッドシート保存用）
+ */
+window.encryptApiKey = async function(apiKey) {
+    try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(apiKey);
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await deriveApiKeyEncryptionKey(salt);
+        const encryptedBuffer = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv.buffer }, key, data);
+
+        return JSON.stringify({
+            encrypted: btoa(String.fromCharCode(...new Uint8Array(encryptedBuffer))),
+            iv: btoa(String.fromCharCode(...iv)),
+            salt: btoa(String.fromCharCode(...salt))
+        });
+    } catch (e) {
+        console.error('[encryptApiKey] error:', e);
+        return null;
+    }
+};
+
+/**
+ * 暗号化されたAPIキーを復号
+ */
+window.decryptApiKey = async function(encryptedJson) {
+    try {
+        const { encrypted, iv, salt } = JSON.parse(encryptedJson);
+        const encryptedBuffer = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+        const ivBytes = Uint8Array.from(atob(iv), c => c.charCodeAt(0));
+        const saltBytes = Uint8Array.from(atob(salt), c => c.charCodeAt(0));
+
+        const key = await deriveApiKeyEncryptionKey(saltBytes);
+        const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBytes.buffer }, key, encryptedBuffer);
+
+        return new TextDecoder().decode(decryptedBuffer);
+    } catch (e) {
+        console.error('[decryptApiKey] error:', e);
+        return null;
+    }
+};
+
+/**
+ * スプレッドシートから読み込んだ暗号化APIキーを復号してセット
+ */
+window.loadEncryptedApiKey = async function(encryptedData) {
+    if (!encryptedData) {
+        console.log('[loadEncryptedApiKey] No encrypted data');
+        return false;
+    }
+
+    try {
+        const decrypted = await window.decryptApiKey(encryptedData);
+        if (decrypted && decrypted.startsWith('AIza')) {
+            localStorage.setItem(API_KEY_STORAGE_KEY, decrypted);
+            sessionStorage.setItem(API_KEY_STORAGE_KEY, decrypted);
+            console.log('[loadEncryptedApiKey] API key loaded successfully');
+            return true;
+        }
+        console.log('[loadEncryptedApiKey] Invalid key format');
+        return false;
+    } catch (e) {
+        console.error('[loadEncryptedApiKey] error:', e);
+        return false;
+    }
+};
+
+/**
+ * 現在のAPIキーを暗号化してスプレッドシートに保存
+ */
+window.saveApiKeyToSpreadsheet = async function(gasUrl) {
+    const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (!apiKey) {
+        console.log('[saveApiKeyToSpreadsheet] No API key to save');
+        return false;
+    }
+
+    try {
+        const encryptedData = await window.encryptApiKey(apiKey);
+        if (!encryptedData) {
+            throw new Error('Encryption failed');
+        }
+
+        const response = await fetch(gasUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'saveSettings',
+                settings: {
+                    encryptedApiKey: encryptedData
+                }
+            })
+        });
+
+        const result = await response.json();
+        console.log('[saveApiKeyToSpreadsheet] Result:', result);
+        return result.success === true;
+    } catch (e) {
+        console.error('[saveApiKeyToSpreadsheet] error:', e);
+        return false;
+    }
+};
+
+/**
+ * APIキーが設定されているか確認
+ */
+window.hasApiKey = function() {
+    const key = localStorage.getItem(API_KEY_STORAGE_KEY);
+    return key && key.startsWith('AIza');
+};

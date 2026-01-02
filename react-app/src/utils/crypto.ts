@@ -50,3 +50,20 @@ export const hashPassword = async (password: string): Promise<string> => {
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password));
   return btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
 };
+
+// 固定キー暗号化（スプレッドシート埋め込み用）
+const FIXED_KEY = 'SekouTaisei2024!AppKey#Encrypt';
+
+export const encryptWithFixedKey = async (plaintext: string): Promise<string> => {
+  const { encrypted, iv, salt } = await encrypt(plaintext, FIXED_KEY);
+  return JSON.stringify({ encrypted, iv, salt });
+};
+
+export const decryptWithFixedKey = async (encryptedJson: string): Promise<string | null> => {
+  try {
+    const { encrypted, iv, salt } = JSON.parse(encryptedJson);
+    return await decrypt(encrypted, FIXED_KEY, iv, salt);
+  } catch {
+    return null;
+  }
+};

@@ -173,13 +173,20 @@ async fn fetch_from_gas() -> Result<ProjectData, String> {
         .await
         .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
 
-    // GASレスポンス形式: { project: ProjectData, timestamp: string }
+    // GASレスポンス形式: { project: ProjectData, timestamp: string, settings: {...} }
+    #[derive(Deserialize)]
+    struct GasSettings {
+        #[serde(rename = "encryptedApiKey")]
+        encrypted_api_key: Option<String>,
+    }
+
     #[derive(Deserialize)]
     struct GasResponse {
         project: Option<ProjectData>,
         #[allow(dead_code)]
         timestamp: Option<String>,
         error: Option<String>,
+        settings: Option<GasSettings>,
     }
 
     let response: GasResponse = serde_wasm_bindgen::from_value(json)
@@ -189,7 +196,70 @@ async fn fetch_from_gas() -> Result<ProjectData, String> {
         return Err(err);
     }
 
+    // 暗号化APIキーがあれば復号してセット
+    if let Some(settings) = &response.settings {
+        if let Some(encrypted_key) = &settings.encrypted_api_key {
+            if !encrypted_key.is_empty() {
+                web_sys::console::log_1(&"[GAS] Found encrypted API key, attempting to decrypt...".into());
+                let encrypted = encrypted_key.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let window = web_sys::window().unwrap();
+                    if let Ok(func) = js_sys::Reflect::get(&window, &JsValue::from_str("loadEncryptedApiKey")) {
+                        if let Ok(func) = func.dyn_into::<js_sys::Function>() {
+                            let promise = func.call1(&JsValue::NULL, &JsValue::from_str(&encrypted));
+                            if let Ok(promise) = promise {
+                                if let Ok(promise) = promise.dyn_into::<js_sys::Promise>() {
+                                    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     response.project.ok_or("プロジェクトデータがありません".to_string())
+}
+
+/// APIキーをスプレッドシートに自動保存
+async fn auto_save_api_key_to_sheet(gas_url: &str) {
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => return,
+    };
+
+    // APIキーがあるかチェック
+    let has_key = js_sys::Reflect::get(&window, &JsValue::from_str("hasApiKey"))
+        .ok()
+        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+        .and_then(|f| f.call0(&JsValue::NULL).ok())
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !has_key {
+        return;
+    }
+
+    // saveApiKeyToSpreadsheet を呼び出し
+    if let Ok(func) = js_sys::Reflect::get(&window, &JsValue::from_str("saveApiKeyToSpreadsheet")) {
+        if let Ok(func) = func.dyn_into::<js_sys::Function>() {
+            if let Ok(promise) = func.call1(&JsValue::NULL, &JsValue::from_str(gas_url)) {
+                if let Ok(promise) = promise.dyn_into::<js_sys::Promise>() {
+                    match JsFuture::from(promise).await {
+                        Ok(result) => {
+                            if result.as_bool().unwrap_or(false) {
+                                web_sys::console::log_1(&"[AutoSave] APIキーをシートに保存しました".into());
+                            }
+                        }
+                        Err(e) => {
+                            web_sys::console::log_1(&format!("[AutoSave] Error: {:?}", e).into());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// GASにプロジェクトデータを保存
@@ -336,6 +406,19 @@ pub struct CheckItem {
 pub struct CheckMissingField {
     pub field: String,
     pub location: String,
+}
+
+/// コンテキストメニュー状態
+#[derive(Clone, Default)]
+pub struct ContextMenuState {
+    pub visible: bool,
+    pub x: i32,
+    pub y: i32,
+    pub contractor_name: String,
+    pub doc_key: String,
+    pub doc_label: String,
+    pub check_result: Option<CheckResultData>,
+    pub last_checked: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -696,6 +779,9 @@ pub struct ProjectContext {
     /// API処理中フラグ
     pub api_loading: ReadSignal<bool>,
     pub set_api_loading: WriteSignal<bool>,
+    /// コンテキストメニュー状態
+    pub context_menu: ReadSignal<ContextMenuState>,
+    pub set_context_menu: WriteSignal<ContextMenuState>,
 }
 
 // 標準的な書類リスト
@@ -741,6 +827,107 @@ fn Dashboard() -> impl IntoView {
                 </div>
             })}
         </div>
+    }
+}
+
+/// 右クリックコンテキストメニュー
+#[component]
+fn ContextMenu() -> impl IntoView {
+    let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+    let menu_state = ctx.context_menu;
+    let set_menu_state = ctx.set_context_menu;
+
+    // メニュー外クリックで閉じる
+    let close_menu = move |_| {
+        set_menu_state.set(ContextMenuState::default());
+    };
+
+    view! {
+        {move || {
+            let state = menu_state.get();
+            if !state.visible {
+                return view! { <></> }.into_view();
+            }
+
+            let status_text = state.check_result.as_ref().map(|r| {
+                match r.status.as_str() {
+                    "ok" => ("✓ OK", "status-ok"),
+                    "warning" => ("⚠ 要確認", "status-warning"),
+                    "error" => ("! 要対応", "status-error"),
+                    _ => ("? 不明", "status-unknown"),
+                }
+            });
+
+            let summary = state.check_result.as_ref().map(|r| r.summary.clone());
+            let items = state.check_result.as_ref().map(|r| r.items.clone()).unwrap_or_default();
+            let last_checked = state.last_checked.clone();
+
+            // 画面内に収まるように位置調整
+            let window = web_sys::window().unwrap();
+            let vw = window.inner_width().unwrap().as_f64().unwrap_or(800.0) as i32;
+            let vh = window.inner_height().unwrap().as_f64().unwrap_or(600.0) as i32;
+            let menu_width = 320;  // 推定メニュー幅
+            let menu_height = 300; // 推定メニュー高さ
+
+            let x = if state.x + menu_width > vw {
+                (state.x - menu_width).max(0)
+            } else {
+                state.x
+            };
+            let y = if state.y + menu_height > vh {
+                (state.y - menu_height).max(0)
+            } else {
+                state.y
+            };
+
+            view! {
+                // オーバーレイ（クリックで閉じる）
+                <div class="context-overlay" on:click=close_menu></div>
+                <div
+                    class="context-menu"
+                    style=format!("left: {}px; top: {}px;", x, y)
+                >
+                    <div class="context-menu-header">
+                        <span class="contractor-name">{state.contractor_name.clone()}</span>
+                        <span class="doc-label">{state.doc_label.clone()}</span>
+                    </div>
+
+                    {match &state.check_result {
+                        Some(_) => view! {
+                            <div class="context-menu-content">
+                                <div class=format!("status-line {}", status_text.map(|(_, c)| c).unwrap_or(""))>
+                                    {status_text.map(|(t, _)| t).unwrap_or("未チェック")}
+                                </div>
+
+                                {summary.filter(|s| !s.is_empty()).map(|s| view! {
+                                    <div class="summary">{s}</div>
+                                })}
+
+                                {(!items.is_empty()).then(|| view! {
+                                    <div class="issues">
+                                        <span class="issues-title">"チェック項目:"</span>
+                                        <ul>
+                                            {items.iter().map(|item: &CheckItem| view! {
+                                                <li class=format!("item-{}", item.item_type)>{item.message.clone()}</li>
+                                            }).collect_view()}
+                                        </ul>
+                                    </div>
+                                })}
+
+                                {last_checked.map(|dt| view! {
+                                    <div class="checked-at">"チェック日時: " {dt}</div>
+                                })}
+                            </div>
+                        }.into_view(),
+                        None => view! {
+                            <div class="context-menu-content no-result">
+                                "AIチェック未実施"
+                            </div>
+                        }.into_view(),
+                    }}
+                </div>
+            }.into_view()
+        }}
     }
 }
 
@@ -982,6 +1169,30 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let contractor_id_click = contractor_id.clone();
                     let set_view_mode = ctx.set_view_mode;
 
+                    // 右クリックメニュー用
+                    let contractor_name_ctx = contractor_name.clone();
+                    let label_ctx = label.clone();
+                    let key_ctx = key.clone();
+                    let check_result_ctx = status.check_result.clone();
+                    let last_checked_ctx = status.last_checked.clone();
+                    let set_context_menu = ctx.set_context_menu;
+
+                    let on_context_menu = move |ev: web_sys::MouseEvent| {
+                        ev.prevent_default();
+                        ev.stop_propagation();
+                        web_sys::console::log_1(&format!("Context menu: {} - {}", contractor_name_ctx, label_ctx).into());
+                        set_context_menu.set(ContextMenuState {
+                            visible: true,
+                            x: ev.client_x(),
+                            y: ev.client_y(),
+                            contractor_name: contractor_name_ctx.clone(),
+                            doc_key: key_ctx.clone(),
+                            doc_label: label_ctx.clone(),
+                            check_result: check_result_ctx.clone(),
+                            last_checked: last_checked_ctx.clone(),
+                        });
+                    };
+
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
                         ev.prevent_default();
                         if let Some(ref u) = url_click {
@@ -1023,6 +1234,7 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                                 check_badge.as_ref().map(|(_, class, _)| *class).unwrap_or("")
                             )
                             on:click=on_doc_click
+                            on:contextmenu=on_context_menu
                         >
                             // 書類状態アイコン
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
@@ -2626,6 +2838,9 @@ fn App() -> impl IntoView {
     let (api_connected, set_api_connected) = create_signal(false);
     let (api_loading, set_api_loading) = create_signal(false);
 
+    // コンテキストメニュー状態
+    let (context_menu, set_context_menu) = create_signal(ContextMenuState::default());
+
     // データソース追跡（デバッグ用）
     let (data_source, set_data_source) = create_signal("なし".to_string());
     let (show_debug, set_show_debug) = create_signal(false);
@@ -2669,6 +2884,8 @@ fn App() -> impl IntoView {
         set_api_connected,
         api_loading,
         set_api_loading,
+        context_menu,
+        set_context_menu,
     };
     provide_context(ctx.clone());
 
@@ -2693,6 +2910,13 @@ fn App() -> impl IntoView {
                                     // APIキー設定完了 - 状態を更新してダッシュボードに戻る
                                     set_api_connected.set(check_api_key_exists());
                                     set_view_mode.set(ViewMode::Dashboard);
+
+                                    // シート接続中ならAPIキーを自動保存
+                                    if let Some(gas_url) = get_gas_url() {
+                                        spawn_local(async move {
+                                            auto_save_api_key_to_sheet(&gas_url).await;
+                                        });
+                                    }
                                 }
                                 "ai-check-result" => {
                                     web_sys::console::log_1(&"[ai-check-result] Received".into());
@@ -3214,6 +3438,7 @@ fn App() -> impl IntoView {
                         <main class="container">
                             <Dashboard />
                             <CheckResultsPanel />
+                            <ContextMenu />
                         </main>
                     }.into_view(),
 
@@ -3352,6 +3577,9 @@ fn App() -> impl IntoView {
                                     save_gas_url(&url);
                                     set_gas_connected.set(true);
                                     set_show_gas_dialog.set(false);
+
+                                    let url_clone = url.clone();
+
                                     // プロジェクトデータがあれば自動保存
                                     if let Some(p) = project.get() {
                                         spawn_local(async move {
@@ -3364,9 +3592,15 @@ fn App() -> impl IntoView {
                                                     set_gas_message.set(Some(format!("連携設定完了、保存エラー: {}", e)));
                                                 }
                                             }
+                                            // APIキーも自動保存
+                                            auto_save_api_key_to_sheet(&url_clone).await;
                                             set_gas_syncing.set(false);
                                         });
                                     } else {
+                                        // プロジェクトデータがなくてもAPIキーは保存
+                                        spawn_local(async move {
+                                            auto_save_api_key_to_sheet(&url_clone).await;
+                                        });
                                         set_gas_message.set(Some("シート連携を設定しました".to_string()));
                                     }
                                 } else {

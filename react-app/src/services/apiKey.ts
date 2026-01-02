@@ -1,7 +1,7 @@
 /**
  * APIキー管理（暗号化保存対応）
  */
-import { encrypt, decrypt } from '../utils/crypto';
+import { encrypt, decrypt, encryptWithFixedKey, decryptWithFixedKey } from '../utils/crypto';
 
 const STORAGE_KEY = 'sekou_taisei_api_key';
 const ENCRYPTED_KEY = 'sekou_taisei_encrypted_key';
@@ -72,3 +72,69 @@ export const clearApiKey = (): void => {
 };
 
 export const getMasterHashKey = (): string => MASTER_HASH_KEY;
+
+// スプレッドシート埋め込み用（固定キー暗号化）
+
+/**
+ * APIキーを暗号化してスプレッドシートに保存可能な形式で返す
+ */
+export const encryptApiKeyForSpreadsheet = async (apiKey: string): Promise<string> => {
+  return await encryptWithFixedKey(apiKey);
+};
+
+/**
+ * スプレッドシートから読み込んだ暗号化APIキーを復号してセット
+ */
+export const loadApiKeyFromSpreadsheet = async (encryptedData: string): Promise<boolean> => {
+  try {
+    const decrypted = await decryptWithFixedKey(encryptedData);
+    if (decrypted && decrypted.startsWith('AIza')) {
+      setApiKey(decrypted);
+      console.log('[APIKey] Loaded from spreadsheet successfully');
+      return true;
+    }
+    console.log('[APIKey] Decrypted but invalid key format');
+    return false;
+  } catch (e) {
+    console.error('[APIKey] Failed to decrypt from spreadsheet:', e);
+    return false;
+  }
+};
+
+/**
+ * 現在のAPIキーを暗号化してスプレッドシートに保存
+ */
+export const saveApiKeyToSpreadsheet = async (gasUrl: string): Promise<boolean> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.log('[APIKey] No API key to save');
+    return false;
+  }
+
+  try {
+    const encryptedData = await encryptApiKeyForSpreadsheet(apiKey);
+
+    // GASに送信して_settingsシートに保存
+    const response = await fetch(gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'saveSettings',
+        settings: {
+          encryptedApiKey: encryptedData
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('[APIKey] Saved to spreadsheet:', result);
+    return result.success === true;
+  } catch (e) {
+    console.error('[APIKey] Failed to save to spreadsheet:', e);
+    return false;
+  }
+};

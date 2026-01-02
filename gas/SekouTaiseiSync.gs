@@ -13,7 +13,8 @@
 
 const CONFIG = {
   DATA_SHEET: 'ProjectData',
-  HISTORY_SHEET: 'History'
+  HISTORY_SHEET: 'History',
+  SETTINGS_SHEET: '_Settings'
 };
 
 // POSTリクエスト処理（データ保存）
@@ -30,6 +31,12 @@ function doPost(e) {
     // PDF アップロード（上書き or 別名保存）
     if (data.action === 'uploadPdf') {
       const result = uploadPdfToDrive(data);
+      return jsonResponse(result);
+    }
+
+    // 設定保存（暗号化APIキー等）
+    if (data.action === 'saveSettings') {
+      const result = saveSettings(data.settings);
       return jsonResponse(result);
     }
 
@@ -70,8 +77,16 @@ function doGet(e) {
       return jsonResponse(result);
     }
 
-    // デフォルト: プロジェクトデータ取得
+    // 設定のみ取得
+    if (action === 'loadSettings') {
+      const settings = loadSettings();
+      return jsonResponse(settings);
+    }
+
+    // デフォルト: プロジェクトデータ取得（設定も含む）
     const data = loadProject();
+    const settings = loadSettings();
+    data.settings = settings;
     return jsonResponse(data);
   } catch (err) {
     return jsonResponse({ error: err.message });
@@ -330,4 +345,109 @@ function testUpload(fileId) {
     console.log('エラー: ' + err.message);
     return { success: false, error: err.message };
   }
+}
+
+// ============================================
+// 設定シート管理
+// ============================================
+
+// 設定シート取得または作成（非表示）
+function getOrCreateSettingsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SETTINGS_SHEET);
+    // ヘッダー行
+    sheet.getRange('A1:B1').setValues([['キー', '値']]);
+    sheet.getRange('A1:B1')
+      .setBackground('#333333')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+    // 列幅
+    sheet.setColumnWidth(1, 200);
+    sheet.setColumnWidth(2, 600);
+    // シートを非表示に
+    sheet.hideSheet();
+  }
+
+  return sheet;
+}
+
+// 設定保存
+function saveSettings(settings) {
+  try {
+    const sheet = getOrCreateSettingsSheet();
+
+    // 各設定項目を保存
+    for (const key in settings) {
+      const value = settings[key];
+      saveSettingValue(sheet, key, value);
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { error: 'Failed to save settings: ' + err.message };
+  }
+}
+
+// 単一設定値を保存
+function saveSettingValue(sheet, key, value) {
+  const data = sheet.getDataRange().getValues();
+
+  // 既存のキーを探す
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === key) {
+      // 既存の値を更新
+      sheet.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+
+  // 新規追加
+  const lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow + 1, 1, 1, 2).setValues([[key, value]]);
+}
+
+// 設定読み込み
+function loadSettings() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
+
+    if (!sheet) {
+      return { encryptedApiKey: null };
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const settings = {};
+
+    // ヘッダー行をスキップして読み込み
+    for (let i = 1; i < data.length; i++) {
+      const key = data[i][0];
+      const value = data[i][1];
+      if (key) {
+        settings[key] = value;
+      }
+    }
+
+    return settings;
+  } catch (err) {
+    console.log('Failed to load settings: ' + err.message);
+    return { encryptedApiKey: null };
+  }
+}
+
+// 設定テスト
+function testSettings() {
+  // 保存テスト
+  const result = saveSettings({
+    encryptedApiKey: 'test_encrypted_key_here',
+    testSetting: 'test_value'
+  });
+  console.log('Save result:', result);
+
+  // 読み込みテスト
+  const loaded = loadSettings();
+  console.log('Loaded settings:', loaded);
 }
