@@ -2852,7 +2852,6 @@ fn App() -> impl IntoView {
     let (gas_syncing, set_gas_syncing) = create_signal(false);
     let (gas_message, set_gas_message) = create_signal(None::<String>);
     let (gas_code, set_gas_code) = create_signal(None::<String>);
-    let (gas_code_loading, set_gas_code_loading) = create_signal(false);
     let (gas_code_copied, set_gas_code_copied) = create_signal(false);
 
     // プロジェクトデータのグローバル状態
@@ -3565,26 +3564,12 @@ fn App() -> impl IntoView {
                                     <div class="gas-code-actions">
                                         <button
                                             class="gas-btn"
-                                            disabled=move || gas_code_loading.get()
                                             on:click=move |_| {
-                                                set_gas_code_loading.set(true);
+                                                set_gas_code.set(Some(include_str!("../gas/SekouTaiseiSync.gs").to_string()));
                                                 set_gas_code_copied.set(false);
-                                                spawn_local(async move {
-                                                    let url = "https://raw.githubusercontent.com/YuujiKamura/SekouTaiseiMaker/main/gas/SekouTaiseiSync.gs";
-                                                    match fetch_text(url).await {
-                                                        Ok(code) => {
-                                                            set_gas_code.set(Some(code));
-                                                        }
-                                                        Err(e) => {
-                                                            web_sys::console::log_1(&format!("Failed to fetch GAS code: {}", e).into());
-                                                            set_gas_message.set(Some("コード取得に失敗しました".to_string()));
-                                                        }
-                                                    }
-                                                    set_gas_code_loading.set(false);
-                                                });
                                             }
                                         >
-                                            {move || if gas_code_loading.get() { "読み込み中..." } else { "GASコードを取得" }}
+                                            "GASコードを表示"
                                         </button>
                                         {move || gas_code.get().map(|code| {
                                             let code_for_copy = code.clone();
@@ -3595,10 +3580,9 @@ fn App() -> impl IntoView {
                                                         if let Some(window) = web_sys::window() {
                                                             let clipboard = window.navigator().clipboard();
                                                             let promise = clipboard.write_text(&code_for_copy);
-                                                            let set_copied = set_gas_code_copied.clone();
                                                             spawn_local(async move {
                                                                 if JsFuture::from(promise).await.is_ok() {
-                                                                    set_copied.set(true);
+                                                                    set_gas_code_copied.set(true);
                                                                 }
                                                             });
                                                         }
