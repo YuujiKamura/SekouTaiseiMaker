@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 // 自モジュールからのインポート
 use models::*;
-use components::ContextMenu;
+use components::CheckResultTooltip;
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
 use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time};
 use utils::{encode_base64, decode_base64};
@@ -106,9 +106,8 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
 
 const API_KEY_STORAGE_KEY: &str = "sekou_taisei_api_key";
 
-// ContextMenuStateはmodels::TooltipStateとしてエクスポート済み
-// main.rsでは互換性のためエイリアスを定義
-pub type ContextMenuState = models::TooltipState;
+// チェック結果ツールチップ状態のエイリアス
+pub use models::CheckResultTooltipState;
 
 // チェック結果
 #[derive(Debug, Clone, PartialEq)]
@@ -275,9 +274,9 @@ pub struct ProjectContext {
     /// API処理中フラグ
     pub api_loading: ReadSignal<bool>,
     pub set_api_loading: WriteSignal<bool>,
-    /// コンテキストメニュー状態
-    pub context_menu: ReadSignal<ContextMenuState>,
-    pub set_context_menu: WriteSignal<ContextMenuState>,
+    /// チェック結果ツールチップ状態
+    pub check_result_tooltip: ReadSignal<CheckResultTooltipState>,
+    pub set_check_result_tooltip: WriteSignal<CheckResultTooltipState>,
 }
 
 
@@ -642,8 +641,8 @@ fn App() -> impl IntoView {
     let (api_connected, set_api_connected) = create_signal(false);
     let (api_loading, set_api_loading) = create_signal(false);
 
-    // コンテキストメニュー状態
-    let (context_menu, set_context_menu) = create_signal(ContextMenuState::default());
+    // チェック結果ツールチップ状態
+    let (check_result_tooltip, set_check_result_tooltip) = create_signal(CheckResultTooltipState::default());
 
     // データソース追跡（デバッグ用）
     let (data_source, set_data_source) = create_signal("なし".to_string());
@@ -688,8 +687,8 @@ fn App() -> impl IntoView {
         set_api_connected,
         api_loading,
         set_api_loading,
-        context_menu,
-        set_context_menu,
+        check_result_tooltip,
+        set_check_result_tooltip,
     };
     provide_context(ctx.clone());
 
@@ -1257,7 +1256,7 @@ fn App() -> impl IntoView {
                         <main class="container">
                             <Dashboard />
                             <CheckResultsPanel />
-                            <ContextMenu />
+                            <CheckResultTooltip />
                         </main>
                     }.into_view(),
 

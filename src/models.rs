@@ -112,9 +112,9 @@ pub struct CheckMissingField {
 // UI状態
 // ============================================
 
-/// ホバーツールチップ状態
+/// チェック結果ツールチップ状態
 #[derive(Clone, Default)]
-pub struct TooltipState {
+pub struct CheckResultTooltipState {
     pub visible: bool,
     pub x: i32,
     pub y: i32,

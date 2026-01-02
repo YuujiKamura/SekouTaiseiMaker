@@ -1,18 +1,20 @@
-//! ツールチップコンポーネント
+//! チェック結果ツールチップコンポーネント
+//!
+//! エントリーをホバーした時にチェック結果を表示するツールチップ
 
 use crate::models::*;
 use crate::ProjectContext;
 use leptos::*;
 
-/// ホバーツールチップ（1秒ホバーで表示）
+/// チェック結果ツールチップ（1秒ホバーで表示）
 #[component]
-pub fn ContextMenu() -> impl IntoView {
+pub fn CheckResultTooltip() -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
-    let menu_state = ctx.context_menu;
+    let tooltip_state = ctx.check_result_tooltip;
 
     view! {
         {move || {
-            let state = menu_state.get();
+            let state = tooltip_state.get();
             if !state.visible {
                 return view! { <></> }.into_view();
             }

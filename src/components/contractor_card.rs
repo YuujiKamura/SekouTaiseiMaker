@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::models::{Contractor, DocFileType, ViewMode, detect_file_type};
-use crate::{ContextMenuState, ProjectContext};
+use crate::{CheckResultTooltipState, ProjectContext};
 
 /// 業者カードコンポーネント
 /// 業者ごとの書類状況を表示し、クリックでドキュメントビューアを開く
@@ -103,8 +103,8 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let key_hover = key.clone();
                     let check_result_hover = status.check_result.clone();
                     let last_checked_hover = status.last_checked.clone();
-                    let set_context_menu = ctx.set_context_menu;
-                    let context_menu = ctx.context_menu;
+                    let set_tooltip = ctx.set_check_result_tooltip;
+                    let tooltip_state = ctx.check_result_tooltip;
 
                     // mouseenter: 1秒後にツールチップ表示
                     let contractor_name_enter = contractor_name_hover.clone();
@@ -115,7 +115,7 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let on_mouse_enter = move |ev: web_sys::MouseEvent| {
                         let window = web_sys::window().unwrap();
                         // 既存タイマーをキャンセル
-                        if let Some(id) = context_menu.get().hover_timer_id {
+                        if let Some(id) = tooltip_state.get().hover_timer_id {
                             window.clear_timeout_with_handle(id);
                         }
 
@@ -128,7 +128,7 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         let y = ev.client_y();
 
                         let closure = Closure::once(Box::new(move || {
-                            set_context_menu.set(ContextMenuState {
+                            set_tooltip.set(CheckResultTooltipState {
                                 visible: true,
                                 x,
                                 y,
@@ -148,17 +148,17 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         closure.forget();
 
                         // タイマーIDを保存（後でキャンセル用）
-                        set_context_menu.update(|s| s.hover_timer_id = Some(timer_id));
+                        set_tooltip.update(|s| s.hover_timer_id = Some(timer_id));
                     };
 
                     // mouseleave: タイマーキャンセル＆ツールチップ非表示
                     let on_mouse_leave = move |_: web_sys::MouseEvent| {
                         let window = web_sys::window().unwrap();
-                        let state = context_menu.get();
+                        let state = tooltip_state.get();
                         if let Some(id) = state.hover_timer_id {
                             window.clear_timeout_with_handle(id);
                         }
-                        set_context_menu.set(ContextMenuState::default());
+                        set_tooltip.set(CheckResultTooltipState::default());
                     };
 
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
