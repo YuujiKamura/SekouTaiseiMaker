@@ -185,6 +185,88 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         });
                     };
 
+                    // ロングプレス用（モバイル）
+                    let set_context_menu_touch = ctx.set_context_menu;
+                    let contractor_name_touch = contractor_name.clone();
+                    let contractor_id_touch = contractor_id.clone();
+                    let key_touch = key.clone();
+                    let label_touch = label.clone();
+                    let url_touch = url.clone();
+                    let has_check_touch = status.check_result.is_some();
+                    let long_press_timer = create_rw_signal(None::<i32>);
+
+                    let on_touch_start = move |ev: web_sys::TouchEvent| {
+                        let window = web_sys::window().unwrap();
+
+                        // タッチ座標を取得（js_sys::Reflectでアクセス）
+                        let touches_js = js_sys::Reflect::get(&ev, &"touches".into()).ok();
+                        let touch_js = touches_js.and_then(|t| js_sys::Reflect::get(&t, &0.into()).ok());
+                        let (x, y) = match touch_js {
+                            Some(t) => {
+                                let cx = js_sys::Reflect::get(&t, &"clientX".into())
+                                    .ok()
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0) as i32;
+                                let cy = js_sys::Reflect::get(&t, &"clientY".into())
+                                    .ok()
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0) as i32;
+                                (cx, cy)
+                            }
+                            None => return,
+                        };
+
+                        let contractor_name = contractor_name_touch.clone();
+                        let contractor_id = contractor_id_touch.clone();
+                        let doc_key = key_touch.clone();
+                        let doc_label = label_touch.clone();
+                        let url = url_touch.clone();
+                        let has_check = has_check_touch;
+
+                        // 500ms後にコンテキストメニュー表示
+                        let closure = Closure::once(Box::new(move || {
+                            set_context_menu_touch.set(ContextMenuState {
+                                visible: true,
+                                x,
+                                y,
+                                contractor_name,
+                                contractor_id,
+                                doc_key,
+                                doc_label,
+                                url,
+                                has_check_result: has_check,
+                            });
+                        }) as Box<dyn FnOnce()>);
+
+                        let timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            closure.as_ref().unchecked_ref(),
+                            500,
+                        ).unwrap_or(0);
+                        closure.forget();
+
+                        long_press_timer.set(Some(timer_id));
+                    };
+
+                    let on_touch_end = move |_: web_sys::TouchEvent| {
+                        // タイマーをキャンセル
+                        if let Some(id) = long_press_timer.get() {
+                            if let Some(window) = web_sys::window() {
+                                window.clear_timeout_with_handle(id);
+                            }
+                            long_press_timer.set(None);
+                        }
+                    };
+
+                    let on_touch_move = move |_: web_sys::TouchEvent| {
+                        // 移動したらキャンセル
+                        if let Some(id) = long_press_timer.get() {
+                            if let Some(window) = web_sys::window() {
+                                window.clear_timeout_with_handle(id);
+                            }
+                            long_press_timer.set(None);
+                        }
+                    };
+
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
                         ev.prevent_default();
                         if let Some(ref u) = url_click {
@@ -229,6 +311,9 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                             on:mouseenter=on_mouse_enter
                             on:mouseleave=on_mouse_leave
                             on:contextmenu=on_context_menu
+                            on:touchstart=on_touch_start
+                            on:touchend=on_touch_end
+                            on:touchmove=on_touch_move
                         >
                             // 書類状態アイコン
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
