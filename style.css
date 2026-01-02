@@ -3264,7 +3264,7 @@ button:disabled {
     z-index: 1000;
     overflow: hidden;
     overflow-y: auto;
-    pointer-events: none;  /* ツールチップ自体はマウスイベントを受け取らない */
+    pointer-events: auto;  /* クリック可能にする（閉じるボタン用） */
     animation: tooltip-fade-in 0.15s ease-out;
 }
 
@@ -3284,8 +3284,16 @@ button:disabled {
     color: white;
     padding: 10px 14px;
     display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.tooltip-header-text {
+    display: flex;
     flex-direction: column;
     gap: 2px;
+    flex: 1;
 }
 
 .tooltip-header .contractor-name {
@@ -3296,6 +3304,28 @@ button:disabled {
 .tooltip-header .doc-label {
     font-size: 11px;
     opacity: 0.8;
+}
+
+.tooltip-close-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+    padding: 0;
+}
+
+.tooltip-close-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
 }
 
 .tooltip-content {

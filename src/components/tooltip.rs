@@ -11,6 +11,7 @@ use leptos::*;
 pub fn CheckResultTooltip() -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
     let tooltip_state = ctx.check_result_tooltip;
+    let set_tooltip = ctx.set_check_result_tooltip;
 
     view! {
         {move || {
@@ -50,14 +51,30 @@ pub fn CheckResultTooltip() -> impl IntoView {
                 state.y
             };
 
+            // 閉じるボタン用のクローン
+            let set_tooltip_close = set_tooltip;
+            let on_close = move |ev: web_sys::MouseEvent| {
+                ev.stop_propagation();
+                set_tooltip_close.set(CheckResultTooltipState::default());
+            };
+
             view! {
                 <div
                     class="hover-tooltip"
                     style=format!("left: {}px; top: {}px;", x, y)
                 >
                     <div class="tooltip-header">
-                        <span class="contractor-name">{state.contractor_name.clone()}</span>
-                        <span class="doc-label">{state.doc_label.clone()}</span>
+                        <div class="tooltip-header-text">
+                            <span class="contractor-name">{state.contractor_name.clone()}</span>
+                            <span class="doc-label">{state.doc_label.clone()}</span>
+                        </div>
+                        <button
+                            class="tooltip-close-btn"
+                            on:click=on_close
+                            title="閉じる"
+                        >
+                            "×"
+                        </button>
                     </div>
 
                     {match &state.check_result {
