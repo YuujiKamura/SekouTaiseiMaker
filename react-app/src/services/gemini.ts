@@ -139,7 +139,43 @@ const PROMPTS: Record<string, string> = {
         {"field": "未記入項目名", "location": "位置の説明"}
     ]
 }`,
+
 };
+
+// 在籍証明系プロンプト（「在籍」を含む書類タイプ用）
+const ZAISEKI_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「{doc_type}」の証明として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【重要】在籍証明として有効な書類（以下のいずれかであればOK）:
+- 健康保険証（本人の氏名と事業所名/会社名が記載されていればOK）
+- 健康保険被保険者証
+- 在籍証明書
+- 雇用証明書
+- 社員証（顔写真付き）
+- その他、当該人物がその会社に所属していることを証明できる公的書類
+
+チェック項目:
+1. 本人の氏名が確認できるか
+2. 事業所名・会社名が確認できるか（健康保険証の場合は保険者名または事業所名）
+3. 上記の有効な書類のいずれかに該当するか
+
+※健康保険証・健康保険被保険者証は、本人氏名と会社名（事業所名）が確認できれば在籍証明として有効です。
+※個人情報（保険者番号、被保険者番号等）がマスキングされていても問題ありません。
+※書類の種類が「{doc_type}」と完全一致しなくても、在籍を証明できる書類であればOKです。
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ]
+}`;
 
 // 汎用プロンプト（未知の書類タイプ用）
 const GENERIC_PROMPT = `あなたは建設業の書類チェック専門家です。
@@ -167,7 +203,15 @@ const GENERIC_PROMPT = `あなたは建設業の書類チェック専門家で�
 }`;
 
 function getPrompt(docType: string, contractorName: string): string {
-  const template = PROMPTS[docType] || GENERIC_PROMPT.replace('{doc_type}', docType);
+  let template: string;
+  if (PROMPTS[docType]) {
+    template = PROMPTS[docType];
+  } else if (docType.includes('在籍')) {
+    // 「在籍」を含む書類は在籍証明用プロンプトを使用
+    template = ZAISEKI_PROMPT.replace(/{doc_type}/g, docType);
+  } else {
+    template = GENERIC_PROMPT.replace('{doc_type}', docType);
+  }
   return template.replace('{contractor_name}', contractorName);
 }
 

@@ -1,3 +1,10 @@
+// モジュール宣言
+mod models;
+mod utils;
+mod components;
+mod views;
+
+// 外部クレート
 use leptos::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -6,16 +13,12 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, Response, HtmlCanvasElement, CanvasRenderingContext2d, HtmlImageElement};
 use std::collections::HashMap;
 
-// Base64エンコード/デコード（web_sys経由）
-fn encode_base64(data: &str) -> Option<String> {
-    let window = web_sys::window()?;
-    window.btoa(data).ok()
-}
+// 自モジュールからのインポート
+use models::*;
+use utils::cache::{save_to_cache, load_from_cache, clear_cache};
+use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, save_to_gas, auto_save_api_key_to_sheet};
+use utils::{encode_base64, decode_base64};
 
-fn decode_base64(data: &str) -> Option<String> {
-    let window = web_sys::window()?;
-    window.atob(data).ok()
-}
 
 // URLハッシュからデータを取得
 fn get_hash_data() -> Option<ProjectData> {
@@ -46,248 +49,6 @@ fn set_hash_data(project: &ProjectData) -> Option<String> {
     Some(share_url)
 }
 
-// ============================================
-// LocalStorageキャッシュ
-// ============================================
-
-const CACHE_KEY: &str = "sekou_taisei_cache";
-
-fn save_to_cache(project: &ProjectData) {
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.local_storage() {
-            if let Ok(json) = serde_json::to_string(project) {
-                let _ = storage.set_item(CACHE_KEY, &json);
-            }
-        }
-    }
-}
-
-fn load_from_cache() -> Option<ProjectData> {
-    let window = web_sys::window()?;
-    let storage = window.local_storage().ok()??;
-    let json = storage.get_item(CACHE_KEY).ok()??;
-    serde_json::from_str(&json).ok()
-}
-
-fn clear_cache() {
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.local_storage() {
-            let _ = storage.remove_item(CACHE_KEY);
-        }
-    }
-}
-
-// ============================================
-// GAS (Google Apps Script) 連携
-// ============================================
-
-const GAS_URL_KEY: &str = "sekou_taisei_gas_url";
-
-/// GAS URLを保存
-fn save_gas_url(url: &str) {
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.local_storage() {
-            let _ = storage.set_item(GAS_URL_KEY, url);
-        }
-    }
-}
-
-/// GAS URLを取得
-fn get_gas_url() -> Option<String> {
-    let window = web_sys::window()?;
-    let storage = window.local_storage().ok()??;
-    let url = storage.get_item(GAS_URL_KEY).ok()??;
-    if url.is_empty() { None } else { Some(url) }
-}
-
-/// GAS URLをクリア
-fn clear_gas_url() {
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.local_storage() {
-            let _ = storage.remove_item(GAS_URL_KEY);
-        }
-    }
-}
-
-/// URLパラメータからGAS URLを読み込む (?gas=xxx)
-fn init_gas_from_url_params() -> Option<String> {
-    let window = web_sys::window()?;
-    let search = window.location().search().ok()?;
-    if search.starts_with("?gas=") {
-        let encoded = &search[5..];
-        // URLデコード
-        let decoded = js_sys::decode_uri_component(encoded).ok()?.as_string()?;
-        save_gas_url(&decoded);
-        // URLからパラメータを削除
-        let pathname = window.location().pathname().ok()?;
-        let hash = window.location().hash().ok().unwrap_or_default();
-        let _ = window.history().unwrap().replace_state_with_url(
-            &JsValue::NULL,
-            "",
-            Some(&format!("{}{}", pathname, hash))
-        );
-        Some(decoded)
-    } else {
-        None
-    }
-}
-
-/// 共有URL生成（GAS URL付き）
-fn generate_gas_share_url() -> Option<String> {
-    let gas_url = get_gas_url()?;
-    let window = web_sys::window()?;
-    let location = window.location();
-    let base_url = format!(
-        "{}//{}{}",
-        location.protocol().ok()?,
-        location.host().ok()?,
-        location.pathname().ok()?
-    );
-    let encoded = js_sys::encode_uri_component(&gas_url).as_string()?;
-    Some(format!("{}?gas={}", base_url, encoded))
-}
-
-/// URLからテキストを取得
-async fn fetch_text(url: &str) -> Result<String, String> {
-    let opts = RequestInit::new();
-    opts.set_method("GET");
-
-    let request = Request::new_with_str_and_init(url, &opts)
-        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
-
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request))
-        .await
-        .map_err(|e| format!("fetch失敗: {:?}", e))?;
-
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
-
-    if !resp.ok() {
-        return Err(format!("HTTPエラー: {}", resp.status()));
-    }
-
-    let text = JsFuture::from(resp.text().map_err(|e| format!("text()失敗: {:?}", e))?)
-        .await
-        .map_err(|e| format!("テキスト取得失敗: {:?}", e))?;
-
-    text.as_string().ok_or("テキスト変換失敗".to_string())
-}
-
-/// GASからプロジェクトデータを取得
-async fn fetch_from_gas() -> Result<ProjectData, String> {
-    let gas_url = get_gas_url().ok_or("GAS URLが設定されていません")?;
-
-    let opts = RequestInit::new();
-    opts.set_method("GET");
-
-    let request = Request::new_with_str_and_init(&gas_url, &opts)
-        .map_err(|e| format!("Request作成失敗: {:?}", e))?;
-
-    let window = web_sys::window().ok_or("windowがありません")?;
-    let resp_value = JsFuture::from(window.fetch_with_request(&request))
-        .await
-        .map_err(|e| format!("fetch失敗: {:?}", e))?;
-
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
-
-    if !resp.ok() {
-        return Err(format!("APIエラー: {}", resp.status()));
-    }
-
-    let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
-        .await
-        .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
-
-    // GASレスポンス形式: { project: ProjectData, timestamp: string, settings: {...} }
-    #[derive(Deserialize)]
-    struct GasSettings {
-        #[serde(rename = "encryptedApiKey")]
-        encrypted_api_key: Option<String>,
-    }
-
-    #[derive(Deserialize)]
-    struct GasResponse {
-        project: Option<ProjectData>,
-        #[allow(dead_code)]
-        timestamp: Option<String>,
-        error: Option<String>,
-        settings: Option<GasSettings>,
-    }
-
-    let response: GasResponse = serde_wasm_bindgen::from_value(json)
-        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
-
-    if let Some(err) = response.error {
-        return Err(err);
-    }
-
-    // 暗号化APIキーがあれば復号してセット
-    if let Some(settings) = &response.settings {
-        if let Some(encrypted_key) = &settings.encrypted_api_key {
-            if !encrypted_key.is_empty() {
-                web_sys::console::log_1(&"[GAS] Found encrypted API key, attempting to decrypt...".into());
-                let encrypted = encrypted_key.clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    let window = web_sys::window().unwrap();
-                    if let Ok(func) = js_sys::Reflect::get(&window, &JsValue::from_str("loadEncryptedApiKey")) {
-                        if let Ok(func) = func.dyn_into::<js_sys::Function>() {
-                            let promise = func.call1(&JsValue::NULL, &JsValue::from_str(&encrypted));
-                            if let Ok(promise) = promise {
-                                if let Ok(promise) = promise.dyn_into::<js_sys::Promise>() {
-                                    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        }
-    }
-
-    response.project.ok_or("プロジェクトデータがありません".to_string())
-}
-
-/// APIキーをスプレッドシートに自動保存
-async fn auto_save_api_key_to_sheet(gas_url: &str) {
-    let window = match web_sys::window() {
-        Some(w) => w,
-        None => return,
-    };
-
-    // APIキーがあるかチェック
-    let has_key = js_sys::Reflect::get(&window, &JsValue::from_str("hasApiKey"))
-        .ok()
-        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
-        .and_then(|f| f.call0(&JsValue::NULL).ok())
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    if !has_key {
-        return;
-    }
-
-    // saveApiKeyToSpreadsheet を呼び出し
-    if let Ok(func) = js_sys::Reflect::get(&window, &JsValue::from_str("saveApiKeyToSpreadsheet")) {
-        if let Ok(func) = func.dyn_into::<js_sys::Function>() {
-            if let Ok(promise) = func.call1(&JsValue::NULL, &JsValue::from_str(gas_url)) {
-                if let Ok(promise) = promise.dyn_into::<js_sys::Promise>() {
-                    match JsFuture::from(promise).await {
-                        Ok(result) => {
-                            if result.as_bool().unwrap_or(false) {
-                                web_sys::console::log_1(&"[AutoSave] APIキーをシートに保存しました".into());
-                            }
-                        }
-                        Err(e) => {
-                            web_sys::console::log_1(&format!("[AutoSave] Error: {:?}", e).into());
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 /// GASにプロジェクトデータを保存
 async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
@@ -357,172 +118,9 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
 
 const API_KEY_STORAGE_KEY: &str = "sekou_taisei_api_key";
 
-// ============================================
-// 施工体制ダッシュボード用データ構造
-// ============================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProjectData {
-    pub project_name: String,
-    #[serde(default)]
-    pub client: String,
-    #[serde(default)]
-    pub period: String,
-    #[serde(default)]
-    pub project_docs: ProjectDocs,  // 全体書類
-    pub contractors: Vec<Contractor>,
-    #[serde(default)]
-    pub contracts: Vec<Contract>,
-}
-
-// 全体書類（施工体系図、施工体制台帳、下請契約書）
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProjectDocs {
-    #[serde(default)]
-    pub sekou_taikeizu: Option<DocLink>,      // 施工体系図
-    #[serde(default)]
-    pub sekou_taisei_daicho: Option<DocLink>, // 施工体制台帳
-    #[serde(default)]
-    pub shitauke_keiyaku: Option<DocLink>,    // 下請契約書
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocLink {
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub url: Option<String>,
-    #[serde(default)]
-    pub status: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Contractor {
-    pub id: String,
-    pub name: String,
-    pub role: String,
-    pub docs: HashMap<String, DocStatus>,
-}
-
-/// AIチェック結果データ
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CheckResultData {
-    /// "ok" | "warning" | "error"
-    #[serde(default)]
-    pub status: String,
-    /// 1行サマリー
-    #[serde(default)]
-    pub summary: String,
-    /// 詳細チェック項目
-    #[serde(default)]
-    pub items: Vec<CheckItem>,
-    /// 未記入フィールド
-    #[serde(default)]
-    pub missing_fields: Vec<CheckMissingField>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckItem {
-    /// "ok" | "warning" | "error" | "info"
-    #[serde(rename = "type")]
-    pub item_type: String,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckMissingField {
-    pub field: String,
-    pub location: String,
-}
-
-/// コンテキストメニュー状態
-#[derive(Clone, Default)]
-pub struct ContextMenuState {
-    pub visible: bool,
-    pub x: i32,
-    pub y: i32,
-    pub contractor_name: String,
-    pub doc_key: String,
-    pub doc_label: String,
-    pub check_result: Option<CheckResultData>,
-    pub last_checked: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocStatus {
-    pub status: bool,
-    #[serde(default)]
-    pub file: Option<String>,
-    #[serde(default)]
-    pub url: Option<String>,
-    #[serde(default)]
-    pub note: Option<String>,
-    #[serde(default)]
-    pub valid_from: Option<String>,  // 有効期間開始 (YYYY-MM-DD)
-    #[serde(default)]
-    pub valid_until: Option<String>, // 有効期限 (YYYY-MM-DD)
-    /// AIチェック結果
-    #[serde(default)]
-    pub check_result: Option<CheckResultData>,
-    /// 最終チェック日時 (ISO8601形式)
-    #[serde(default)]
-    pub last_checked: Option<String>,
-}
-
-// ============================================
-// ビューモード (ダッシュボード連携)
-// ============================================
-
-#[derive(Clone, PartialEq)]
-pub enum ViewMode {
-    Dashboard,
-    OcrViewer,
-    ApiKeySetup,
-    AiChecker { contractor: String, doc_type: String, file_id: String, doc_key: String, contractor_id: String },
-    PdfViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
-    SpreadsheetViewer { contractor: String, doc_type: String, url: String, doc_key: String, contractor_id: String },
-    PdfEditor { contractor: String, doc_type: String, original_url: String },
-}
-
-impl Default for ViewMode {
-    fn default() -> Self {
-        ViewMode::Dashboard
-    }
-}
-
-// 書類ファイルタイプ
-#[derive(Clone, PartialEq, Debug)]
-pub enum DocFileType {
-    Pdf,
-    GoogleSpreadsheet,
-    Excel,
-    GoogleDoc,
-    Image,
-    Unknown,
-}
-
-// ファイルタイプ判定関数
-fn detect_file_type(url: &str) -> DocFileType {
-    let url_lower = url.to_lowercase();
-
-    if url_lower.contains("docs.google.com/spreadsheets") {
-        DocFileType::GoogleSpreadsheet
-    } else if url_lower.contains("docs.google.com/document") {
-        DocFileType::GoogleDoc
-    } else if url_lower.contains("drive.google.com/file") {
-        // Google DriveのファイルはデフォルトでPDF扱い
-        // 実際にはAPIでMIMEタイプを確認すべき
-        DocFileType::Pdf
-    } else if url_lower.ends_with(".pdf") {
-        DocFileType::Pdf
-    } else if url_lower.ends_with(".xlsx") || url_lower.ends_with(".xls") {
-        DocFileType::Excel
-    } else if url_lower.ends_with(".png") || url_lower.ends_with(".jpg") || url_lower.ends_with(".jpeg") {
-        DocFileType::Image
-    } else {
-        DocFileType::Unknown
-    }
-}
+// ContextMenuStateはmodels::TooltipStateとしてエクスポート済み
+// main.rsでは互換性のためエイリアスを定義
+pub type ContextMenuState = models::TooltipState;
 
 // ============================================
 // Google Drive/Sheets URL解析ヘルパー関数
@@ -857,17 +455,11 @@ fn Dashboard() -> impl IntoView {
     }
 }
 
-/// 右クリックコンテキストメニュー
+/// ホバーツールチップ（1秒ホバーで表示）
 #[component]
 fn ContextMenu() -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
     let menu_state = ctx.context_menu;
-    let set_menu_state = ctx.set_context_menu;
-
-    // メニュー外クリックで閉じる
-    let close_menu = move |_| {
-        set_menu_state.set(ContextMenuState::default());
-    };
 
     view! {
         {move || {
@@ -908,20 +500,18 @@ fn ContextMenu() -> impl IntoView {
             };
 
             view! {
-                // オーバーレイ（クリックで閉じる）
-                <div class="context-overlay" on:click=close_menu></div>
                 <div
-                    class="context-menu"
+                    class="hover-tooltip"
                     style=format!("left: {}px; top: {}px;", x, y)
                 >
-                    <div class="context-menu-header">
+                    <div class="tooltip-header">
                         <span class="contractor-name">{state.contractor_name.clone()}</span>
                         <span class="doc-label">{state.doc_label.clone()}</span>
                     </div>
 
                     {match &state.check_result {
                         Some(_) => view! {
-                            <div class="context-menu-content">
+                            <div class="tooltip-content">
                                 <div class=format!("status-line {}", status_text.map(|(_, c)| c).unwrap_or(""))>
                                     {status_text.map(|(t, _)| t).unwrap_or("未チェック")}
                                 </div>
@@ -947,7 +537,7 @@ fn ContextMenu() -> impl IntoView {
                             </div>
                         }.into_view(),
                         None => view! {
-                            <div class="context-menu-content no-result">
+                            <div class="tooltip-content no-result">
                                 "AIチェック未実施"
                             </div>
                         }.into_view(),
@@ -1196,28 +786,68 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                     let contractor_id_click = contractor_id.clone();
                     let set_view_mode = ctx.set_view_mode;
 
-                    // 右クリックメニュー用
-                    let contractor_name_ctx = contractor_name.clone();
-                    let label_ctx = label.clone();
-                    let key_ctx = key.clone();
-                    let check_result_ctx = status.check_result.clone();
-                    let last_checked_ctx = status.last_checked.clone();
+                    // ホバーツールチップ用
+                    let contractor_name_hover = contractor_name.clone();
+                    let label_hover = label.clone();
+                    let key_hover = key.clone();
+                    let check_result_hover = status.check_result.clone();
+                    let last_checked_hover = status.last_checked.clone();
                     let set_context_menu = ctx.set_context_menu;
+                    let context_menu = ctx.context_menu;
 
-                    let on_context_menu = move |ev: web_sys::MouseEvent| {
-                        ev.prevent_default();
-                        ev.stop_propagation();
-                        web_sys::console::log_1(&format!("Context menu: {} - {}", contractor_name_ctx, label_ctx).into());
-                        set_context_menu.set(ContextMenuState {
-                            visible: true,
-                            x: ev.client_x(),
-                            y: ev.client_y(),
-                            contractor_name: contractor_name_ctx.clone(),
-                            doc_key: key_ctx.clone(),
-                            doc_label: label_ctx.clone(),
-                            check_result: check_result_ctx.clone(),
-                            last_checked: last_checked_ctx.clone(),
-                        });
+                    // mouseenter: 1秒後にツールチップ表示
+                    let contractor_name_enter = contractor_name_hover.clone();
+                    let label_enter = label_hover.clone();
+                    let key_enter = key_hover.clone();
+                    let check_result_enter = check_result_hover.clone();
+                    let last_checked_enter = last_checked_hover.clone();
+                    let on_mouse_enter = move |ev: web_sys::MouseEvent| {
+                        let window = web_sys::window().unwrap();
+                        // 既存タイマーをキャンセル
+                        if let Some(id) = context_menu.get().hover_timer_id {
+                            window.clear_timeout_with_handle(id);
+                        }
+
+                        let contractor_name = contractor_name_enter.clone();
+                        let label = label_enter.clone();
+                        let key = key_enter.clone();
+                        let check_result = check_result_enter.clone();
+                        let last_checked = last_checked_enter.clone();
+                        let x = ev.client_x();
+                        let y = ev.client_y();
+
+                        let closure = Closure::once(Box::new(move || {
+                            set_context_menu.set(ContextMenuState {
+                                visible: true,
+                                x,
+                                y,
+                                contractor_name,
+                                doc_key: key,
+                                doc_label: label,
+                                check_result,
+                                last_checked,
+                                hover_timer_id: None,
+                            });
+                        }) as Box<dyn FnOnce()>);
+
+                        let timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            closure.as_ref().unchecked_ref(),
+                            1000,
+                        ).unwrap_or(0);
+                        closure.forget();
+
+                        // タイマーIDを保存（後でキャンセル用）
+                        set_context_menu.update(|s| s.hover_timer_id = Some(timer_id));
+                    };
+
+                    // mouseleave: タイマーキャンセル＆ツールチップ非表示
+                    let on_mouse_leave = move |_: web_sys::MouseEvent| {
+                        let window = web_sys::window().unwrap();
+                        let state = context_menu.get();
+                        if let Some(id) = state.hover_timer_id {
+                            window.clear_timeout_with_handle(id);
+                        }
+                        set_context_menu.set(ContextMenuState::default());
                     };
 
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
@@ -1261,7 +891,8 @@ fn ContractorCard(contractor: Contractor) -> impl IntoView {
                                 check_badge.as_ref().map(|(_, class, _)| *class).unwrap_or("")
                             )
                             on:click=on_doc_click
-                            on:contextmenu=on_context_menu
+                            on:mouseenter=on_mouse_enter
+                            on:mouseleave=on_mouse_leave
                         >
                             // 書類状態アイコン
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>
@@ -3023,9 +2654,18 @@ fn App() -> impl IntoView {
     // 起動時にAPIキー設定をチェック
     set_api_connected.set(check_api_key_exists());
 
-    // GAS URLパラメータ初期化 (?gas=xxx)
-    if init_gas_from_url_params().is_some() {
+    // GAS URLパラメータ初期化 (?gas=xxx) または保存済みGAS URLからデータ取得
+    let gas_source = if init_gas_from_url_params().is_some() {
+        Some("GAS (URLパラメータ)")
+    } else if get_gas_url().is_some() {
+        Some("GAS (保存済みURL)")
+    } else {
+        None
+    };
+
+    if let Some(source) = gas_source {
         set_gas_connected.set(true);
+        let source_str = source.to_string();
         // GASからデータを取得
         spawn_local(async move {
             set_gas_syncing.set(true);
@@ -3033,7 +2673,7 @@ fn App() -> impl IntoView {
                 Ok(data) => {
                     set_project.set(Some(data.clone()));
                     save_to_cache(&data);
-                    set_data_source.set("GAS (URLパラメータ)".to_string());
+                    set_data_source.set(source_str);
                     set_gas_message.set(Some("シートからデータを読み込みました".to_string()));
                 }
                 Err(e) => {

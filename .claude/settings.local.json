@@ -28,7 +28,12 @@
       "Bash(npx playwright test:*)",
       "Bash(pip show:*)",
       "Bash(git log:*)",
-      "Bash(RUST_LOG=trunk=debug trunk build:*)"
+      "Bash(RUST_LOG=trunk=debug trunk build:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(cmd //c:*)",
+      "Bash(tasklist:*)"
     ]
   }
 }
