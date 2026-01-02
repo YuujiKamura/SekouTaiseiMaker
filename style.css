@@ -3414,3 +3414,109 @@ button:disabled {
     background: #4caf50;
     color: white;
 }
+
+/* ============================================
+   コンテキストメニュー（右クリック/ロングプレス）
+   ============================================ */
+
+.context-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 999;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.context-menu {
+    position: fixed;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    min-width: 200px;
+    z-index: 1000;
+    overflow: hidden;
+    animation: context-menu-fade-in 0.1s ease-out;
+}
+
+@keyframes context-menu-fade-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.context-menu-header {
+    background: #1a1a2e;
+    color: white;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.context-menu-header .menu-contractor {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.context-menu-header .menu-doc {
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+.context-menu-items {
+    padding: 6px 0;
+}
+
+.context-menu .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.1s;
+}
+
+.context-menu .menu-item:hover {
+    background: #f0f0f0;
+}
+
+.context-menu .menu-item .menu-icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+}
+
+.context-menu .menu-item .menu-label {
+    flex: 1;
+}
+
+.context-menu .menu-item-close {
+    border-top: 1px solid #eee;
+    margin-top: 4px;
+    padding-top: 10px;
+    color: #666;
+}
+
+/* モバイル対応 */
+@media (max-width: 768px) {
+    .context-menu {
+        min-width: 180px;
+    }
+
+    .context-menu .menu-item {
+        padding: 12px 14px;
+    }
+}

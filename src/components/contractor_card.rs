@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::models::{Contractor, DocFileType, ViewMode, detect_file_type};
-use crate::{CheckResultTooltipState, ProjectContext};
+use crate::{CheckResultTooltipState, ContextMenuState, ProjectContext};
 
 /// 業者カードコンポーネント
 /// 業者ごとの書類状況を表示し、クリックでドキュメントビューアを開く
@@ -161,6 +161,30 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         set_tooltip.set(CheckResultTooltipState::default());
                     };
 
+                    // 右クリック（コンテキストメニュー表示）
+                    let set_context_menu = ctx.set_context_menu;
+                    let contractor_name_ctx = contractor_name.clone();
+                    let contractor_id_ctx = contractor_id.clone();
+                    let key_ctx = key.clone();
+                    let label_ctx = label.clone();
+                    let url_ctx = url.clone();
+                    let has_check = status.check_result.is_some();
+
+                    let on_context_menu = move |ev: web_sys::MouseEvent| {
+                        ev.prevent_default();
+                        set_context_menu.set(ContextMenuState {
+                            visible: true,
+                            x: ev.client_x(),
+                            y: ev.client_y(),
+                            contractor_name: contractor_name_ctx.clone(),
+                            contractor_id: contractor_id_ctx.clone(),
+                            doc_key: key_ctx.clone(),
+                            doc_label: label_ctx.clone(),
+                            url: url_ctx.clone(),
+                            has_check_result: has_check,
+                        });
+                    };
+
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
                         ev.prevent_default();
                         if let Some(ref u) = url_click {
@@ -204,6 +228,7 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                             on:click=on_doc_click
                             on:mouseenter=on_mouse_enter
                             on:mouseleave=on_mouse_leave
+                            on:contextmenu=on_context_menu
                         >
                             // 書類状態アイコン
                             <span class="doc-icon">{if status.status { "✓" } else { "✗" }}</span>

@@ -112,7 +112,7 @@ pub struct CheckMissingField {
 // UI状態
 // ============================================
 
-/// チェック結果ツールチップ状態
+/// チェック結果ツールチップ状態（ホバーで表示）
 #[derive(Clone, Default)]
 pub struct CheckResultTooltipState {
     pub visible: bool,
@@ -124,6 +124,20 @@ pub struct CheckResultTooltipState {
     pub check_result: Option<CheckResultData>,
     pub last_checked: Option<String>,
     pub hover_timer_id: Option<i32>,
+}
+
+/// コンテキストメニュー状態（右クリック/ロングプレスで表示）
+#[derive(Clone, Default)]
+pub struct ContextMenuState {
+    pub visible: bool,
+    pub x: i32,
+    pub y: i32,
+    pub contractor_name: String,
+    pub contractor_id: String,
+    pub doc_key: String,
+    pub doc_label: String,
+    pub url: Option<String>,
+    pub has_check_result: bool,
 }
 
 // ============================================

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 // 自モジュールからのインポート
 use models::*;
-use components::CheckResultTooltip;
+use components::{CheckResultTooltip, ContextMenu};
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
 use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time};
 use utils::{encode_base64, decode_base64};
@@ -106,8 +106,9 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
 
 const API_KEY_STORAGE_KEY: &str = "sekou_taisei_api_key";
 
-// チェック結果ツールチップ状態のエイリアス
+// UI状態のエイリアス
 pub use models::CheckResultTooltipState;
+pub use models::ContextMenuState;
 
 // チェック結果
 #[derive(Debug, Clone, PartialEq)]
@@ -277,6 +278,9 @@ pub struct ProjectContext {
     /// チェック結果ツールチップ状態
     pub check_result_tooltip: ReadSignal<CheckResultTooltipState>,
     pub set_check_result_tooltip: WriteSignal<CheckResultTooltipState>,
+    /// コンテキストメニュー状態（右クリック/ロングプレス）
+    pub context_menu: ReadSignal<ContextMenuState>,
+    pub set_context_menu: WriteSignal<ContextMenuState>,
 }
 
 
@@ -644,6 +648,9 @@ fn App() -> impl IntoView {
     // チェック結果ツールチップ状態
     let (check_result_tooltip, set_check_result_tooltip) = create_signal(CheckResultTooltipState::default());
 
+    // コンテキストメニュー状態（右クリック/ロングプレス）
+    let (context_menu, set_context_menu) = create_signal(ContextMenuState::default());
+
     // データソース追跡（デバッグ用）
     let (data_source, set_data_source) = create_signal("なし".to_string());
     let (show_debug, set_show_debug) = create_signal(false);
@@ -689,6 +696,8 @@ fn App() -> impl IntoView {
         set_api_loading,
         check_result_tooltip,
         set_check_result_tooltip,
+        context_menu,
+        set_context_menu,
     };
     provide_context(ctx.clone());
 
@@ -1257,6 +1266,7 @@ fn App() -> impl IntoView {
                             <Dashboard />
                             <CheckResultsPanel />
                             <CheckResultTooltip />
+                            <ContextMenu />
                         </main>
                     }.into_view(),
 
