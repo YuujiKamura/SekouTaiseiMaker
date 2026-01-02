@@ -2,6 +2,7 @@ import { PdfEditor } from './components/PdfEditor'
 import { PdfViewer } from './components/PdfViewer'
 import { ApiKeySetup } from './components/ApiKeySetup'
 import { AiChecker } from './components/AiChecker'
+import { SpreadsheetChecker } from './components/SpreadsheetChecker'
 
 function App() {
   const params = new URLSearchParams(window.location.search)
@@ -22,6 +23,10 @@ function App() {
 
   if (mode === 'check') {
     return <AiChecker />
+  }
+
+  if (mode === 'spreadsheet-check') {
+    return <SpreadsheetChecker />
   }
 
   if (mode === 'view') {

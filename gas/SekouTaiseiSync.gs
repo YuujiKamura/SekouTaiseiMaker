@@ -3,6 +3,8 @@
  * 
  * ■ 変更履歴 (要再デプロイ)
  * ─────────────────────────────────────
+ * 2026-01-02: fetchSpreadsheet アクション追加
+ *             → 外部スプレッドシートのデータをAIチェック用に取得
  * 2026-01-02: updateDocUrl アクション追加
  *             → fileId変更時にスプレッドシートのURLを自動更新
  * 2026-01-02: getLatestFile アクション追加
@@ -109,6 +111,17 @@ function doGet(e) {
         return jsonResponse({ error: 'contractorId, docKey, newFileId are required' });
       }
       const result = updateDocUrl(contractorId, docKey, newFileId);
+      return jsonResponse(result);
+    }
+
+    // スプレッドシートデータ取得（AIチェック用）
+    if (action === 'fetchSpreadsheet') {
+      const spreadsheetId = e.parameter.spreadsheetId;
+      const gid = e.parameter.gid;  // シートID（オプション）
+      if (!spreadsheetId) {
+        return jsonResponse({ error: 'spreadsheetId is required' });
+      }
+      const result = fetchSpreadsheetData(spreadsheetId, gid);
       return jsonResponse(result);
     }
 
@@ -278,6 +291,55 @@ function getLatestFileInFolder(oldFileId) {
     };
   } catch (err) {
     return { error: 'Failed to get latest file: ' + err.message };
+  }
+}
+
+// 外部スプレッドシートのデータを取得（AIチェック用）
+// getDisplayValues()を使用して書式適用済みの値を取得
+function fetchSpreadsheetData(spreadsheetId, gid) {
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    let sheet;
+
+    if (gid) {
+      // gidからシートを探す
+      const sheets = ss.getSheets();
+      sheet = sheets.find(s => s.getSheetId().toString() === gid);
+      if (!sheet) {
+        sheet = sheets[0];  // 見つからなければ最初のシート
+      }
+    } else {
+      sheet = ss.getSheets()[0];
+    }
+
+    const sheetName = sheet.getName();
+    const range = sheet.getDataRange();
+
+    // getDisplayValues()で書式適用済みの値を取得
+    const displayValues = range.getDisplayValues();
+
+    // 空行を除外（先頭50行まで、または最初の連続した空行まで）
+    let lastNonEmptyRow = 0;
+    for (let i = 0; i < displayValues.length && i < 100; i++) {
+      if (displayValues[i].some(cell => cell.trim() !== '')) {
+        lastNonEmptyRow = i + 1;
+      }
+    }
+
+    const trimmedData = displayValues.slice(0, lastNonEmptyRow);
+
+    return {
+      success: true,
+      spreadsheetId: spreadsheetId,
+      sheetName: sheetName,
+      sheetId: sheet.getSheetId(),
+      rowCount: trimmedData.length,
+      colCount: trimmedData[0]?.length || 0,
+      data: trimmedData,
+      modifiedTime: ss.getLastUpdated?.() || new Date().toISOString()
+    };
+  } catch (err) {
+    return { error: 'Failed to fetch spreadsheet: ' + err.message };
   }
 }
 

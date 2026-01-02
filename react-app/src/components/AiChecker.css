@@ -212,3 +212,64 @@
 .save-btn:hover {
   background: #0055dd;
 }
+
+/* スプレッドシートプレビュー */
+.spreadsheet-preview {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.loading-message,
+.no-data-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #666;
+  font-size: 14px;
+}
+
+.sheet-data-preview {
+  width: 100%;
+  max-width: 100%;
+}
+
+.sheet-info {
+  padding: 8px 12px;
+  background: #1a1a2e;
+  color: white;
+  font-size: 13px;
+  border-radius: 4px 4px 0 0;
+}
+
+.sheet-table-wrapper {
+  overflow: auto;
+  max-height: calc(100vh - 200px);
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+}
+
+.sheet-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sheet-table td {
+  padding: 6px 10px;
+  border: 1px solid #e0e0e0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-table tr:nth-child(odd) {
+  background: #fafafa;
+}
+
+.sheet-table tr:first-child td {
+  background: #f0f0f0;
+  font-weight: 500;
+}

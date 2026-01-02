@@ -3,6 +3,7 @@
 use leptos::*;
 use crate::models::ViewMode;
 use crate::ProjectContext;
+use crate::utils::gas::get_gas_url;
 
 // ============================================
 // URL処理ヘルパー関数
@@ -67,12 +68,17 @@ pub fn SpreadsheetViewer(
     contractor_id: String,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
+    let (ai_check_mode, set_ai_check_mode) = create_signal(false);
 
-    // 未使用パラメータ
-    let _ = (doc_key, contractor_id);
-
-    let on_back = move |_| {
-        ctx.set_view_mode.set(ViewMode::Dashboard);
+    let on_back = {
+        let set_ai_check_mode = set_ai_check_mode.clone();
+        move |_| {
+            if ai_check_mode.get() {
+                set_ai_check_mode.set(false);
+            } else {
+                ctx.set_view_mode.set(ViewMode::Dashboard);
+            }
+        }
     };
 
     // ローカルパス検出（H:\, C:\, /Users/ など）
@@ -98,18 +104,67 @@ pub fn SpreadsheetViewer(
         url.clone()
     };
 
+    // AIチェック用のURL構築
+    let spreadsheet_info = extract_spreadsheet_info(&url);
+    let gas_url = get_gas_url().unwrap_or_default();
+    let ai_check_url = spreadsheet_info.as_ref().map(|(id, gid)| {
+        let mut check_url = format!(
+            "editor/index.html?mode=spreadsheet-check&spreadsheetId={}&docType={}&contractor={}&gasUrl={}&contractorId={}&docKey={}",
+            js_sys::encode_uri_component(id),
+            js_sys::encode_uri_component(&doc_type),
+            js_sys::encode_uri_component(&contractor),
+            js_sys::encode_uri_component(&gas_url),
+            js_sys::encode_uri_component(&contractor_id),
+            js_sys::encode_uri_component(&doc_key)
+        );
+        if let Some(g) = gid {
+            check_url.push_str(&format!("&gid={}", js_sys::encode_uri_component(g)));
+        }
+        check_url
+    });
+
+    let can_ai_check = spreadsheet_info.is_some() && !gas_url.is_empty();
+    let ai_check_url_clone = ai_check_url.clone();
+
     view! {
         <div class="viewer-container spreadsheet-viewer">
             <div class="viewer-toolbar">
-                <button class="back-btn" on:click=on_back>"← 戻る"</button>
+                <button class="back-btn" on:click=on_back>
+                    {move || if ai_check_mode.get() { "← プレビューに戻る" } else { "← 戻る" }}
+                </button>
                 <span class="doc-info">{contractor.clone()}" / "{doc_type.clone()}</span>
                 <div class="toolbar-actions">
-                    // スプレッドシートのAIチェックは現在未対応
+                    {move || if !ai_check_mode.get() && can_ai_check {
+                        view! {
+                            <button
+                                class="ai-check-btn"
+                                on:click=move |_| set_ai_check_mode.set(true)
+                            >
+                                "🤖 AIチェック"
+                            </button>
+                        }.into_view()
+                    } else {
+                        view! {}.into_view()
+                    }}
                 </div>
             </div>
 
             <div class="viewer-content">
-                {if is_local_path {
+                {move || if ai_check_mode.get() {
+                    // AIチェックモード
+                    if let Some(ref check_url) = ai_check_url_clone {
+                        view! {
+                            <iframe
+                                src=check_url.clone()
+                                class="ai-check-frame"
+                            ></iframe>
+                        }.into_view()
+                    } else {
+                        view! {
+                            <div class="error-message">"AIチェックURLの構築に失敗しました"</div>
+                        }.into_view()
+                    }
+                } else if is_local_path {
                     view! {
                         <div class="local-path-warning">
                             <p class="warning-title">"ローカルファイルはプレビューできません"</p>
@@ -121,7 +176,7 @@ pub fn SpreadsheetViewer(
                 } else {
                     view! {
                         <iframe
-                            src=embed_url
+                            src=embed_url.clone()
                             class="spreadsheet-frame"
                         ></iframe>
                     }.into_view()
