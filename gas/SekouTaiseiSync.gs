@@ -3,6 +3,8 @@
  * 
  * ■ 変更履歴 (要再デプロイ)
  * ─────────────────────────────────────
+ * 2026-01-02: listSheets アクション追加
+ *             → スプレッドシートの全シート一覧を取得
  * 2026-01-02: fetchSpreadsheet アクション追加
  *             → 外部スプレッドシートのデータをAIチェック用に取得
  * 2026-01-02: updateDocUrl アクション追加
@@ -111,6 +113,16 @@ function doGet(e) {
         return jsonResponse({ error: 'contractorId, docKey, newFileId are required' });
       }
       const result = updateDocUrl(contractorId, docKey, newFileId);
+      return jsonResponse(result);
+    }
+
+    // スプレッドシートのシート一覧取得
+    if (action === 'listSheets') {
+      const spreadsheetId = e.parameter.spreadsheetId;
+      if (!spreadsheetId) {
+        return jsonResponse({ error: 'spreadsheetId is required' });
+      }
+      const result = listSpreadsheetSheets(spreadsheetId);
       return jsonResponse(result);
     }
 
@@ -291,6 +303,42 @@ function getLatestFileInFolder(oldFileId) {
     };
   } catch (err) {
     return { error: 'Failed to get latest file: ' + err.message };
+  }
+}
+
+// スプレッドシートの全シート一覧を取得
+function listSpreadsheetSheets(spreadsheetId) {
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const sheets = ss.getSheets();
+
+    const sheetList = sheets.map(sheet => {
+      const range = sheet.getDataRange();
+      const rowCount = range.getNumRows();
+      const colCount = range.getNumColumns();
+
+      // 先頭数行をプレビュー用に取得
+      const previewRows = Math.min(3, rowCount);
+      const previewCols = Math.min(5, colCount);
+      const preview = sheet.getRange(1, 1, previewRows, previewCols).getDisplayValues();
+
+      return {
+        sheetId: sheet.getSheetId(),
+        name: sheet.getName(),
+        rowCount: rowCount,
+        colCount: colCount,
+        preview: preview
+      };
+    });
+
+    return {
+      success: true,
+      spreadsheetId: spreadsheetId,
+      spreadsheetName: ss.getName(),
+      sheets: sheetList
+    };
+  } catch (err) {
+    return { error: 'Failed to list sheets: ' + err.message };
   }
 }
 

@@ -273,3 +273,107 @@
   background: #f0f0f0;
   font-weight: 500;
 }
+
+.sheet-table tr.sheet-separator td {
+  background: #1a1a2e;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* シート選択UI */
+.sheet-selector {
+  width: 100%;
+}
+
+.sheet-selector-header {
+  margin-bottom: 16px;
+}
+
+.sheet-selector-header h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: #333;
+}
+
+.sheet-selector-header p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheet-item {
+  background: white;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.sheet-item:hover {
+  border-color: #999;
+}
+
+.sheet-item.selected {
+  border-color: #2a6;
+  box-shadow: 0 0 0 3px rgba(34, 170, 102, 0.2);
+}
+
+.sheet-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.sheet-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.sheet-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.sheet-size {
+  color: #888;
+  font-size: 12px;
+}
+
+.sheet-preview-mini {
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 4px;
+  border: 1px solid #eee;
+}
+
+.sheet-preview-mini table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.sheet-preview-mini td {
+  padding: 4px 8px;
+  border: 1px solid #f0f0f0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #fafafa;
+}
+
+.sheet-preview-mini tr:first-child td {
+  background: #f0f0f0;
+  font-weight: 500;
+}

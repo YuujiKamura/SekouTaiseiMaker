@@ -1,10 +1,30 @@
 /**
  * Spreadsheet AI Checker - スプレッドシートのAIチェック
+ *
+ * ## 変更履歴
+ * - 2026-01-02: シート選択UI追加（複数シートから対象を選択可能に）
+ * - 2026-01-02: 初期実装
  */
 import { useState, useEffect } from 'react';
 import { checkSpreadsheet, type CheckResult } from '../services/gemini';
 import { getApiKey } from '../services/apiKey';
 import './AiChecker.css';
+
+interface SheetInfo {
+  sheetId: number;
+  name: string;
+  rowCount: number;
+  colCount: number;
+  preview: string[][];
+}
+
+interface SheetListResponse {
+  success?: boolean;
+  error?: string;
+  spreadsheetId: string;
+  spreadsheetName: string;
+  sheets: SheetInfo[];
+}
 
 function getUrlParam(name: string): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -12,16 +32,21 @@ function getUrlParam(name: string): string | null {
 }
 
 export function SpreadsheetChecker() {
+  // フェーズ: 'select' | 'check'
+  const [phase, setPhase] = useState<'select' | 'check'>('select');
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // シート選択フェーズ用
+  const [sheetList, setSheetList] = useState<SheetInfo[]>([]);
+  const [spreadsheetName, setSpreadsheetName] = useState('');
+  const [selectedSheetIds, setSelectedSheetIds] = useState<Set<number>>(new Set());
+
+  // チェックフェーズ用
   const [sheetData, setSheetData] = useState<string[][] | null>(null);
-  const [sheetInfo, setSheetInfo] = useState<{
-    sheetName: string;
-    rowCount: number;
-    colCount: number;
-  } | null>(null);
+  const [currentSheetName, setCurrentSheetName] = useState('');
 
   const spreadsheetId = getUrlParam('spreadsheetId');
   const gid = getUrlParam('gid');
@@ -31,7 +56,7 @@ export function SpreadsheetChecker() {
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || docType;
 
-  // スプレッドシートデータを取得
+  // シート一覧を取得
   useEffect(() => {
     if (!spreadsheetId) {
       setError('スプレッドシートIDが指定されていません');
@@ -45,13 +70,65 @@ export function SpreadsheetChecker() {
       return;
     }
 
-    const fetchData = async () => {
+    const fetchSheetList = async () => {
       try {
-        let url = `${gasUrl}?action=fetchSpreadsheet&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
-        if (gid) {
-          url += `&gid=${encodeURIComponent(gid)}`;
+        const url = `${gasUrl}?action=listSheets&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
+        const response = await fetch(url, { cache: 'no-store' });
+        const data: SheetListResponse = await response.json();
+
+        if (data.error) {
+          throw new Error(data.error);
         }
 
+        setSheetList(data.sheets);
+        setSpreadsheetName(data.spreadsheetName);
+
+        // gidが指定されていれば、そのシートを初期選択
+        if (gid) {
+          const gidNum = parseInt(gid, 10);
+          if (data.sheets.some(s => s.sheetId === gidNum)) {
+            setSelectedSheetIds(new Set([gidNum]));
+          }
+        }
+
+        setLoading(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'シート一覧取得エラー');
+        setLoading(false);
+      }
+    };
+
+    fetchSheetList();
+  }, [spreadsheetId, gid, gasUrl]);
+
+  const toggleSheetSelection = (sheetId: number) => {
+    setSelectedSheetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(sheetId)) {
+        next.delete(sheetId);
+      } else {
+        next.add(sheetId);
+      }
+      return next;
+    });
+  };
+
+  const handleProceedToCheck = async () => {
+    if (selectedSheetIds.size === 0) {
+      setError('チェックするシートを選択してください');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 選択されたシートのデータを取得（複数の場合は結合）
+      const allData: string[][] = [];
+      const sheetNames: string[] = [];
+
+      for (const sheetId of selectedSheetIds) {
+        const url = `${gasUrl}?action=fetchSpreadsheet&spreadsheetId=${encodeURIComponent(spreadsheetId!)}&gid=${sheetId}`;
         const response = await fetch(url, { cache: 'no-store' });
         const data = await response.json();
 
@@ -59,21 +136,26 @@ export function SpreadsheetChecker() {
           throw new Error(data.error);
         }
 
-        setSheetData(data.data);
-        setSheetInfo({
-          sheetName: data.sheetName,
-          rowCount: data.rowCount,
-          colCount: data.colCount,
-        });
-        setLoading(false);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'データ取得エラー');
-        setLoading(false);
+        // シート名を区切りとして追加
+        if (allData.length > 0) {
+          allData.push(['']); // 空行で区切り
+          allData.push([`=== ${data.sheetName} ===`]);
+        } else {
+          allData.push([`=== ${data.sheetName} ===`]);
+        }
+        allData.push(...data.data);
+        sheetNames.push(data.sheetName);
       }
-    };
 
-    fetchData();
-  }, [spreadsheetId, gid, gasUrl]);
+      setSheetData(allData);
+      setCurrentSheetName(sheetNames.join(', '));
+      setPhase('check');
+      setLoading(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'データ取得エラー');
+      setLoading(false);
+    }
+  };
 
   const runCheck = async () => {
     if (!sheetData) return;
@@ -98,7 +180,13 @@ export function SpreadsheetChecker() {
   };
 
   const handleBack = () => {
-    window.parent.postMessage({ type: 'spreadsheet-check-cancel' }, '*');
+    if (phase === 'check') {
+      setPhase('select');
+      setResult(null);
+      setSheetData(null);
+    } else {
+      window.parent.postMessage({ type: 'spreadsheet-check-cancel' }, '*');
+    }
   };
 
   const handleSaveAndBack = () => {
@@ -115,11 +203,82 @@ export function SpreadsheetChecker() {
     }
   };
 
+  // シート選択フェーズ
+  if (phase === 'select') {
+    return (
+      <div className="ai-checker">
+        <div className="checker-toolbar">
+          <button className="back-btn" onClick={handleBack}>← 戻る</button>
+          <span className="doc-info">{contractor} / {docType}</span>
+          <button
+            className="check-btn"
+            onClick={handleProceedToCheck}
+            disabled={loading || selectedSheetIds.size === 0}
+          >
+            選択したシートをチェック ({selectedSheetIds.size}件)
+          </button>
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
+
+        <div className="checker-content">
+          <div className="preview-area spreadsheet-preview">
+            {loading ? (
+              <div className="loading-message">シート一覧を読み込み中...</div>
+            ) : sheetList.length > 0 ? (
+              <div className="sheet-selector">
+                <div className="sheet-selector-header">
+                  <h3>{spreadsheetName}</h3>
+                  <p>AIチェックを実行するシートを選択してください（複数選択可）</p>
+                </div>
+                <div className="sheet-list">
+                  {sheetList.map(sheet => (
+                    <div
+                      key={sheet.sheetId}
+                      className={`sheet-item ${selectedSheetIds.has(sheet.sheetId) ? 'selected' : ''}`}
+                      onClick={() => toggleSheetSelection(sheet.sheetId)}
+                    >
+                      <label className="sheet-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={selectedSheetIds.has(sheet.sheetId)}
+                          onChange={() => toggleSheetSelection(sheet.sheetId)}
+                        />
+                        <span className="sheet-name">{sheet.name}</span>
+                        <span className="sheet-size">({sheet.rowCount}行 × {sheet.colCount}列)</span>
+                      </label>
+                      <div className="sheet-preview-mini">
+                        <table>
+                          <tbody>
+                            {sheet.preview.map((row, ri) => (
+                              <tr key={ri}>
+                                {row.map((cell, ci) => (
+                                  <td key={ci}>{cell.length > 15 ? cell.slice(0, 15) + '...' : cell}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="no-data-message">シートが見つかりません</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // チェック実行フェーズ
   return (
     <div className="ai-checker">
       <div className="checker-toolbar">
-        <button className="back-btn" onClick={handleBack}>← 戻る</button>
-        <span className="doc-info">{contractor} / {docType}</span>
+        <button className="back-btn" onClick={handleBack}>← シート選択に戻る</button>
+        <span className="doc-info">{contractor} / {docType} - {currentSheetName}</span>
         <button
           className="check-btn"
           onClick={runCheck}
@@ -138,13 +297,13 @@ export function SpreadsheetChecker() {
           ) : sheetData ? (
             <div className="sheet-data-preview">
               <div className="sheet-info">
-                シート名: {sheetInfo?.sheetName} ({sheetInfo?.rowCount}行 × {sheetInfo?.colCount}列)
+                対象シート: {currentSheetName} ({sheetData.length}行)
               </div>
               <div className="sheet-table-wrapper">
                 <table className="sheet-table">
                   <tbody>
-                    {sheetData.slice(0, 30).map((row, rowIndex) => (
-                      <tr key={rowIndex}>
+                    {sheetData.slice(0, 50).map((row, rowIndex) => (
+                      <tr key={rowIndex} className={row[0]?.startsWith('===') ? 'sheet-separator' : ''}>
                         {row.slice(0, 15).map((cell, colIndex) => (
                           <td key={colIndex} title={cell}>
                             {cell.length > 20 ? cell.slice(0, 20) + '...' : cell}
@@ -153,7 +312,7 @@ export function SpreadsheetChecker() {
                         {row.length > 15 && <td>...</td>}
                       </tr>
                     ))}
-                    {sheetData.length > 30 && (
+                    {sheetData.length > 50 && (
                       <tr>
                         <td colSpan={Math.min(sheetData[0]?.length || 1, 16)}>... (以下省略)</td>
                       </tr>
