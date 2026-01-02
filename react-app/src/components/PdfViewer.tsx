@@ -1,10 +1,12 @@
 /**
- * PDF Viewer - GAS経由でPDFを取得して表示
+ * PDF Viewer - GAS経由でPDFを取得して表示 + インラインAIチェック
  */
 import { useState, useRef, useEffect } from 'react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { getCachedPdfAsync, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
+import { checkDocumentImage, type CheckResult } from '../services/gemini';
+import { getApiKey } from '../services/apiKey';
 import './PdfViewer.css';
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -25,6 +27,11 @@ export function PdfViewer() {
   const [totalPages, setTotalPages] = useState(0);
   const [fileModifiedTime, setFileModifiedTime] = useState<string | null>(null);
 
+  // AIチェック用のstate
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<CheckResult | null>(null);
+  const [showResult, setShowResult] = useState(false);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
 
@@ -33,6 +40,7 @@ export function PdfViewer() {
   const contractor = getUrlParam('contractor') || '業者';
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || '';
+  const gasUrl = getUrlParam('gasUrl');
 
   // PDF読み込み
   useEffect(() => {
@@ -41,8 +49,6 @@ export function PdfViewer() {
       setLoading(false);
       return;
     }
-
-    const gasUrl = getUrlParam('gasUrl');
 
     const loadPdf = async () => {
       try {
@@ -175,8 +181,53 @@ export function PdfViewer() {
     window.parent.postMessage({ type: 'viewer-edit' }, '*');
   };
 
-  const handleCheck = () => {
-    window.parent.postMessage({ type: 'viewer-check' }, '*');
+  // インラインAIチェック実行
+  const handleCheck = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !pdfLoaded) return;
+
+    if (!getApiKey()) {
+      setError('APIキーが設定されていません。メニュー → APIキー設定 から設定してください。');
+      return;
+    }
+
+    setChecking(true);
+    setError(null);
+
+    try {
+      // キャンバスをBase64に変換
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+
+      const result = await checkDocumentImage(base64, 'image/png', docType, contractor);
+      setCheckResult(result);
+      setShowResult(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'チェックエラー');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  // 結果を保存して閉じる
+  const handleSaveResult = () => {
+    if (checkResult) {
+      window.parent.postMessage({
+        type: 'ai-check-result',
+        result: checkResult,
+        contractor,
+        contractorId,
+        docType,
+        docKey,
+        fileId,
+      }, '*');
+    }
+    setShowResult(false);
+  };
+
+  // 結果パネルを閉じる（保存せず）
+  const handleCloseResult = () => {
+    setShowResult(false);
   };
 
   const handleForceReload = async () => {
@@ -230,8 +281,8 @@ export function PdfViewer() {
           <button className="edit-btn" onClick={handleEdit} disabled={loading}>
             編集
           </button>
-          <button className="check-btn" onClick={handleCheck} disabled={loading}>
-            AIチェック
+          <button className="check-btn" onClick={handleCheck} disabled={loading || checking}>
+            {checking ? 'チェック中...' : 'AIチェック'}
           </button>
           <button className="reload-btn" onClick={handleForceReload} disabled={loading} title="キャッシュを無視して再読み込み">
             🔄
@@ -249,6 +300,57 @@ export function PdfViewer() {
           </div>
         ) : (
           <canvas ref={canvasRef} />
+        )}
+
+        {/* インラインチェック結果パネル */}
+        {showResult && checkResult && (
+          <div className={`inline-result-panel status-${checkResult.status}`}>
+            <div className="result-header">
+              <h3>チェック結果</h3>
+              <button className="close-btn" onClick={handleCloseResult}>×</button>
+            </div>
+
+            <div className={`status-badge ${checkResult.status}`}>
+              {checkResult.status === 'ok' ? '✓ OK' : checkResult.status === 'warning' ? '⚠ 要確認' : '✗ エラー'}
+            </div>
+            <p className="summary">{checkResult.summary}</p>
+
+            {checkResult.items.length > 0 && (
+              <div className="items">
+                <h4>詳細</h4>
+                <ul>
+                  {checkResult.items.map((item, i) => (
+                    <li key={i} className={`item-${item.type}`}>
+                      <span className="icon">
+                        {item.type === 'ok' ? '✓' : item.type === 'warning' ? '⚠' : '✗'}
+                      </span>
+                      {item.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {checkResult.missing_fields.length > 0 && (
+              <div className="missing-fields">
+                <h4>未記入項目</h4>
+                <ul>
+                  {checkResult.missing_fields.map((field, i) => (
+                    <li key={i}>
+                      <strong>{field.field}</strong>
+                      <span className="location">({field.location})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="result-actions">
+              <button className="save-btn" onClick={handleSaveResult}>
+                保存して閉じる
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

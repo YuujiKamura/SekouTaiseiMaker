@@ -88,22 +88,19 @@ pub fn PdfViewer(
 
     let url_display = url.clone();
 
-    // postMessage ハンドラ（viewer-back, viewer-edit, viewer-check）
+    // postMessage ハンドラ（viewer-back, viewer-edit）
+    // AIチェックはReact側でインライン実行するため、viewer-checkは不要
     {
         let set_view_mode = ctx.set_view_mode.clone();
         let contractor_for_msg = contractor.clone();
         let doc_type_for_msg = doc_type.clone();
         let url_for_msg = url.clone();
-        let doc_key_for_msg = doc_key.clone();
-        let contractor_id_for_msg = contractor_id.clone();
 
         create_effect(move |_| {
             let set_view_mode = set_view_mode.clone();
             let contractor = contractor_for_msg.clone();
             let doc_type = doc_type_for_msg.clone();
             let url = url_for_msg.clone();
-            let doc_key = doc_key_for_msg.clone();
-            let contractor_id = contractor_id_for_msg.clone();
 
             let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                 if let Ok(data) = event.data().dyn_into::<js_sys::Object>() {
@@ -122,17 +119,7 @@ pub fn PdfViewer(
                                     original_url: url.clone(),
                                 });
                             }
-                            "viewer-check" => {
-                                if let Some(file_id) = extract_drive_file_id(&url) {
-                                    set_view_mode.set(ViewMode::AiChecker {
-                                        contractor: contractor.clone(),
-                                        doc_type: doc_type.clone(),
-                                        file_id,
-                                        doc_key: doc_key.clone(),
-                                        contractor_id: contractor_id.clone(),
-                                    });
-                                }
-                            }
+                            // AIチェックはReact側でインライン実行するため、画面遷移は不要
                             _ => {}
                         }
                     }

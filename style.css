@@ -3330,6 +3330,7 @@ button:disabled {
 
 .tooltip-content {
     padding: 12px 14px;
+    color: #333;  /* モバイルでの継承問題を防ぐ */
 }
 
 .tooltip-content.no-result {
