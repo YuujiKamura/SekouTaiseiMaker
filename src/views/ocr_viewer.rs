@@ -64,6 +64,7 @@ pub struct OcrDocument {
 #[derive(Clone)]
 pub struct OcrViewContext {
     pub documents: ReadSignal<Vec<OcrDocument>>,
+    #[allow(dead_code)]
     pub set_documents: WriteSignal<Vec<OcrDocument>>,
     pub current_doc_index: ReadSignal<usize>,
     pub set_current_doc_index: WriteSignal<usize>,
@@ -275,7 +276,7 @@ fn draw_ocr_canvas(
         let canvas_height = canvas.height() as f64;
 
         // 背景クリア
-        ctx.set_fill_style(&JsValue::from_str("#f5f5f5"));
+        ctx.set_fill_style_str("#f5f5f5");
         ctx.fill_rect(0.0, 0.0, canvas_width, canvas_height);
 
         // ページサイズを取得（最初のトークンから）
@@ -305,16 +306,16 @@ fn draw_ocr_canvas(
                     page_size.1 * scale,
                 );
             } else {
-                ctx.set_fill_style(&JsValue::from_str("#ffffff"));
+                ctx.set_fill_style_str("#ffffff");
                 ctx.fill_rect(offset_x, offset_y, page_size.0 * scale, page_size.1 * scale);
             }
         } else {
-            ctx.set_fill_style(&JsValue::from_str("#ffffff"));
+            ctx.set_fill_style_str("#ffffff");
             ctx.fill_rect(offset_x, offset_y, page_size.0 * scale, page_size.1 * scale);
         }
 
         // ページ境界線
-        ctx.set_stroke_style(&JsValue::from_str("#cccccc"));
+        ctx.set_stroke_style_str("#cccccc");
         ctx.set_line_width(1.0);
         ctx.stroke_rect(offset_x, offset_y, page_size.0 * scale, page_size.1 * scale);
 
@@ -351,17 +352,17 @@ fn draw_ocr_canvas(
             };
 
             // 塗りつぶし
-            ctx.set_fill_style(&JsValue::from_str(fill_color));
+            ctx.set_fill_style_str(fill_color);
             ctx.fill_rect(x, y, w, h);
 
             // 枠線
-            ctx.set_stroke_style(&JsValue::from_str(stroke_color));
+            ctx.set_stroke_style_str(stroke_color);
             ctx.set_line_width(line_width);
             ctx.stroke_rect(x, y, w, h);
 
             // テキストラベル（マーカーまたは選択中のみ）
             if is_selected || is_marker {
-                ctx.set_fill_style(&JsValue::from_str(stroke_color));
+                ctx.set_fill_style_str(stroke_color);
                 ctx.set_font("12px sans-serif");
                 let _ = ctx.fill_text(&token.text, x, y - 2.0);
             }
@@ -369,16 +370,16 @@ fn draw_ocr_canvas(
 
         // 凡例
         ctx.set_font("14px sans-serif");
-        ctx.set_fill_style(&JsValue::from_str("#333333"));
+        ctx.set_fill_style_str("#333333");
         let _ = ctx.fill_text("凡例:", 10.0, 20.0);
 
-        ctx.set_fill_style(&JsValue::from_str("#0066ff"));
+        ctx.set_fill_style_str("#0066ff");
         let _ = ctx.fill_text("■ マーカー(御/令和/年月日)", 10.0, 40.0);
 
-        ctx.set_fill_style(&JsValue::from_str("#00aa00"));
+        ctx.set_fill_style_str("#00aa00");
         let _ = ctx.fill_text("■ 通常テキスト", 10.0, 60.0);
 
-        ctx.set_fill_style(&JsValue::from_str("#ff0000"));
+        ctx.set_fill_style_str("#ff0000");
         let _ = ctx.fill_text("■ 選択中", 10.0, 80.0);
     }
 }

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use models::*;
 use components::ContextMenu;
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
-use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, save_to_gas, auto_save_api_key_to_sheet, format_gas_modified_time};
+use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time};
 use utils::{encode_base64, decode_base64};
 use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
 use views::ocr_viewer::{OcrDocument, OcrToken, OcrViewContext, OcrViewer};
@@ -36,23 +36,6 @@ fn get_hash_data() -> Option<ProjectData> {
         None
     }
 }
-
-// URLハッシュにデータを設定
-fn set_hash_data(project: &ProjectData) -> Option<String> {
-    let json = serde_json::to_string(project).ok()?;
-    let encoded = encode_base64(&json)?;
-    let window = web_sys::window()?;
-    let location = window.location();
-    let base_url = format!(
-        "{}//{}{}",
-        location.protocol().ok()?,
-        location.host().ok()?,
-        location.pathname().ok()?
-    );
-    let share_url = format!("{}#data={}", base_url, encoded);
-    Some(share_url)
-}
-
 
 /// GASにプロジェクトデータを保存
 async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
@@ -101,6 +84,7 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
 
     #[derive(Deserialize)]
     struct SaveResponse {
+        #[allow(dead_code)]
         success: Option<bool>,
         timestamp: Option<String>,
         error: Option<String>,
@@ -244,43 +228,6 @@ impl Default for OcrResult {
     }
 }
 
-/// OCR結果から不足フィールドを検出
-fn detect_missing_fields(ocr_result: &OcrResult) -> Vec<MissingField> {
-    let mut missing = Vec::new();
-
-    // 日付フィールドのチェック
-    if !ocr_result.text.contains("令和") {
-        missing.push(MissingField {
-            field_name: "日付".to_string(),
-            field_type: FieldType::Date,
-            value: String::new(),
-            position: None,
-        });
-    }
-
-    // 署名フィールドのチェック
-    if !ocr_result.text.contains("印") {
-        missing.push(MissingField {
-            field_name: "代表者印".to_string(),
-            field_type: FieldType::Signature,
-            value: String::new(),
-            position: None,
-        });
-    }
-
-    // 会社名フィールドのチェック
-    if !ocr_result.text.contains("株式会社") && !ocr_result.text.contains("有限会社") {
-        missing.push(MissingField {
-            field_name: "会社名".to_string(),
-            field_type: FieldType::Text,
-            value: String::new(),
-            position: None,
-        });
-    }
-
-    missing
-}
-
 // ============================================
 // API通信関数
 // ============================================
@@ -393,24 +340,6 @@ async fn fetch_json(url: &str) -> Result<ProjectData, String> {
 // ============================================
 // PDFエディタ
 // ============================================
-
-/// Google Drive URLをiframe埋め込み用URLに変換
-fn convert_to_embed_url(url: &str) -> String {
-    // Google Drive file URL: https://drive.google.com/file/d/{FILE_ID}/view
-    // -> Preview URL: https://drive.google.com/file/d/{FILE_ID}/preview
-    if url.contains("drive.google.com/file/d/") {
-        return url.replace("/view", "/preview").replace("/edit", "/preview");
-    }
-
-    // Google Docs/Sheets/Slides URL: https://docs.google.com/document/d/{FILE_ID}/edit
-    // -> Preview URL: https://docs.google.com/document/d/{FILE_ID}/preview
-    if url.contains("docs.google.com/") {
-        return url.replace("/edit", "/preview").replace("/view", "/preview");
-    }
-
-    // その他のURLはそのまま返す
-    url.to_string()
-}
 
 /// Google Drive URLからファイルIDを抽出
 fn extract_file_id(url: &str) -> Option<String> {
