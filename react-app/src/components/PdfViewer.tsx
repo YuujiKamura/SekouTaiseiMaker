@@ -7,6 +7,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { getCachedPdfAsync, setCachedPdf, isCacheValid, invalidateCache } from '../services/pdfCache';
 import { checkDocumentImage, type CheckResult } from '../services/gemini';
 import { getApiKey } from '../services/apiKey';
+import { safeBase64ToArrayBuffer } from '../utils/base64';
 import './PdfViewer.css';
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -152,18 +153,8 @@ export function PdfViewer() {
             throw new Error(data.error);
           }
           if (!data.base64) throw new Error('PDFデータがありません');
-          // Base64をArrayBufferに変換
-          try {
-            const binary = atob(data.base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              bytes[i] = binary.charCodeAt(i);
-            }
-            pdfBytes = bytes.buffer;
-          } catch (decodeError) {
-            console.error('[PdfViewer] Base64 decode failed:', decodeError);
-            throw new Error('PDFデータのデコードに失敗しました。ファイルを再取得してください。');
-          }
+          // Base64をArrayBufferに変換（sanitization付き）
+          pdfBytes = safeBase64ToArrayBuffer(data.base64);
           // キャッシュに保存（modifiedTime付き）
           await setCachedPdf(actualFileId, pdfBytes, modifiedTime || data.modifiedTime);
           console.log('[PdfViewer] PDF cached:', actualFileId);

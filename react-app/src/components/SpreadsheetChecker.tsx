@@ -10,6 +10,7 @@
 import { useState, useEffect } from 'react';
 import { checkSpreadsheet, type CheckResult } from '../services/gemini';
 import { getApiKey } from '../services/apiKey';
+import { safeBase64ToArrayBuffer } from '../utils/base64';
 import * as XLSX from 'xlsx';
 import './AiChecker.css';
 
@@ -213,13 +214,8 @@ export function SpreadsheetChecker() {
         throw new Error(data.error);
       }
 
-      // Base64をデコードしてSheetJSでパース
-      const binaryString = atob(data.base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
+      // Base64をデコードしてSheetJSでパース（sanitization付き）
+      const bytes = new Uint8Array(safeBase64ToArrayBuffer(data.base64));
       const workbook = XLSX.read(bytes, { type: 'array' });
       setExcelWorkbook(workbook);
       setSpreadsheetName(data.fileName);
