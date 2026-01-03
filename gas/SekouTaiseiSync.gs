@@ -3,10 +3,13 @@
  *
  * ■ 変更履歴 (要再デプロイ) ※新しい順
  * ─────────────────────────────────────
+ * 2026-01-03: ProjectData新フィールド対応
+ *             → period_start, period_end, site_representative, chief_engineer
+ *             → getProjectInfoForValidation がプロジェクトレベルのフィールドを優先
  * 2026-01-03: check_result.extracted_fieldsから現場代理人名/主任技術者名を取得
  *             → AIチェック結果の構造化データを優先、ファイル名はフォールバック
  * 2026-01-03: getProjectInfo アクション追加
- *             → AIチェック用に工事情報（工事名、工期、現場代理人）を取得
+ *             → AIチェック用に工事情報（工事名、工期、現場代理人、主任技術者）を取得
  * 2026-01-02: getFileInfo に mimeType 追加
  *             → PDF/Excel/画像の判別に使用
  * 2026-01-02: listSheets に重要フィールド抽出機能追加
