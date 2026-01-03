@@ -46,7 +46,8 @@
       "Bash(npm run dev:*)",
       "Bash(trunk serve)",
       "Bash(npx vitest:*)",
-      "Bash(./tools/codebase-health/target/release/codebase-health:*)"
+      "Bash(./tools/codebase-health/target/release/codebase-health:*)",
+      "Bash(gh pr view:*)"
     ]
   }
 }

@@ -267,8 +267,11 @@ pub fn ContractorCard(contractor: Contractor) -> impl IntoView {
                         }
                     };
 
+                    let set_tooltip_click = ctx.set_check_result_tooltip;
                     let on_doc_click = move |ev: web_sys::MouseEvent| {
                         ev.prevent_default();
+                        // クリック時にホバー状態をリセット
+                        set_tooltip_click.set(CheckResultTooltipState::default());
                         if let Some(ref u) = url_click {
                             let file_type = detect_file_type(u);
                             match file_type {

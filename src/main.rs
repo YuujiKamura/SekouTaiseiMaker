@@ -715,6 +715,7 @@ fn App() -> impl IntoView {
             let set_project = set_project.clone();
             let project = project.clone();
             let window = web_sys::window().expect("window");
+            let set_check_result_tooltip = set_check_result_tooltip.clone();
             let closure = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                 // 全メッセージをログ
                 web_sys::console::log_1(&format!("[postMessage] Received event, data type: {:?}", event.data().js_typeof().as_string()).into());
@@ -856,6 +857,8 @@ fn App() -> impl IntoView {
                                     // チェック結果パネルをクリア
                                     set_check_mode.set(CheckMode::None);
                                     set_check_results.set(Vec::new());
+                                    // ホバー状態もリセット
+                                    set_check_result_tooltip.set(CheckResultTooltipState::default());
                                     set_view_mode.set(ViewMode::Dashboard);
                                 }
                                 _ => {}

@@ -41,6 +41,7 @@ pub fn PdfViewer(
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
     let set_view_mode = ctx.set_view_mode;
+    let set_check_result_tooltip = ctx.set_check_result_tooltip;
     let _api_connected = ctx.api_connected;
 
     // エラーメッセージ（ローカルファイル用）
@@ -62,8 +63,13 @@ pub fn PdfViewer(
         });
     }
 
-    let on_back = move |_: web_sys::MouseEvent| {
-        set_view_mode.set(ViewMode::Dashboard);
+    let on_back = {
+        let set_check_result_tooltip = set_check_result_tooltip.clone();
+        move |_: web_sys::MouseEvent| {
+            // 戻る時にホバー状態をリセット
+            set_check_result_tooltip.set(crate::CheckResultTooltipState::default());
+            set_view_mode.set(ViewMode::Dashboard);
+        }
     };
 
     // ローカルパス検出（H:\, C:\, /Users/ など）
@@ -110,6 +116,8 @@ pub fn PdfViewer(
                     {
                         match msg_type.as_str() {
                             "viewer-back" => {
+                                // 戻る時にホバー状態をリセット
+                                set_check_result_tooltip.set(crate::CheckResultTooltipState::default());
                                 set_view_mode.set(ViewMode::Dashboard);
                             }
                             "viewer-edit" => {

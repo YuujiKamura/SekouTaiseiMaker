@@ -99,7 +99,10 @@ pub fn ContextMenu() -> impl IntoView {
                             let set_view_mode = ctx.set_view_mode;
                             let set_menu = set_menu_state.clone();
 
+                            let set_tooltip = ctx.set_check_result_tooltip;
                             let on_open = move |_| {
+                                // クリック時にホバー状態をリセット
+                                set_tooltip.set(crate::CheckResultTooltipState::default());
                                 set_view_mode.set(crate::models::ViewMode::PdfViewer {
                                     contractor: contractor.clone(),
                                     doc_type: doc_type.clone(),
