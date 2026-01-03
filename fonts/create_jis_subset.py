@@ -25,7 +25,7 @@ def get_jis_x_0208_chars():
                 char = jis_with_esc.decode('iso-2022-jp')
                 if char and char.strip():
                     chars.add(char)
-            except:
+            except UnicodeDecodeError:
                 pass
 
     return chars
