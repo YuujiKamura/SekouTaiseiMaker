@@ -134,29 +134,6 @@ impl Reporter for HtmlReporter {
             </div>
         </div>
 
-        <div class="grid">
-            <div class="card">
-                <div class="card-title">Total Files</div>
-                <div class="card-value" id="total-files"></div>
-                <div class="card-sub" id="total-lines"></div>
-            </div>
-            <div class="card">
-                <div class="card-title">Code Lines</div>
-                <div class="card-value" id="code-lines"></div>
-                <div class="card-sub" id="code-percent"></div>
-            </div>
-            <div class="card">
-                <div class="card-title">Comments</div>
-                <div class="card-value" id="comment-lines"></div>
-                <div class="card-sub" id="comment-percent"></div>
-            </div>
-            <div class="card">
-                <div class="card-title">Issues Found</div>
-                <div class="card-value" id="total-issues"></div>
-                <div class="stats-row" id="issue-badges"></div>
-            </div>
-        </div>
-
         <div style="margin-top: 20px;">
             <h2>Issues</h2>
             <div class="tabs">
@@ -182,6 +159,29 @@ impl Reporter for HtmlReporter {
                 <div id="long-functions"></div>
                 <h3 style="margin-top: 15px;">Deeply Nested (>4 levels)</h3>
                 <div id="deeply-nested"></div>
+            </div>
+        </div>
+
+        <div class="grid" style="margin-top: 20px;">
+            <div class="card">
+                <div class="card-title">Total Files</div>
+                <div class="card-value" id="total-files"></div>
+                <div class="card-sub" id="total-lines"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Code Lines</div>
+                <div class="card-value" id="code-lines"></div>
+                <div class="card-sub" id="code-percent"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Comments</div>
+                <div class="card-value" id="comment-lines"></div>
+                <div class="card-sub" id="comment-percent"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Issues Found</div>
+                <div class="card-value" id="total-issues"></div>
+                <div class="stats-row" id="issue-badges"></div>
             </div>
         </div>
 
