@@ -97,18 +97,31 @@ export function SpreadsheetChecker() {
   const buildExcelSheetData = (workbook: XLSX.WorkBook, sheetIds: Set<number>) => {
     const allData: string[][] = [];
     const sheetNames: string[] = [];
-    const MAX_ROWS = 100000; // セキュリティ対策: 最大行数制限
-    const MAX_COLS = 1000;   // セキュリティ対策: 最大列数制限
+    const MAX_ROWS = 10000;  // セキュリティ対策: 最大行数制限（10,000行）
+    const MAX_COLS = 100;     // セキュリティ対策: 最大列数制限（100列）
+    const MAX_CELL_LENGTH = 1000; // セキュリティ対策: セル値の最大長（1,000文字）
+    const MAX_SHEETS = 10;    // セキュリティ対策: 最大シート数（10シート）
+
+    // セキュリティ対策: シート数制限
+    if (sheetIds.size > MAX_SHEETS) {
+      throw new Error(`処理できるシート数が多すぎます（最大${MAX_SHEETS}シート）`);
+    }
 
     for (const sheetId of sheetIds) {
       try {
         const sheetName = workbook.SheetNames[sheetId];
         const sheet = workbook.Sheets[sheetName];
         
-        // セキュリティ対策: 行数・列数制限を適用
+        // セキュリティ対策: 行数・列数・セル値長制限を適用
         const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
         const limitedData = jsonData.slice(0, MAX_ROWS).map(row => 
-          (row || []).slice(0, MAX_COLS).map(cell => String(cell ?? ''))
+          (row || []).slice(0, MAX_COLS).map(cell => {
+            const cellStr = String(cell ?? '');
+            // セル値の長さ制限
+            return cellStr.length > MAX_CELL_LENGTH 
+              ? cellStr.slice(0, MAX_CELL_LENGTH) + '...' 
+              : cellStr;
+          })
         );
 
         if (allData.length > 0) {
@@ -194,8 +207,8 @@ export function SpreadsheetChecker() {
 
       const bytes = new Uint8Array(safeBase64ToArrayBuffer(data.base64));
       
-      // セキュリティ対策: ファイルサイズ制限（50MB）
-      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+      // セキュリティ対策: ファイルサイズ制限（10MB）
+      const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
       if (bytes.length > MAX_FILE_SIZE) {
         throw new Error(`ファイルサイズが大きすぎます（最大${MAX_FILE_SIZE / 1024 / 1024}MB）`);
       }
@@ -209,6 +222,9 @@ export function SpreadsheetChecker() {
             cellDates: false,
             cellNF: false,
             cellStyles: false,
+            // セキュリティ対策: 読み込みオプションを最小限に
+            dense: false,
+            raw: false,
           });
           resolve(workbook);
         } catch (error) {
@@ -217,23 +233,38 @@ export function SpreadsheetChecker() {
       });
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('ファイル処理がタイムアウトしました')), 30000); // 30秒
+        setTimeout(() => reject(new Error('ファイル処理がタイムアウトしました')), 10000); // 10秒
       });
 
       const workbook = await Promise.race([parsePromise, timeoutPromise]);
+      
+      // セキュリティ対策: シート数制限
+      const MAX_SHEETS_TOTAL = 10;
+      if (workbook.SheetNames.length > MAX_SHEETS_TOTAL) {
+        throw new Error(`シート数が多すぎます（最大${MAX_SHEETS_TOTAL}シート）`);
+      }
+      
       setExcelWorkbook(workbook);
       setSpreadsheetName(data.fileName);
 
       // シート一覧を構築（フィールド抽出なし、シート名とプレビューのみ）
+      const MAX_PREVIEW_ROWS = 3;
+      const MAX_PREVIEW_COLS = 5;
+      const MAX_PREVIEW_CELL_LENGTH = 50;
       const sheets: SheetInfo[] = workbook.SheetNames.map((name, index) => {
         const sheet = workbook.Sheets[name];
         const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][];
-        const rowCount = jsonData.length;
-        const colCount = jsonData[0]?.length || 0;
+        const rowCount = Math.min(jsonData.length, 10000); // 実際の行数（最大10,000行まで）
+        const colCount = Math.min(jsonData[0]?.length || 0, 100); // 実際の列数（最大100列まで）
 
-        // プレビュー（先頭3行5列）
-        const preview = jsonData.slice(0, 3).map(row =>
-          (row || []).slice(0, 5).map(cell => String(cell ?? ''))
+        // プレビュー（先頭3行5列、セル値も制限）
+        const preview = jsonData.slice(0, MAX_PREVIEW_ROWS).map(row =>
+          (row || []).slice(0, MAX_PREVIEW_COLS).map(cell => {
+            const cellStr = String(cell ?? '');
+            return cellStr.length > MAX_PREVIEW_CELL_LENGTH 
+              ? cellStr.slice(0, MAX_PREVIEW_CELL_LENGTH) + '...' 
+              : cellStr;
+          })
         );
 
         return {
