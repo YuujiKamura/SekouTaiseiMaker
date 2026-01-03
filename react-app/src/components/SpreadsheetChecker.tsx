@@ -73,6 +73,9 @@ export function SpreadsheetChecker() {
 
   // Excel用のワークブック
   const [excelWorkbook, setExcelWorkbook] = useState<XLSX.WorkBook | null>(null);
+  const [fixing, setFixing] = useState(false);
+  const [fixMessage, setFixMessage] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   // 工事情報（妥当性判定用）
   const [projectInfo, setProjectInfo] = useState<{
@@ -92,6 +95,39 @@ export function SpreadsheetChecker() {
   const gasUrl = getUrlParam('gasUrl');
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || docType;
+
+  useEffect(() => {
+    return () => {
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+    };
+  }, [downloadUrl]);
+
+  const buildExcelSheetData = (workbook: XLSX.WorkBook, sheetIds: Set<number>) => {
+    const allData: string[][] = [];
+    const sheetNames: string[] = [];
+
+    for (const sheetId of sheetIds) {
+      const sheetName = workbook.SheetNames[sheetId];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+
+      if (allData.length > 0) {
+        allData.push(['']);
+        allData.push([`=== ${sheetName} ===`]);
+      } else {
+        allData.push([`=== ${sheetName} ===`]);
+      }
+
+      jsonData.forEach(row => {
+        allData.push((row as string[]).map(cell => String(cell ?? '')));
+      });
+      sheetNames.push(sheetName);
+    }
+
+    return { allData, sheetNames };
+  };
 
   // データ取得（Excel or スプレッドシート）
   useEffect(() => {
@@ -238,10 +274,9 @@ export function SpreadsheetChecker() {
     setError(null);
 
     try {
-      const allData: string[][] = [];
-      const sheetNames: string[] = [];
-
       if (isExcel && excelWorkbook) {
+        const allData: string[][] = [];
+        const sheetNames: string[] = [];
         for (const sheetId of selectedSheetIds) {
           const sheetName = excelWorkbook.SheetNames[sheetId];
           const sheet = excelWorkbook.Sheets[sheetName];
@@ -259,7 +294,11 @@ export function SpreadsheetChecker() {
           });
           sheetNames.push(sheetName);
         }
+        setSheetData(allData);
+        setCurrentSheetName(sheetNames.join(', '));
       } else {
+        const allData: string[][] = [];
+        const sheetNames: string[] = [];
         for (const sheetId of selectedSheetIds) {
           const url = `${gasUrl}?action=fetchSpreadsheet&spreadsheetId=${encodeURIComponent(spreadsheetId!)}&gid=${sheetId}`;
           const response = await fetch(url, { cache: 'no-store' });
@@ -278,10 +317,9 @@ export function SpreadsheetChecker() {
           allData.push(...data.data);
           sheetNames.push(data.sheetName);
         }
+        setSheetData(allData);
+        setCurrentSheetName(sheetNames.join(', '));
       }
-
-      setSheetData(allData);
-      setCurrentSheetName(sheetNames.join(', '));
       setPhase('check');
       setLoading(false);
     } catch (e) {
@@ -360,6 +398,10 @@ export function SpreadsheetChecker() {
   };
 
   const fileTypeLabel = isExcel ? 'Excel' : 'スプレッドシート';
+  const selectedSheets = sheetList.filter(sheet => selectedSheetIds.has(sheet.sheetId));
+  const fixableCount = isExcel && projectName
+    ? selectedSheets.filter(sheet => needsOfficeNameFix(sheet.fields, projectName)).length
+    : 0;
 
   // シート選択フェーズ
   if (phase === 'select') {
@@ -395,6 +437,33 @@ export function SpreadsheetChecker() {
                     <small>Build: {BUILD_VERSION}</small>
                   </div>
                 </div>
+                {isExcel && projectName && (
+                  <div className="ai-fix-panel">
+                    <div className="ai-fix-text">
+                      <strong>事業所名の自動修正</strong>
+                      <p>工事情報の工事名と一致していない事業所名を、AIが工事名に書き換えます（選択中のシートのみ）。</p>
+                      {fixMessage && <p className="fix-message">{fixMessage}</p>}
+                    </div>
+                    <div className="ai-fix-actions">
+                      <button
+                        className="ai-fix-btn"
+                        onClick={applyOfficeNameAutoFix}
+                        disabled={fixing || selectedSheetIds.size === 0 || fixableCount === 0}
+                      >
+                        {fixing ? 'AI修正中...' : `AIで修正 (${fixableCount}件候補)`}
+                      </button>
+                      {downloadUrl && (
+                        <a
+                          className="download-link"
+                          href={downloadUrl}
+                          download={`${spreadsheetName || 'spreadsheet'}-fixed.xlsx`}
+                        >
+                          修正後Excelをダウンロード
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="sheet-list">
                   {sheetList.map(sheet => (
                     <div
