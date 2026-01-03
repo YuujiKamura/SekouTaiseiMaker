@@ -157,39 +157,38 @@ impl Reporter for HtmlReporter {
             </div>
         </div>
 
-        <h2>Language Distribution</h2>
+        <div style="margin-top: 20px;">
+            <h2>Issues</h2>
+            <div class="tabs">
+                <button class="tab active" onclick="filterIssues('all')">All</button>
+                <button class="tab" onclick="filterIssues('critical')">Critical</button>
+                <button class="tab" onclick="filterIssues('high')">High</button>
+                <button class="tab" onclick="filterIssues('medium')">Medium</button>
+            </div>
+            <div class="card">
+                <div class="issue-list" id="issue-list"></div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <h2>Complexity</h2>
+            <div class="card">
+                <div class="stats-row" style="margin-bottom: 15px;">
+                    <div class="stat">Avg: <strong id="avg-complexity"></strong></div>
+                    <div class="stat">Max: <strong id="max-complexity"></strong></div>
+                    <div class="stat">Functions: <strong id="total-functions"></strong></div>
+                </div>
+                <h3>Long Functions (>50 lines)</h3>
+                <div id="long-functions"></div>
+                <h3 style="margin-top: 15px;">Deeply Nested (>4 levels)</h3>
+                <div id="deeply-nested"></div>
+            </div>
+        </div>
+
+        <h2 style="margin-top: 20px;">Language Distribution</h2>
         <div class="card">
             <div class="lang-bar" id="lang-bar"></div>
             <div class="lang-legend" id="lang-legend"></div>
-        </div>
-
-        <div class="grid" style="margin-top: 20px;">
-            <div>
-                <h2>Issues</h2>
-                <div class="tabs">
-                    <button class="tab active" onclick="filterIssues('all')">All</button>
-                    <button class="tab" onclick="filterIssues('critical')">Critical</button>
-                    <button class="tab" onclick="filterIssues('high')">High</button>
-                    <button class="tab" onclick="filterIssues('medium')">Medium</button>
-                </div>
-                <div class="card">
-                    <div class="issue-list" id="issue-list"></div>
-                </div>
-            </div>
-            <div>
-                <h2>Complexity</h2>
-                <div class="card">
-                    <div class="stats-row" style="margin-bottom: 15px;">
-                        <div class="stat">Avg: <strong id="avg-complexity"></strong></div>
-                        <div class="stat">Max: <strong id="max-complexity"></strong></div>
-                        <div class="stat">Functions: <strong id="total-functions"></strong></div>
-                    </div>
-                    <h3>Long Functions (>50 lines)</h3>
-                    <div id="long-functions"></div>
-                    <h3 style="margin-top: 15px;">Deeply Nested (>4 levels)</h3>
-                    <div id="deeply-nested"></div>
-                </div>
-            </div>
         </div>
     </div>
 

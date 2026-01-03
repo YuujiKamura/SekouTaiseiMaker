@@ -82,6 +82,7 @@ export function SpreadsheetChecker() {
     periodStart?: string;
     periodEnd?: string;
     siteRepresentative?: string;
+    chiefEngineer?: string;
     today?: string;
   } | null>(null);
 
@@ -180,6 +181,7 @@ export function SpreadsheetChecker() {
             periodStart: data.periodStart,
             periodEnd: data.periodEnd,
             siteRepresentative: data.siteRepresentative,
+            chiefEngineer: data.chiefEngineer,
             today: data.today,
           });
           console.log('[SpreadsheetChecker] Project info:', data);
@@ -399,6 +401,7 @@ export function SpreadsheetChecker() {
         periodStart: projectInfo?.periodStart,
         periodEnd: projectInfo?.periodEnd,
         siteRepresentative: projectInfo?.siteRepresentative,
+        chiefEngineer: projectInfo?.chiefEngineer,
         today: projectInfo?.today || new Date().toISOString().slice(0, 10),
       };
 
