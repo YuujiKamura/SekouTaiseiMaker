@@ -271,7 +271,9 @@ impl CodebaseAnalyzer {
             if low_count as f64 / files > 5.0 {
                 score -= 5.0;
             } else if low_count > 0 {
-                score -= (low_count as f64 / files * 1.0).min(5.0);
+                // Low issuesは最大5点まで減点（288件でも5点まで）
+                let low_penalty = (low_count as f64 / files * 1.0).min(5.0);
+                score -= low_penalty;
             }
         }
 

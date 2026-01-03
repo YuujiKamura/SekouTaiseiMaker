@@ -42,14 +42,37 @@ pub fn ProjectView(project: ProjectData) -> impl IntoView {
 
     let project_docs = project.project_docs.clone();
 
+    // 工期表示: 新形式(period_start/period_end)があればそれを使用、なければ旧形式
+    let period_display = if let (Some(start), Some(end)) = (&project.period_start, &project.period_end) {
+        format!("{} 〜 {}", start, end)
+    } else if !project.period.is_empty() {
+        project.period.clone()
+    } else {
+        "未設定".to_string()
+    };
+
+    // 担当者情報
+    let representative_display = project.site_representative.clone().unwrap_or_default();
+    let chief_engineer_display = project.chief_engineer.clone().unwrap_or_default();
+
     view! {
         <div class="project-view">
             <div class="project-header">
                 <h3>{project.project_name.clone()}</h3>
                 <div class="project-meta">
                     <span class="client">{project.client.clone()}</span>
-                    <span class="period">{project.period.clone()}</span>
+                    <span class="period">{period_display}</span>
                 </div>
+                {(!representative_display.is_empty() || !chief_engineer_display.is_empty()).then(|| view! {
+                    <div class="project-staff">
+                        {(!representative_display.is_empty()).then(|| view! {
+                            <span class="staff-item">"現場代理人: " {representative_display.clone()}</span>
+                        })}
+                        {(!chief_engineer_display.is_empty()).then(|| view! {
+                            <span class="staff-item">"主任技術者: " {chief_engineer_display.clone()}</span>
+                        })}
+                    </div>
+                })}
             </div>
 
             <div class="progress-section">

@@ -868,9 +868,10 @@ function testSettings() {
 
 /**
  * AIチェック用に工事情報を取得
- * - 工事名、工期（開始日・終了日）、元請けの現場代理人
+ * - 工事名、工期（開始日・終了日）、現場代理人、主任技術者
  *
  * ## 変更履歴
+ * - 2026-01-03: ProjectDataの新フィールド(period_start, period_end, site_representative, chief_engineer)に対応
  * - 2026-01-03: 現場代理人名を書類リスト（041_現場代理人資格, 042_現場代理人在籍）から取得するよう改善
  */
 function getProjectInfoForValidation() {
@@ -882,25 +883,44 @@ function getProjectInfoForValidation() {
 
     const project = projectData.project;
 
-    // 工期を解析（「令和7年1月〜令和7年3月」のような形式）
-    const periodInfo = parsePeriod(project.period);
+    // 工期: 新フィールドがあればそれを使用、なければ旧形式をパース
+    let periodStart = project.period_start || null;
+    let periodEnd = project.period_end || null;
 
-    // 元請け業者の現場代理人を取得
-    let siteRepresentative = null;
-    if (project.contractors && project.contractors.length > 0) {
-      // 元請け（最初の業者）の現場代理人を探す
+    if (!periodStart || !periodEnd) {
+      // 旧形式の工期文字列を解析
+      const periodInfo = parsePeriod(project.period);
+      periodStart = periodStart || periodInfo.start;
+      periodEnd = periodEnd || periodInfo.end;
+    }
+
+    // 現場代理人: プロジェクトレベルのフィールドを優先
+    let siteRepresentative = project.site_representative || null;
+
+    // プロジェクトレベルになければ業者データから取得
+    if (!siteRepresentative && project.contractors && project.contractors.length > 0) {
       const primeContractor = project.contractors[0];
 
-      // まず直接プロパティをチェック
       siteRepresentative = primeContractor.site_representative ||
                            primeContractor.siteRepresentative ||
                            primeContractor.representative ||
                            primeContractor.manager ||
                            null;
 
-      // 見つからない場合、書類リストから抽出を試みる
       if (!siteRepresentative && primeContractor.docs) {
         siteRepresentative = extractRepresentativeFromDocs(primeContractor.docs);
+      }
+    }
+
+    // 主任技術者: プロジェクトレベルのフィールドを優先
+    let chiefEngineer = project.chief_engineer || null;
+
+    // プロジェクトレベルになければ業者データから取得
+    if (!chiefEngineer && project.contractors && project.contractors.length > 0) {
+      const primeContractor = project.contractors[0];
+
+      if (primeContractor.docs) {
+        chiefEngineer = extractChiefEngineerFromDocs(primeContractor.docs);
       }
     }
 
@@ -909,10 +929,10 @@ function getProjectInfoForValidation() {
       projectName: project.project_name || null,
       client: project.client || null,
       period: project.period || null,
-      periodStart: periodInfo.start,
-      periodEnd: periodInfo.end,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
       siteRepresentative: siteRepresentative,
-      // 今日の日付（チェック用）
+      chiefEngineer: chiefEngineer,
       today: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd')
     };
   } catch (err) {

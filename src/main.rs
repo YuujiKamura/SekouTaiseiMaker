@@ -1053,6 +1053,10 @@ fn App() -> impl IntoView {
             project_name: "新規工事".to_string(),
             client: "".to_string(),
             period: "".to_string(),
+            period_start: None,
+            period_end: None,
+            site_representative: None,
+            chief_engineer: None,
             project_docs: ProjectDocs::default(),
             contractors: vec![
                 Contractor {
