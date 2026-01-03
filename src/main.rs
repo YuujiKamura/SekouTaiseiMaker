@@ -19,7 +19,7 @@ use components::{CheckResultTooltip, ContextMenu};
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
 use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time, save_gas_url_to_sheet};
 use utils::{encode_base64, decode_base64};
-use utils::log_trace::{log_info, log_info_with_data, log_warn, log_error, log_error_with_data, download_logs, clear_logs};
+use utils::log_trace::{log_info, log_info_with_data, log_warn, log_error, log_error_with_data, download_logs, clear_logs, copy_logs_to_clipboard_async};
 use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
 use views::ocr_viewer::{OcrDocument, OcrToken, OcrViewContext, OcrViewer};
 use components::{ProjectView, ProjectEditor};
@@ -1275,6 +1275,25 @@ fn App() -> impl IntoView {
                                 "GitHub Actions ↗"
                             </a>
                             <hr class="menu-divider" />
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                spawn_local(async move {
+                                    match copy_logs_to_clipboard_async().await {
+                                        Ok(_) => {
+                                            if let Some(window) = web_sys::window() {
+                                                let _ = window.alert_with_message("ログをクリップボードにコピーしました");
+                                            }
+                                        }
+                                        Err(e) => {
+                                            if let Some(window) = web_sys::window() {
+                                                let _ = window.alert_with_message(&format!("コピー失敗: {}", e));
+                                            }
+                                        }
+                                    }
+                                });
+                            }>
+                                "ログをクリップボードにコピー"
+                            </button>
                             <button class="menu-item" on:click=move |_| {
                                 set_menu_open.set(false);
                                 download_logs();

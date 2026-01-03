@@ -2,6 +2,7 @@
 //! すべての操作とイベントを自動記録し、後から確認できるようにする
 
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -207,5 +208,31 @@ pub fn get_logs_json() -> String {
     LOG_TRACE.with(|trace| {
         trace.borrow().get_logs_json()
     })
+}
+
+pub async fn copy_logs_to_clipboard_async() -> Result<(), String> {
+    let json_str = get_logs_json();
+    
+    if let Some(window) = web_sys::window() {
+        let navigator = window.navigator();
+        let clipboard = navigator.clipboard();
+        
+        let promise = clipboard.write_text(&json_str);
+        let result = wasm_bindgen_futures::JsFuture::from(promise).await;
+        
+        match result {
+            Ok(_) => {
+                log_info("log-trace", "ログをクリップボードにコピーしました");
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("クリップボードへのコピー失敗: {:?}", e);
+                log_error("log-trace", &error_msg);
+                Err(error_msg)
+            }
+        }
+    } else {
+        Err("windowが利用できません".to_string())
+    }
 }
 
