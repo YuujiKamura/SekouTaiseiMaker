@@ -1,9 +1,13 @@
 /**
  * WebAuthn Service - パスキー（指紋/顔認証）でAPIキーを保護
+ * APIキーは暗号化してlocalStorageに保存（XSS対策）
  */
 
-const CREDENTIAL_ID_KEY = 'sekou_taisei_credential_id';
-const PROTECTED_API_KEY = 'sekou_taisei_passkey_api_key';
+import { encryptWithFixedKey, decryptWithFixedKey } from '../utils/crypto';
+
+// localStorage key names (not actual credentials)
+const STORAGE_KEY_CREDENTIAL_ID = 'sekou_taisei_credential_id';
+const STORAGE_KEY_API_KEY_ENCRYPTED = 'sekou_taisei_passkey_api_key_enc';
 
 export const isWebAuthnSupported = (): boolean => {
   return !!(
@@ -24,7 +28,7 @@ export const isBiometricAvailable = async (): Promise<boolean> => {
 };
 
 export const hasRegisteredPasskey = (): boolean => {
-  return !!(localStorage.getItem(CREDENTIAL_ID_KEY) && localStorage.getItem(PROTECTED_API_KEY));
+  return !!(localStorage.getItem(STORAGE_KEY_CREDENTIAL_ID) && localStorage.getItem(STORAGE_KEY_API_KEY_ENCRYPTED));
 };
 
 const generateChallenge = (): Uint8Array => {
@@ -86,8 +90,10 @@ export const registerPasskey = async (apiKey: string): Promise<{ success: boolea
       return { success: false, error: 'キャンセルされました' };
     }
 
-    localStorage.setItem(CREDENTIAL_ID_KEY, bufferToBase64url(credential.rawId));
-    localStorage.setItem(PROTECTED_API_KEY, apiKey);
+    localStorage.setItem(STORAGE_KEY_CREDENTIAL_ID, bufferToBase64url(credential.rawId));
+    // Encrypt API key before storing (XSS protection)
+    const encryptedApiKey = await encryptWithFixedKey(apiKey);
+    localStorage.setItem(STORAGE_KEY_API_KEY_ENCRYPTED, encryptedApiKey);
     return { success: true };
   } catch (e: unknown) {
     const err = e as Error & { name?: string };
@@ -102,7 +108,7 @@ export const authenticateWithPasskey = async (): Promise<{ success: boolean; api
     return { success: false, error: 'WebAuthn非対応' };
   }
 
-  const storedCredentialId = localStorage.getItem(CREDENTIAL_ID_KEY);
+  const storedCredentialId = localStorage.getItem(STORAGE_KEY_CREDENTIAL_ID);
   if (!storedCredentialId) {
     return { success: false, error: 'パスキー未登録' };
   }
@@ -126,9 +132,15 @@ export const authenticateWithPasskey = async (): Promise<{ success: boolean; api
       return { success: false, error: 'キャンセルされました' };
     }
 
-    const apiKey = localStorage.getItem(PROTECTED_API_KEY);
-    if (!apiKey) {
+    // Decrypt API key from storage
+    const encryptedApiKey = localStorage.getItem(STORAGE_KEY_API_KEY_ENCRYPTED);
+    if (!encryptedApiKey) {
       return { success: false, error: 'APIキーが見つかりません' };
+    }
+
+    const apiKey = await decryptWithFixedKey(encryptedApiKey);
+    if (!apiKey) {
+      return { success: false, error: 'APIキーの復号に失敗しました' };
     }
 
     return { success: true, apiKey };
@@ -140,6 +152,25 @@ export const authenticateWithPasskey = async (): Promise<{ success: boolean; api
 };
 
 export const removePasskey = (): void => {
-  localStorage.removeItem(CREDENTIAL_ID_KEY);
-  localStorage.removeItem(PROTECTED_API_KEY);
+  localStorage.removeItem(STORAGE_KEY_CREDENTIAL_ID);
+  localStorage.removeItem(STORAGE_KEY_API_KEY_ENCRYPTED);
+  // Clean up legacy plaintext storage if exists
+  localStorage.removeItem('sekou_taisei_passkey_api_key');
+};
+
+/**
+ * Migrate legacy plaintext API key to encrypted storage
+ * Call this on app startup to ensure existing users are migrated
+ */
+export const migratePasskeyStorage = async (): Promise<void> => {
+  const legacyKey = localStorage.getItem('sekou_taisei_passkey_api_key');
+  const credentialId = localStorage.getItem(STORAGE_KEY_CREDENTIAL_ID);
+
+  if (legacyKey && credentialId && !localStorage.getItem(STORAGE_KEY_API_KEY_ENCRYPTED)) {
+    // Migrate to encrypted storage
+    const encryptedApiKey = await encryptWithFixedKey(legacyKey);
+    localStorage.setItem(STORAGE_KEY_API_KEY_ENCRYPTED, encryptedApiKey);
+    localStorage.removeItem('sekou_taisei_passkey_api_key');
+    console.log('[WebAuthn] Migrated API key to encrypted storage');
+  }
 };
