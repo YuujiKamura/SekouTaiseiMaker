@@ -866,6 +866,107 @@
 }
 
 /* ============================================
+   Excel修正セクション
+   ============================================ */
+
+.fix-section {
+  margin: 20px 0;
+  padding: 16px;
+  background: #fff8e6;
+  border: 2px solid #ffc107;
+  border-radius: 8px;
+}
+
+.fix-section h4 {
+  margin: 0 0 12px;
+  color: #856404;
+  font-size: 14px;
+}
+
+.fix-candidates-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+}
+
+.fix-candidate-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.fix-candidate-item .fix-label {
+  font-weight: 600;
+  color: #333;
+  min-width: 80px;
+}
+
+.fix-candidate-item .fix-cell {
+  font-size: 11px;
+  color: #6366f1;
+  font-family: monospace;
+}
+
+.fix-candidate-item .fix-change {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fix-candidate-item .fix-old {
+  color: #dc3545;
+  text-decoration: line-through;
+  background: #ffe0e0;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.fix-candidate-item .fix-arrow {
+  color: #666;
+  font-weight: bold;
+}
+
+.fix-candidate-item .fix-new {
+  color: #28a745;
+  background: #e6ffe6;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.apply-fix-btn {
+  display: block;
+  width: 100%;
+  padding: 12px 20px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.apply-fix-btn:hover {
+  background: #218838;
+}
+
+.apply-fix-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+/* ============================================
    モバイル対応
    ============================================ */
 

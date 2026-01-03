@@ -47,18 +47,29 @@ trunk build --release
 
 コードベースの健全性レポート（`dist/health-report.html`）を更新する方法：
 
-```bash
-# 方法1: 自動更新（Trunkビルド時に自動生成）
-trunk build --release
+#### 方法1: GUIから更新（推奨）
 
-# 方法2: 手動更新（Windows）
+```bash
+# 1. 開発サーバーを起動（別ターミナル）
+node scripts/health-report-server.js
+
+# 2. ブラウザでアプリを開き、メニューから「ヘルスダッシュボード更新」をクリック
+```
+
+#### 方法2: 自動更新（Trunkビルド時に自動生成）
+
+```bash
+trunk build --release
+```
+
+#### 方法3: 手動更新
+
+```bash
+# Windows
 scripts\generate-health-report.bat
 
-# 方法3: 手動更新（Linux/Mac）
+# Linux/Mac
 bash scripts/generate-health-report.sh
-
-# 方法4: 直接実行
-tools/codebase-health/target/release/codebase-health.exe analyze --format html --output dist/health-report.html
 ```
 
 ビルド後、`http://127.0.0.1:8080/health-report.html` で確認できます。

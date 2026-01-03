@@ -1206,29 +1206,51 @@ fn App() -> impl IntoView {
                             <button class="menu-item" on:click=move |_| {
                                 set_menu_open.set(false);
                                 spawn_local(async move {
-                                    // 更新コマンドをクリップボードにコピー
+                                    // 開発サーバーにリクエストを送信して更新
                                     let window = web_sys::window().unwrap();
-                                    let navigator = window.navigator();
-                                    let clipboard = navigator.clipboard();
-                                    // OSを判定（navigator.platformから推測）
-                                    let platform = navigator.platform().unwrap_or_default().to_lowercase();
-                                    let command = if platform.contains("win") {
-                                        "scripts\\generate-health-report.bat"
-                                    } else {
-                                        "bash scripts/generate-health-report.sh"
-                                    };
-                                    let promise = clipboard.write_text(&command);
-                                    match JsFuture::from(promise).await {
-                                        Ok(_) => {
-                                            let _ = window.alert_with_message("更新コマンドをクリップボードにコピーしました。\n\nターミナルで実行してください。\n\nまたは、trunk build --release を実行すると自動更新されます。");
+                                    let url = "http://localhost:8081/update";
+                                    
+                                    match Request::new_with_str(url) {
+                                        Ok(request) => {
+                                            request.set_method("POST");
+                                            match JsFuture::from(window.fetch_with_request(&request)).await {
+                                                Ok(response) => {
+                                                    let resp: Response = response.dyn_into().unwrap();
+                                                    if resp.status() == 200 {
+                                                        let _ = window.alert_with_message("ヘルスダッシュボードを更新しました！\n\nページをリロードして確認してください。");
+                                                    } else {
+                                                        let _ = window.alert_with_message(&format!("更新に失敗しました。\n\n開発サーバーが起動しているか確認してください:\n\nnode scripts/health-report-server.js\n\nまたは、trunk build --release を実行すると自動更新されます。"));
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    // サーバーが起動していない場合、コマンドをコピー
+                                                    let navigator = window.navigator();
+                                                    let clipboard = navigator.clipboard();
+                                                    let platform = navigator.platform().unwrap_or_default().to_lowercase();
+                                                    let command = if platform.contains("win") {
+                                                        "scripts\\generate-health-report.bat"
+                                                    } else {
+                                                        "bash scripts/generate-health-report.sh"
+                                                    };
+                                                    let promise = clipboard.write_text(&command);
+                                                    match JsFuture::from(promise).await {
+                                                        Ok(_) => {
+                                                            let _ = window.alert_with_message(&format!("開発サーバーが起動していません。\n\n更新コマンドをクリップボードにコピーしました。\n\nターミナルで実行してください。\n\nまたは、開発サーバーを起動:\nnode scripts/health-report-server.js"));
+                                                        }
+                                                        Err(_) => {
+                                                            let _ = window.alert_with_message("更新方法:\n\n1. 開発サーバーを起動: node scripts/health-report-server.js\n2. または、trunk build --release を実行");
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                         Err(_) => {
-                                            let _ = window.alert_with_message("更新方法:\n\nWindows: scripts\\generate-health-report.bat\nLinux/Mac: bash scripts/generate-health-report.sh\n\nまたは: trunk build --release");
+                                            let _ = window.alert_with_message("更新方法:\n\n1. 開発サーバーを起動: node scripts/health-report-server.js\n2. または、trunk build --release を実行");
                                         }
                                     }
                                 });
                             }>
-                                "ヘルスダッシュボード更新コマンドをコピー"
+                                "ヘルスダッシュボード更新"
                             </button>
                             <hr class="menu-divider" />
                             // GAS連携

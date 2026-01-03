@@ -92,6 +92,9 @@ export function SpreadsheetChecker() {
     today?: string;
   } | null>(null);
 
+  // 修正候補
+  const [fixCandidates, setFixCandidates] = useState<CellFix[]>([]);
+
   const spreadsheetId = getUrlParam('spreadsheetId');
   const fileId = getUrlParam('fileId');
   const isExcel = getUrlParam('isExcel') === 'true';
@@ -417,6 +420,25 @@ export function SpreadsheetChecker() {
       if (extractionResult) {
         console.log('[SpreadsheetChecker] Extraction result:', extractionResult);
         setResult(extractionResult);
+
+        // Excel の場合、修正候補を生成
+        if (isExcel && excelWorkbook && projectInfo) {
+          const currentSheetNameForFix = Array.from(selectedSheetIds)
+            .map(id => excelWorkbook.SheetNames[id])
+            .find(name => name) || excelWorkbook.SheetNames[0];
+
+          const candidates = generateFixCandidates(
+            extractionResult.fields,
+            currentSheetNameForFix,
+            {
+              projectName: projectInfo.projectName,
+              siteRepresentative: projectInfo.siteRepresentative,
+              chiefEngineer: projectInfo.chiefEngineer,
+            }
+          );
+          setFixCandidates(candidates);
+          console.log('[SpreadsheetChecker] Fix candidates:', candidates);
+        }
       } else {
         setError('書類タイプの判定に失敗しました');
       }
@@ -441,7 +463,7 @@ export function SpreadsheetChecker() {
     if (result) {
       // ExtractionResultをCheckResult形式に変換
       const checkResult: CheckResult = convertExtractionResultToCheckResult(result);
-      
+
       window.parent.postMessage({
         type: 'ai-check-result',
         result: checkResult,
@@ -452,6 +474,23 @@ export function SpreadsheetChecker() {
         fileId: spreadsheetId || fileId, // フィールド名をfileIdに統一
       }, '*');
     }
+  };
+
+  // xlsx修正実行
+  const handleApplyFixes = () => {
+    if (!excelWorkbook || fixCandidates.length === 0) return;
+
+    // ワークブックをクローン（元データを変更しない）
+    const clonedWorkbook = JSON.parse(JSON.stringify(excelWorkbook)) as XLSX.WorkBook;
+
+    // 修正を適用
+    applyFixesToWorkbook(clonedWorkbook, fixCandidates);
+
+    // ダウンロード
+    downloadFixedXlsx(clonedWorkbook, spreadsheetName);
+
+    // 修正完了通知
+    alert(`${fixCandidates.length}件の修正を適用しました。\n修正済みファイルがダウンロードされます。`);
   };
 
   const fileTypeLabel = isExcel ? 'Excel' : 'スプレッドシート';
@@ -669,6 +708,29 @@ export function SpreadsheetChecker() {
                   ))}
               </ul>
             </div>
+
+            {/* Excel修正セクション */}
+            {isExcel && fixCandidates.length > 0 && (
+              <div className="fix-section">
+                <h4>自動修正候補 ({fixCandidates.length}件)</h4>
+                <ul className="fix-candidates-list">
+                  {fixCandidates.map((fix, i) => (
+                    <li key={i} className="fix-candidate-item">
+                      <span className="fix-label">{fix.label}</span>
+                      <span className="fix-cell">[{fix.cell}]</span>
+                      <span className="fix-change">
+                        <span className="fix-old">{fix.oldValue}</span>
+                        <span className="fix-arrow">→</span>
+                        <span className="fix-new">{fix.newValue}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <button className="apply-fix-btn" onClick={handleApplyFixes}>
+                  修正してダウンロード
+                </button>
+              </div>
+            )}
 
             {/* その他のフィールド */}
             {result.fields.filter(f => !KEY_FIELDS.includes(f.label)).length > 0 && (
