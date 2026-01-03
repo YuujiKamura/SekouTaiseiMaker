@@ -1210,13 +1210,13 @@ fn App() -> impl IntoView {
                                 let navigator = window.navigator();
                                 let clipboard = navigator.clipboard().unwrap();
                                 // OSを判定（navigator.platformから推測）
-                                let platform = navigator.platform().to_lowercase();
+                                let platform = navigator.platform().as_string().unwrap_or_default().to_lowercase();
                                 let command = if platform.contains("win") {
                                     "scripts\\generate-health-report.bat"
                                 } else {
                                     "bash scripts/generate-health-report.sh"
                                 };
-                                let promise = clipboard.write_text(command);
+                                let promise = clipboard.write_text(&command);
                                 spawn_local(async move {
                                     match JsFuture::from(promise).await {
                                         Ok(_) => {
