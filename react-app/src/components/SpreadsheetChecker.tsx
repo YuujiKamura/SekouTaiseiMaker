@@ -97,7 +97,7 @@ export function SpreadsheetChecker() {
   const buildExcelSheetData = (workbook: XLSX.WorkBook, sheetIds: Set<number>) => {
     const allData: string[][] = [];
     const sheetNames: string[] = [];
-    const MAX_ROWS = 10000;  // セキュリティ対策: 最大行数制限（10,000行）
+    const MAX_ROWS = 500;    // セキュリティ対策: 最大行数制限（500行）
     const MAX_COLS = 100;     // セキュリティ対策: 最大列数制限（100列）
     const MAX_CELL_LENGTH = 1000; // セキュリティ対策: セル値の最大長（1,000文字）
     const MAX_SHEETS = 10;    // セキュリティ対策: 最大シート数（10シート）
@@ -254,7 +254,7 @@ export function SpreadsheetChecker() {
       const sheets: SheetInfo[] = workbook.SheetNames.map((name, index) => {
         const sheet = workbook.Sheets[name];
         const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][];
-        const rowCount = Math.min(jsonData.length, 10000); // 実際の行数（最大10,000行まで）
+        const rowCount = Math.min(jsonData.length, 500); // 実際の行数（最大500行まで）
         const colCount = Math.min(jsonData[0]?.length || 0, 100); // 実際の列数（最大100列まで）
 
         // プレビュー（先頭3行5列、セル値も制限）
