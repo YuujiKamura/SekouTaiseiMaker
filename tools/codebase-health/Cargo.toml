@@ -1,0 +1,45 @@
+[package]
+name = "codebase-health"
+version = "0.1.0"
+edition = "2021"
+authors = ["SekouTaiseiMaker Team"]
+description = "Codebase health analysis tool with Claude task instruction generation"
+
+[[bin]]
+name = "codebase-health"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# File operations
+walkdir = "2.4"
+ignore = "0.4"
+glob = "0.3"
+
+# Regex for pattern matching
+regex = "1.10"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Syntax analysis (optional, for future expansion)
+tree-sitter = { version = "0.20", optional = true }
+tree-sitter-rust = { version = "0.20", optional = true }
+
+[features]
+default = []
+syntax = ["tree-sitter", "tree-sitter-rust"]
+
+[profile.release]
+lto = true
+opt-level = 3

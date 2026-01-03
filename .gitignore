@@ -8,3 +8,9 @@ __pycache__/
 # 実データは除外（固有名詞を含むため）
 /data/projects/
 /data/local/
+
+# Codebase health generated tasks
+/.claude/tasks/
+
+# Build artifacts
+/tools/codebase-health/target/
