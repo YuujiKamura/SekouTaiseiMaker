@@ -714,9 +714,12 @@ fn App() -> impl IntoView {
             let project = project.clone();
             let window = web_sys::window().expect("window");
             let closure = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                // 全メッセージをログ
+                web_sys::console::log_1(&format!("[postMessage] Received event, data type: {:?}", event.data().js_typeof().as_string()).into());
                 if let Ok(data) = event.data().dyn_into::<js_sys::Object>() {
                     if let Ok(type_val) = js_sys::Reflect::get(&data, &JsValue::from_str("type")) {
                         if let Some(type_str) = type_val.as_string() {
+                            web_sys::console::log_1(&format!("[postMessage] type={}", type_str).into());
                             match type_str.as_str() {
                                 "apikey-setup-complete" => {
                                     // APIキー設定完了 - 状態を更新してダッシュボードに戻る
@@ -746,27 +749,36 @@ fn App() -> impl IntoView {
                                         // 結果をCheckResultDataにデシリアライズ
                                         match serde_wasm_bindgen::from_value::<CheckResultData>(result_js.clone()) {
                                             Ok(check_result) => {
-                                                web_sys::console::log_1(&format!("[ai-check-result] Deserialized: status={}", check_result.status).into());
+                                                web_sys::console::log_1(&format!("[ai-check-result] Deserialized: status={}, extracted_fields={:?}", check_result.status, check_result.extracted_fields).into());
                                                 // ProjectDataを更新
                                                 if let Some(mut proj) = project.get() {
                                                     let now = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
 
                                                     // contractor.docsを更新
                                                     let contractor_name_trimmed = contractor_name.trim();
+                                                    let mut updated = false;
                                                     for contractor in &mut proj.contractors {
                                                         if contractor.name.trim() == contractor_name_trimmed {
                                                             web_sys::console::log_1(&format!("[ai-check-result] Found contractor: {}", contractor.name).into());
                                                             let doc_keys: Vec<_> = contractor.docs.keys().collect();
                                                             web_sys::console::log_1(&format!("[ai-check-result] Available docs: {:?}", doc_keys).into());
                                                             if let Some(doc_status) = contractor.docs.get_mut(&doc_key) {
+                                                                // 既存のcheck_resultをログ
+                                                                if let Some(ref old_result) = doc_status.check_result {
+                                                                    web_sys::console::log_1(&format!("[ai-check-result] Old result: status={}, extracted_fields={:?}", old_result.status, old_result.extracted_fields).into());
+                                                                }
                                                                 doc_status.check_result = Some(check_result.clone());
                                                                 doc_status.last_checked = Some(now.clone());
-                                                                web_sys::console::log_1(&format!("[ai-check-result] Updated doc: {}", doc_key).into());
+                                                                updated = true;
+                                                                web_sys::console::log_1(&format!("[ai-check-result] Updated doc: {} -> new extracted_fields={:?}", doc_key, check_result.extracted_fields).into());
                                                             } else {
                                                                 web_sys::console::log_1(&format!("[ai-check-result] Doc key '{}' not found", doc_key).into());
                                                             }
                                                             break;
                                                         }
+                                                    }
+                                                    if !updated {
+                                                        web_sys::console::warn_1(&format!("[ai-check-result] No matching contractor found for '{}'", contractor_name).into());
                                                     }
 
                                                     // ローカル更新
@@ -1127,6 +1139,14 @@ fn App() -> impl IntoView {
                                 set_view_mode.set(ViewMode::ApiKeySetup);
                             }>
                                 "APIキー設定"
+                            </button>
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                if let Some(window) = web_sys::window() {
+                                    let _ = window.open_with_url_and_target("/health-report.html", "_blank");
+                                }
+                            }>
+                                "健全性ダッシュボード"
                             </button>
                             <hr class="menu-divider" />
                             // GAS連携

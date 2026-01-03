@@ -2,6 +2,8 @@
  * Gemini API サービス - ブラウザから直接呼び出し
  *
  * ## 変更履歴
+ * - 2026-01-03: extracted_fields追加、現場代理人/主任技術者の資格・在籍用プロンプト追加
+ *               → 必須フィールド（氏名、資格番号）を構造化抽出
  * - 2026-01-02: 入場年月日等をチェック対象外として明示（全プロンプト）
  * - 2026-01-02: docTypeを書類タイプとして明示表示
  */
@@ -16,7 +18,23 @@ export interface CheckResult {
   summary: string;
   items: Array<{ type: 'ok' | 'warning' | 'error'; message: string }>;
   missing_fields: Array<{ field: string; location: string }>;
+  /** 書類から抽出した必須フィールド */
+  extracted_fields?: Record<string, string>;
 }
+
+/**
+ * 書類タイプごとの必須抽出フィールド
+ * - 041_現場代理人資格: representative_name, qualification_number
+ * - 042_現場代理人在籍: representative_name
+ * - 051_主任技術者資格: chief_engineer_name, qualification_number
+ * - 052_主任技術者在籍: chief_engineer_name
+ */
+export const REQUIRED_EXTRACTED_FIELDS: Record<string, string[]> = {
+  '現場代理人資格': ['representative_name', 'qualification_number'],
+  '現場代理人在籍': ['representative_name'],
+  '主任技術者資格': ['chief_engineer_name', 'qualification_number'],
+  '主任技術者在籍': ['chief_engineer_name'],
+};
 
 const PROMPTS: Record<string, string> = {
   "暴対法誓約書": `あなたは建設業の書類チェック専門家です。
@@ -229,7 +247,142 @@ const HOUTEI_GAI_ROUSAI_PROMPT = `あなたは建設業の書類チェック専�
     ]
 }`;
 
-// 在籍証明系プロンプト（「在籍」を含む書類タイプ用）
+// 現場代理人資格証明用プロンプト
+const GENBA_DAIRI_SHIKAKU_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「現場代理人の資格証明」として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【チェック項目】
+1. 現場代理人の氏名が確認できるか（必須）
+2. 資格番号（番号）が確認できるか（必須）
+3. 資格の種類・名称が確認できるか
+4. 有効期限が確認できるか（ある場合）
+
+【必須抽出フィールド】
+書類から以下の情報を必ず抽出してください:
+- representative_name: 現場代理人の氏名（フルネーム）
+- qualification_number: 資格番号（「番号」「No.」等の後に記載された番号）
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ],
+    "extracted_fields": {
+        "representative_name": "抽出した氏名",
+        "qualification_number": "抽出した資格番号"
+    }
+}`;
+
+// 現場代理人在籍証明用プロンプト
+const GENBA_DAIRI_ZAISEKI_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「現場代理人の在籍証明」として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【有効な在籍証明書類】
+- 健康保険証（本人氏名と事業所名が確認できればOK）
+- 在籍証明書
+- 雇用証明書
+- 社員証（顔写真付き）
+
+【チェック項目】
+1. 現場代理人の氏名が確認できるか（必須）
+2. 事業所名・会社名が確認できるか
+3. 上記の有効な書類のいずれかに該当するか
+
+【必須抽出フィールド】
+- representative_name: 現場代理人の氏名（フルネーム）
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ],
+    "extracted_fields": {
+        "representative_name": "抽出した氏名"
+    }
+}`;
+
+// 主任技術者資格証明用プロンプト
+const SHUNIN_GIJUTSU_SHIKAKU_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「主任技術者の資格証明」として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【チェック項目】
+1. 主任技術者の氏名が確認できるか（必須）
+2. 資格番号（番号）が確認できるか（必須）
+3. 資格の種類・名称が確認できるか
+4. 有効期限が確認できるか（ある場合）
+
+【必須抽出フィールド】
+- chief_engineer_name: 主任技術者の氏名（フルネーム）
+- qualification_number: 資格番号
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ],
+    "extracted_fields": {
+        "chief_engineer_name": "抽出した氏名",
+        "qualification_number": "抽出した資格番号"
+    }
+}`;
+
+// 主任技術者在籍証明用プロンプト
+const SHUNIN_GIJUTSU_ZAISEKI_PROMPT = `あなたは建設業の書類チェック専門家です。
+この書類が「主任技術者の在籍証明」として有効かどうかを確認してください。
+
+業者名: {contractor_name}
+
+【有効な在籍証明書類】
+- 健康保険証（本人氏名と事業所名が確認できればOK）
+- 在籍証明書
+- 雇用証明書
+- 社員証（顔写真付き）
+
+【チェック項目】
+1. 主任技術者の氏名が確認できるか（必須）
+2. 事業所名・会社名が確認できるか
+3. 上記の有効な書類のいずれかに該当するか
+
+【必須抽出フィールド】
+- chief_engineer_name: 主任技術者の氏名（フルネーム）
+
+結果を以下のJSON形式で返してください:
+{
+    "status": "ok" | "warning" | "error",
+    "summary": "全体の評価（1文）",
+    "items": [
+        {"type": "ok" | "warning" | "error", "message": "具体的な指摘"}
+    ],
+    "missing_fields": [
+        {"field": "未記入項目名", "location": "位置の説明"}
+    ],
+    "extracted_fields": {
+        "chief_engineer_name": "抽出した氏名"
+    }
+}`;
+
+// 在籍証明系プロンプト（「在籍」を含む書類タイプ用 - 汎用）
 const ZAISEKI_PROMPT = `あなたは建設業の書類チェック専門家です。
 この書類が「{doc_type}」の証明として有効かどうかを確認してください。
 
@@ -299,6 +452,18 @@ function getPrompt(docType: string, contractorName: string): string {
   let template: string;
   if (PROMPTS[docType]) {
     template = PROMPTS[docType];
+  } else if (docType.includes('現場代理人') && docType.includes('資格')) {
+    // 現場代理人資格証明
+    template = GENBA_DAIRI_SHIKAKU_PROMPT;
+  } else if (docType.includes('現場代理人') && docType.includes('在籍')) {
+    // 現場代理人在籍証明
+    template = GENBA_DAIRI_ZAISEKI_PROMPT;
+  } else if (docType.includes('主任技術者') && docType.includes('資格')) {
+    // 主任技術者資格証明
+    template = SHUNIN_GIJUTSU_SHIKAKU_PROMPT;
+  } else if (docType.includes('主任技術者') && docType.includes('在籍')) {
+    // 主任技術者在籍証明
+    template = SHUNIN_GIJUTSU_ZAISEKI_PROMPT;
   } else if (docType.includes('法定外労災') || docType.includes('法廷外労災')) {
     // 「法定外労災」を含む書類は法定外労災加入証明用プロンプトを使用
     template = HOUTEI_GAI_ROUSAI_PROMPT;
@@ -306,7 +471,7 @@ function getPrompt(docType: string, contractorName: string): string {
     // 「労働保険」を含む書類は労働保険番号確認用プロンプトを使用
     template = ROUDOU_HOKEN_PROMPT;
   } else if (docType.includes('在籍')) {
-    // 「在籍」を含む書類は在籍証明用プロンプトを使用
+    // 「在籍」を含む書類は在籍証明用プロンプトを使用（汎用）
     template = ZAISEKI_PROMPT.replace(/{doc_type}/g, docType);
   } else {
     template = GENERIC_PROMPT.replace('{doc_type}', docType);

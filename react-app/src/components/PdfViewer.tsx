@@ -20,6 +20,16 @@ function getUrlParam(name: string): string | null {
   return params.get(name);
 }
 
+/** フィールドキーを日本語ラベルに変換 */
+function formatFieldName(key: string): string {
+  const labels: Record<string, string> = {
+    representative_name: '現場代理人名',
+    chief_engineer_name: '主任技術者名',
+    qualification_number: '資格番号',
+  };
+  return labels[key] || key;
+}
+
 export function PdfViewer() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -331,44 +341,30 @@ export function PdfViewer() {
         {showResult && checkResult && (
           <div className={`inline-result-panel status-${checkResult.status}`}>
             <div className="result-header">
-              <h3>チェック結果</h3>
+              <h3>チェック結果: {docType}</h3>
               <button className="close-btn" onClick={handleCloseResult}>×</button>
             </div>
 
             <div className={`status-badge ${checkResult.status}`}>
               {checkResult.status === 'ok' ? '✓ OK' : checkResult.status === 'warning' ? '⚠ 要確認' : '✗ エラー'}
             </div>
+
+            {/* 抽出フィールド（書類タイプごとの必須項目） */}
+            {checkResult.extracted_fields && Object.keys(checkResult.extracted_fields).length > 0 && (
+              <div className="extracted-fields">
+                <h4>抽出データ</h4>
+                <dl className="field-list">
+                  {Object.entries(checkResult.extracted_fields).map(([key, value]) => (
+                    <div key={key} className="field-item">
+                      <dt>{formatFieldName(key)}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
             <p className="summary">{checkResult.summary}</p>
-
-            {checkResult.items.length > 0 && (
-              <div className="items">
-                <h4>詳細</h4>
-                <ul>
-                  {checkResult.items.map((item, i) => (
-                    <li key={i} className={`item-${item.type}`}>
-                      <span className="icon">
-                        {item.type === 'ok' ? '✓' : item.type === 'warning' ? '⚠' : '✗'}
-                      </span>
-                      {item.message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {checkResult.missing_fields.length > 0 && (
-              <div className="missing-fields">
-                <h4>未記入項目</h4>
-                <ul>
-                  {checkResult.missing_fields.map((field, i) => (
-                    <li key={i}>
-                      <strong>{field.field}</strong>
-                      <span className="location">({field.location})</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
 
             <div className="result-actions">
               <button className="save-btn" onClick={handleSaveResult}>

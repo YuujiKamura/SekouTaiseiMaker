@@ -3,6 +3,10 @@
  *
  * ■ 変更履歴 (要再デプロイ) ※新しい順
  * ─────────────────────────────────────
+ * 2026-01-03: check_result.extracted_fieldsから現場代理人名/主任技術者名を取得
+ *             → AIチェック結果の構造化データを優先、ファイル名はフォールバック
+ * 2026-01-03: getProjectInfo アクション追加
+ *             → AIチェック用に工事情報（工事名、工期、現場代理人）を取得
  * 2026-01-02: getFileInfo に mimeType 追加
  *             → PDF/Excel/画像の判別に使用
  * 2026-01-02: listSheets に重要フィールド抽出機能追加
@@ -156,6 +160,12 @@ function doGet(e) {
     // スクリプト情報取得（UI上で更新日時表示用）
     if (action === 'getScriptInfo') {
       const result = getScriptInfo();
+      return jsonResponse(result);
+    }
+
+    // 工事情報取得（AIチェック用）
+    if (action === 'getProjectInfo') {
+      const result = getProjectInfoForValidation();
       return jsonResponse(result);
     }
 
@@ -850,4 +860,235 @@ function testSettings() {
   // 読み込みテスト
   const loaded = loadSettings();
   console.log('Loaded settings:', loaded);
+}
+
+// ============================================
+// 工事情報取得（AIチェック用）
+// ============================================
+
+/**
+ * AIチェック用に工事情報を取得
+ * - 工事名、工期（開始日・終了日）、元請けの現場代理人
+ *
+ * ## 変更履歴
+ * - 2026-01-03: 現場代理人名を書類リスト（041_現場代理人資格, 042_現場代理人在籍）から取得するよう改善
+ */
+function getProjectInfoForValidation() {
+  try {
+    const projectData = loadProject();
+    if (!projectData.project || projectData.error) {
+      return { error: 'プロジェクトデータが見つかりません' };
+    }
+
+    const project = projectData.project;
+
+    // 工期を解析（「令和7年1月〜令和7年3月」のような形式）
+    const periodInfo = parsePeriod(project.period);
+
+    // 元請け業者の現場代理人を取得
+    let siteRepresentative = null;
+    if (project.contractors && project.contractors.length > 0) {
+      // 元請け（最初の業者）の現場代理人を探す
+      const primeContractor = project.contractors[0];
+
+      // まず直接プロパティをチェック
+      siteRepresentative = primeContractor.site_representative ||
+                           primeContractor.siteRepresentative ||
+                           primeContractor.representative ||
+                           primeContractor.manager ||
+                           null;
+
+      // 見つからない場合、書類リストから抽出を試みる
+      if (!siteRepresentative && primeContractor.docs) {
+        siteRepresentative = extractRepresentativeFromDocs(primeContractor.docs);
+      }
+    }
+
+    return {
+      success: true,
+      projectName: project.project_name || null,
+      client: project.client || null,
+      period: project.period || null,
+      periodStart: periodInfo.start,
+      periodEnd: periodInfo.end,
+      siteRepresentative: siteRepresentative,
+      // 今日の日付（チェック用）
+      today: Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd')
+    };
+  } catch (err) {
+    return { error: 'Failed to get project info: ' + err.message };
+  }
+}
+
+/**
+ * 書類リストから現場代理人名を抽出
+ * 優先順位:
+ * 1. check_result.extracted_fields.representative_name（AIチェック結果）
+ * 2. ファイル名からの抽出（フォールバック）
+ */
+function extractRepresentativeFromDocs(docs) {
+  // 対象の書類キー
+  const targetKeys = ['041_現場代理人資格', '042_現場代理人在籍'];
+
+  for (const key of targetKeys) {
+    const doc = docs[key];
+    if (!doc) continue;
+
+    // 1. AIチェック結果から抽出（最優先）
+    if (doc.check_result && doc.check_result.extracted_fields) {
+      const name = doc.check_result.extracted_fields.representative_name;
+      if (name) return name;
+    }
+
+    // 2. ファイル名から抽出（フォールバック）
+    if (doc.file) {
+      const name = extractPersonName(doc.file);
+      if (name) return name;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 書類リストから主任技術者名を抽出
+ */
+function extractChiefEngineerFromDocs(docs) {
+  const targetKeys = ['051_主任技術者資格', '052_主任技術者在籍'];
+
+  for (const key of targetKeys) {
+    const doc = docs[key];
+    if (!doc) continue;
+
+    // AIチェック結果から抽出
+    if (doc.check_result && doc.check_result.extracted_fields) {
+      const name = doc.check_result.extracted_fields.chief_engineer_name;
+      if (name) return name;
+    }
+
+    // ファイル名から抽出（フォールバック）
+    if (doc.file) {
+      const name = extractPersonName(doc.file);
+      if (name) return name;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 文字列から人名を抽出（フォールバック用）
+ */
+function extractPersonName(str) {
+  if (!str) return null;
+
+  // 拡張子を除去
+  str = str.replace(/\.(pdf|xlsx?|docx?|png|jpg|jpeg)$/i, '');
+
+  // アンダースコアで分割してパーツを抽出
+  const parts = str.split(/[_\-\s]+/);
+
+  // 各パーツをチェック: 日本語の姓名パターン（漢字2〜4文字）
+  const namePattern = /^[一-龯ぁ-んァ-ヶ]{2,8}$/;
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    // 数字やキーワードを除外
+    if (/^\d/.test(trimmed)) continue;
+    if (/^(現場代理人|主任技術者|資格|在籍|証明|書類|台帳)/.test(trimmed)) continue;
+
+    // 漢字/ひらがな/カタカナで2文字以上なら人名の可能性
+    if (namePattern.test(trimmed) && trimmed.length >= 2) {
+      return trimmed;
+    }
+  }
+
+  // スペース区切りの姓名パターン（山田 太郎）
+  const fullNameMatch = str.match(/([一-龯ぁ-んァ-ヶ]{1,4})\s+([一-龯ぁ-んァ-ヶ]{1,4})/);
+  if (fullNameMatch) {
+    return fullNameMatch[1] + ' ' + fullNameMatch[2];
+  }
+
+  return null;
+}
+
+/**
+ * 工期文字列を解析して開始日・終了日を返す
+ * 対応形式:
+ * - "令和7年1月〜令和7年3月"
+ * - "R7.1.1〜R7.3.31"
+ * - "2025-01-01〜2025-03-31"
+ */
+function parsePeriod(periodStr) {
+  if (!periodStr) {
+    return { start: null, end: null };
+  }
+
+  // 区切り文字で分割
+  const parts = periodStr.split(/[〜～~－\-]/);
+  if (parts.length !== 2) {
+    return { start: null, end: null };
+  }
+
+  const startStr = parts[0].trim();
+  const endStr = parts[1].trim();
+
+  return {
+    start: parseJapaneseDate(startStr),
+    end: parseJapaneseDate(endStr)
+  };
+}
+
+/**
+ * 和暦/西暦の日付文字列をyyyy-MM-dd形式に変換
+ */
+function parseJapaneseDate(dateStr) {
+  if (!dateStr) return null;
+
+  // 西暦形式 (2025-01-01 or 2025/01/01)
+  const westernMatch = dateStr.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (westernMatch) {
+    const y = parseInt(westernMatch[1]);
+    const m = parseInt(westernMatch[2]);
+    const d = parseInt(westernMatch[3]);
+    return formatDateISO(y, m, d);
+  }
+
+  // 令和形式 (令和7年1月1日 or 令和7年1月)
+  const reiwaMatch = dateStr.match(/令和(\d+)年(\d+)月(?:(\d+)日)?/);
+  if (reiwaMatch) {
+    const y = 2018 + parseInt(reiwaMatch[1]);
+    const m = parseInt(reiwaMatch[2]);
+    const d = reiwaMatch[3] ? parseInt(reiwaMatch[3]) : 1;
+    return formatDateISO(y, m, d);
+  }
+
+  // R形式 (R7.1.1 or R7.1)
+  const rMatch = dateStr.match(/R(\d+)\.(\d+)(?:\.(\d+))?/i);
+  if (rMatch) {
+    const y = 2018 + parseInt(rMatch[1]);
+    const m = parseInt(rMatch[2]);
+    const d = rMatch[3] ? parseInt(rMatch[3]) : 1;
+    return formatDateISO(y, m, d);
+  }
+
+  // 平成形式
+  const heiseiMatch = dateStr.match(/平成(\d+)年(\d+)月(?:(\d+)日)?/);
+  if (heiseiMatch) {
+    const y = 1988 + parseInt(heiseiMatch[1]);
+    const m = parseInt(heiseiMatch[2]);
+    const d = heiseiMatch[3] ? parseInt(heiseiMatch[3]) : 1;
+    return formatDateISO(y, m, d);
+  }
+
+  return null;
+}
+
+/**
+ * yyyy-MM-dd形式にフォーマット
+ */
+function formatDateISO(year, month, day) {
+  const m = String(month).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  return `${year}-${m}-${d}`;
 }

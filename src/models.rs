@@ -1,4 +1,7 @@
 //! データ構造体モジュール
+//!
+//! ## 変更履歴
+//! - 2026-01-03: CheckResultDataにextracted_fields追加（AIチェックで抽出した必須フィールド）
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -93,6 +96,10 @@ pub struct CheckResultData {
     pub items: Vec<CheckItem>,
     #[serde(default)]
     pub missing_fields: Vec<CheckMissingField>,
+    /// 抽出されたフィールド（書類タイプごとの必須項目）
+    /// 例: {"representative_name": "山田太郎", "qualification_number": "12345"}
+    #[serde(default)]
+    pub extracted_fields: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

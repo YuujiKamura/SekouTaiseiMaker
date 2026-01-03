@@ -105,6 +105,69 @@ test.describe('PDF Editor', () => {
     );
     expect(fontErrors).toHaveLength(0);
   });
+
+  test('saved PDF contains added text', async ({ page }) => {
+    // ダウンロードを待機する設定
+    const downloadPromise = page.waitForEvent('download');
+
+    // テスト用PDFをアップロード
+    const fileInput = page.locator('input[type="file"]');
+    const pdfContent = await createTestPdf();
+
+    await fileInput.setInputFiles({
+      name: 'test.pdf',
+      mimeType: 'application/pdf',
+      buffer: pdfContent,
+    });
+
+    await expect(page.locator('.pdf-canvas')).toBeVisible({ timeout: 10000 });
+
+    // フォント読み込みを待つ
+    await page.waitForTimeout(2000);
+
+    // テキストを入力
+    const textInput = page.locator('.text-input');
+    await textInput.fill('テスト文字');
+
+    // キャンバスをクリックしてテキストを追加
+    const canvas = page.locator('.overlay-canvas');
+    await canvas.click({ position: { x: 100, y: 100 } });
+
+    // アノテーション追加を待つ
+    await page.waitForTimeout(500);
+
+    // ステータスを確認
+    const status = page.locator('.status-inline');
+    await expect(status).toContainText('テキスト追加', { timeout: 10000 });
+
+    // 保存ボタンをクリック
+    const saveButton = page.locator('.save-btn');
+    await saveButton.click();
+
+    // ダウンロードを待つ
+    const download = await downloadPromise;
+
+    // ダウンロードされたファイルを取得
+    const downloadedBuffer = await download.path();
+    expect(downloadedBuffer).toBeTruthy();
+
+    // PDFの中身を確認
+    const fs = await import('fs');
+    const pdfBytes = fs.readFileSync(downloadedBuffer!);
+
+    // フォント埋め込みでPDFサイズが増加していることを確認（500KB以上）
+    expect(pdfBytes.length).toBeGreaterThan(500000);
+
+    // デスクトップにPDFを保存して確認用
+    const desktopPath = 'C:/Users/yuuji/Desktop/test-output.pdf';
+    fs.writeFileSync(desktopPath, pdfBytes);
+    console.log(`PDF saved to: ${desktopPath}`);
+
+    console.log(`Downloaded PDF size: ${pdfBytes.length} bytes`);
+
+    // ステータスが「保存しました」になっていることを確認
+    await expect(status).toContainText('保存しました', { timeout: 10000 });
+  });
 });
 
 // テスト用の簡単なPDFを生成

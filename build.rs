@@ -19,3 +19,5 @@ fn main() {
     println!("cargo:rerun-if-changed=gas/SekouTaiseiSync.gs");
 }
 
+
+

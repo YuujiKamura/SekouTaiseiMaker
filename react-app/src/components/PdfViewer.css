@@ -322,6 +322,44 @@
   line-height: 1.5;
 }
 
+/* 抽出フィールド表示 */
+.inline-result-panel .extracted-fields {
+  margin: 0 16px 16px;
+  padding: 12px;
+  background: #e3f2fd;
+  border-radius: 8px;
+  border-left: 3px solid #1976d2;
+}
+
+.inline-result-panel .extracted-fields .field-list {
+  margin: 0;
+}
+
+.inline-result-panel .extracted-fields .field-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+
+.inline-result-panel .extracted-fields .field-item:last-child {
+  border-bottom: none;
+}
+
+.inline-result-panel .extracted-fields dt {
+  font-weight: 600;
+  color: #1565c0;
+  min-width: 100px;
+  font-size: 13px;
+}
+
+.inline-result-panel .extracted-fields dd {
+  margin: 0;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .inline-result-panel .items,
 .inline-result-panel .missing-fields {
   margin: 0 16px 16px;

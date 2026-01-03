@@ -194,10 +194,32 @@
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid #eee;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.back-to-select-btn {
+  flex: 1;
+  min-width: 140px;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.back-to-select-btn:hover {
+  background: #eee;
 }
 
 .save-btn {
-  width: 100%;
+  flex: 1;
+  min-width: 140px;
   padding: 12px 20px;
   background: #0066ff;
   color: white;
@@ -211,6 +233,22 @@
 
 .save-btn:hover {
   background: #0055dd;
+}
+
+.copy-json-btn {
+  padding: 12px 16px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.copy-json-btn:hover {
+  background: #5a6268;
 }
 
 /* スプレッドシートプレビュー */
@@ -438,6 +476,12 @@
   word-break: break-all;
 }
 
+.field-value.not-found {
+  color: #999;
+  font-style: italic;
+  font-weight: normal;
+}
+
 .field-warning {
   color: #856404;
   font-size: 11px;
@@ -454,6 +498,295 @@
 .sheet-item.has-warning.selected {
   border-color: #e0a800;
   box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3);
+}
+
+/* エラーのあるカード */
+.sheet-item.has-error {
+  border-color: #dc3545;
+  background: #fff5f5;
+}
+
+.sheet-item.has-error.selected {
+  border-color: #c82333;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.3);
+}
+
+.field-row.error {
+  background: #ffe0e0;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border-radius: 3px;
+}
+
+.field-warning.error {
+  color: #dc3545;
+}
+
+/* デバッグ表示 */
+.debug-info {
+  margin-top: 8px;
+  color: #888;
+}
+
+.prompt-debug,
+.cell-data-debug {
+  margin: 8px 0;
+  background: #f0f0f0;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.prompt-debug summary,
+.cell-data-debug summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  color: #666;
+}
+
+.prompt-text,
+.cell-data-text {
+  margin: 0;
+  padding: 10px;
+  background: #1a1a2e;
+  color: #0f0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  border-radius: 0 0 4px 4px;
+}
+
+/* 書類タイプバッジ */
+.document-type-badge {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #1a1a2e;
+  color: white;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+/* 工事情報セクション（照合元） */
+.project-info-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #e8f4fd;
+  border: 1px solid #b8daff;
+  border-radius: 6px;
+}
+
+.project-info-section h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #004085;
+}
+
+.project-info-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.project-info-list dt {
+  color: #666;
+  font-weight: 500;
+}
+
+.project-info-list dd {
+  margin: 0;
+  color: #004085;
+  font-weight: 600;
+}
+
+/* 抽出フィールド一覧 */
+.extracted-fields h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #666;
+}
+
+.extracted-fields ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.field-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.field-item .field-label {
+  font-weight: 600;
+  color: #333;
+  min-width: 100px;
+}
+
+.field-item .field-value {
+  flex: 1;
+  color: #000;
+}
+
+.field-item .field-value .not-found {
+  color: #999;
+  font-style: italic;
+}
+
+.field-item .field-cell {
+  font-size: 11px;
+  color: #6366f1;
+  font-family: monospace;
+}
+
+/* 重要項目セクション */
+.key-fields-section {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.key-fields-section h4 {
+  color: #1a1a2e;
+  font-weight: 600;
+}
+
+.other-fields-section h4 {
+  color: #666;
+  font-size: 13px;
+}
+
+/* 重要項目は太枠 */
+.field-item.key-field {
+  border-width: 2px;
+  padding: 12px;
+}
+
+/* フィールドメイン行 */
+.field-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 妥当性判定アイコン */
+.validation-icon {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* 妥当性判定による色分け */
+.field-item.validation-ok {
+  border-left: 4px solid #28a745;
+  background: #f0fff4;
+}
+
+.field-item.validation-ok .validation-icon {
+  color: #28a745;
+}
+
+.field-item.validation-warning {
+  border-left: 4px solid #ffc107;
+  background: #fffcf0;
+}
+
+.field-item.validation-warning .validation-icon {
+  color: #e0a800;
+}
+
+.field-item.validation-error {
+  border-left: 4px solid #dc3545;
+  background: #fff5f5;
+}
+
+.field-item.validation-error .validation-icon {
+  color: #dc3545;
+}
+
+.field-item.validation-unknown {
+  border-left: 4px solid #6c757d;
+}
+
+/* 判定理由 */
+.validation-note {
+  width: 100%;
+  margin-top: 4px;
+  padding-left: 28px;
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+/* AI抽出関連 */
+.ai-extract-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.ai-badge {
+  background: #6366f1;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.clear-btn {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: #666;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.clear-btn:hover {
+  background: #888;
+}
+
+.ai-extract-btn {
+  margin-top: 8px;
+  padding: 4px 12px;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ai-extract-btn:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.ai-extract-btn:disabled {
+  background: #a5a5a5;
+  cursor: not-allowed;
+}
+
+.field-cell {
+  color: #6366f1;
+  font-size: 10px;
+  font-family: monospace;
+  margin-left: 4px;
 }
 
 /* ============================================
