@@ -19,6 +19,7 @@ use components::{CheckResultTooltip, ContextMenu};
 use utils::cache::{save_to_cache, load_from_cache, clear_cache};
 use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time, save_gas_url_to_sheet};
 use utils::{encode_base64, decode_base64};
+use utils::log_trace::{log_info, log_info_with_data, log_warn, log_error, log_error_with_data, download_logs, clear_logs};
 use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
 use views::ocr_viewer::{OcrDocument, OcrToken, OcrViewContext, OcrViewer};
 use components::{ProjectView, ProjectEditor};
@@ -39,6 +40,7 @@ fn get_hash_data() -> Option<ProjectData> {
 
 /// GASにプロジェクトデータを保存
 async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
+    log_info("gas-sync", "GASへの保存を開始");
     let gas_url = get_gas_url().ok_or("GAS URLが設定されていません")?;
 
     #[derive(Serialize)]
@@ -734,22 +736,34 @@ fn App() -> impl IntoView {
                                     }
                                 }
                                 "ai-check-result" => {
-                                    web_sys::console::log_1(&"[ai-check-result] Received".into());
+                                    log_info("ai-check-result", "AIチェック結果を受信");
                                     // AIチェック結果を受け取り、ProjectDataを更新
                                     let contractor = js_sys::Reflect::get(&data, &JsValue::from_str("contractor"))
                                         .ok().and_then(|v| v.as_string());
                                     let doc_key_raw = js_sys::Reflect::get(&data, &JsValue::from_str("docKey"))
                                         .ok().and_then(|v| v.as_string());
                                     let result_val = js_sys::Reflect::get(&data, &JsValue::from_str("result")).ok();
+                                    let file_id = js_sys::Reflect::get(&data, &JsValue::from_str("fileId"))
+                                        .ok().and_then(|v| v.as_string());
 
-                                    web_sys::console::log_1(&format!("[ai-check-result] contractor={:?}, doc_key={:?}", contractor, doc_key_raw).into());
+                                    let trace_data = serde_json::json!({
+                                        "contractor": contractor,
+                                        "doc_key": doc_key_raw,
+                                        "file_id": file_id,
+                                    });
+                                    log_info_with_data("ai-check-result", "受信データ", trace_data);
 
                                     if let (Some(contractor_name), Some(doc_key_raw), Some(result_js)) = (contractor, doc_key_raw, result_val) {
                                         let doc_key = doc_key_raw.trim().to_string();
                                         // 結果をCheckResultDataにデシリアライズ
                                         match serde_wasm_bindgen::from_value::<CheckResultData>(result_js.clone()) {
                                             Ok(check_result) => {
-                                                web_sys::console::log_1(&format!("[ai-check-result] Deserialized: status={}, extracted_fields={:?}", check_result.status, check_result.extracted_fields).into());
+                                                let trace_data = serde_json::json!({
+                                                    "status": check_result.status,
+                                                    "extracted_fields": check_result.extracted_fields,
+                                                });
+                                                log_info_with_data("ai-check-result", "デシリアライズ成功", trace_data);
+                                                
                                                 // ProjectDataを更新
                                                 if let Some(mut proj) = project.get() {
                                                     let now = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
@@ -759,45 +773,79 @@ fn App() -> impl IntoView {
                                                     let mut updated = false;
                                                     for contractor in &mut proj.contractors {
                                                         if contractor.name.trim() == contractor_name_trimmed {
-                                                            web_sys::console::log_1(&format!("[ai-check-result] Found contractor: {}", contractor.name).into());
-                                                            let doc_keys: Vec<_> = contractor.docs.keys().collect();
-                                                            web_sys::console::log_1(&format!("[ai-check-result] Available docs: {:?}", doc_keys).into());
+                                                            log_info("ai-check-result", &format!("業者を発見: {}", contractor.name));
+                                                            
+                                                            let doc_keys: Vec<String> = contractor.docs.keys().cloned().collect();
+                                                            let trace_data = serde_json::json!({
+                                                                "available_doc_keys": doc_keys,
+                                                                "target_doc_key": doc_key,
+                                                            });
+                                                            log_info_with_data("ai-check-result", "利用可能なdocキー", trace_data);
+                                                            
                                                             if let Some(doc_status) = contractor.docs.get_mut(&doc_key) {
                                                                 // 既存のcheck_resultをログ
                                                                 if let Some(ref old_result) = doc_status.check_result {
-                                                                    web_sys::console::log_1(&format!("[ai-check-result] Old result: status={}, extracted_fields={:?}", old_result.status, old_result.extracted_fields).into());
+                                                                    let trace_data = serde_json::json!({
+                                                                        "old_status": old_result.status,
+                                                                        "old_extracted_fields": old_result.extracted_fields,
+                                                                    });
+                                                                    log_info_with_data("ai-check-result", "既存のcheck_result", trace_data);
                                                                 }
                                                                 doc_status.check_result = Some(check_result.clone());
                                                                 doc_status.last_checked = Some(now.clone());
                                                                 updated = true;
-                                                                web_sys::console::log_1(&format!("[ai-check-result] Updated doc: {} -> new extracted_fields={:?}", doc_key, check_result.extracted_fields).into());
+                                                                
+                                                                let trace_data = serde_json::json!({
+                                                                    "doc_key": doc_key,
+                                                                    "new_extracted_fields": check_result.extracted_fields,
+                                                                    "last_checked": now,
+                                                                });
+                                                                log_info_with_data("ai-check-result", "ドキュメント更新完了", trace_data);
                                                             } else {
-                                                                web_sys::console::log_1(&format!("[ai-check-result] Doc key '{}' not found", doc_key).into());
+                                                                let trace_data = serde_json::json!({
+                                                                    "doc_key": doc_key,
+                                                                    "available_keys": doc_keys,
+                                                                });
+                                                                log_error_with_data("ai-check-result", &format!("Doc key '{}' が見つかりません", doc_key), trace_data);
                                                             }
                                                             break;
                                                         }
                                                     }
                                                     if !updated {
-                                                        web_sys::console::warn_1(&format!("[ai-check-result] No matching contractor found for '{}'", contractor_name).into());
+                                                        let trace_data = serde_json::json!({
+                                                            "contractor_name": contractor_name,
+                                                        });
+                                                        log_error_with_data("ai-check-result", &format!("業者 '{}' が見つかりません", contractor_name), trace_data);
                                                     }
 
                                                     // ローカル更新
                                                     set_project.set(Some(proj.clone()));
                                                     save_to_cache(&proj);
-                                                    web_sys::console::log_1(&"[ai-check-result] Saved to cache".into());
+                                                    log_info("ai-check-result", "キャッシュに保存完了");
 
                                                     // GASに保存
+                                                    let proj_for_sync = proj.clone();
                                                     spawn_local(async move {
-                                                        if let Err(e) = sync_to_gas(&proj).await {
-                                                            web_sys::console::error_1(&format!("GAS保存エラー: {}", e).into());
+                                                        match sync_to_gas(&proj_for_sync).await {
+                                                            Ok(msg) => {
+                                                                log_info("gas-sync", &format!("GAS保存成功: {}", msg));
+                                                            }
+                                                            Err(e) => {
+                                                                log_error("gas-sync", &format!("GAS保存エラー: {}", e));
+                                                            }
                                                         }
                                                     });
                                                 }
                                             }
                                             Err(e) => {
-                                                web_sys::console::error_1(&format!("[ai-check-result] Deserialize error: {:?}", e).into());
+                                                let trace_data = serde_json::json!({
+                                                    "error": format!("{:?}", e),
+                                                });
+                                                log_error_with_data("ai-check-result", "デシリアライズエラー", trace_data);
                                             }
                                         }
+                                    } else {
+                                        log_error("ai-check-result", "必要なパラメータが不足しています");
                                     }
                                     // チェック結果パネルをクリア
                                     set_check_mode.set(CheckMode::None);
@@ -1227,6 +1275,18 @@ fn App() -> impl IntoView {
                                 "GitHub Actions ↗"
                             </a>
                             <hr class="menu-divider" />
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                download_logs();
+                            }>
+                                "ログダウンロード"
+                            </button>
+                            <button class="menu-item" on:click=move |_| {
+                                set_menu_open.set(false);
+                                clear_logs();
+                            }>
+                                "ログクリア"
+                            </button>
                             <button class="menu-item" on:click=move |_| set_show_debug.update(|v| *v = !*v)>
                                 {move || if show_debug.get() { "デバッグ非表示" } else { "デバッグ表示" }}
                             </button>

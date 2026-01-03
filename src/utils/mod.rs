@@ -2,6 +2,7 @@
 
 pub mod cache;
 pub mod gas;
+pub mod log_trace;
 
 // 共通ヘルパー
 
