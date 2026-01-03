@@ -1042,15 +1042,31 @@ window.clearPdfCache = async function() {
 // ============================================
 // APIキー暗号化/復号
 // ============================================
+//
+// SECURITY NOTE: This is client-side encryption for localStorage API key storage.
+// The encryption password is visible in browser dev tools. This provides obfuscation
+// against casual inspection, NOT true security. For production environments requiring
+// secure API key management, consider using a backend service.
+
+// Default placeholder password - must be changed for production
+const DEFAULT_PLACEHOLDER_PASSWORD = 'CHANGE_THIS_TO_A_SECURE_PASSWORD';
 
 // Get encryption password from external config (config.js)
-// Falls back to error if not configured
+// Falls back to error if not configured or using placeholder
 function getApiKeyEncryptionPassword() {
-    if (window.APP_CONFIG && window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD) {
-        return window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD;
+    if (!window.APP_CONFIG || !window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD) {
+        console.error('[pdf-editor] API_KEY_ENCRYPTION_PASSWORD not configured. Please set up config.js');
+        throw new Error('API encryption password not configured');
     }
-    console.error('[pdf-editor] API_KEY_ENCRYPTION_PASSWORD not configured. Please set up config.js');
-    throw new Error('API encryption password not configured');
+
+    const password = window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD;
+
+    // Warn if using the default placeholder password
+    if (password === DEFAULT_PLACEHOLDER_PASSWORD) {
+        console.warn('[pdf-editor] WARNING: Using default placeholder password. Please configure a secure password in config.js');
+    }
+
+    return password;
 }
 
 const API_KEY_STORAGE_KEY = 'sekou_taisei_api_key';
