@@ -21,6 +21,12 @@ import {
   type ProjectContext,
   convertExtractionResultToCheckResult,
 } from '../services/fieldExtractor';
+import {
+  generateFixCandidates,
+  applyFixesToWorkbook,
+  downloadFixedXlsx,
+  type CellFix,
+} from '../services/xlsxFixer';
 import type { CheckResult } from '../services/gemini';
 import * as XLSX from 'xlsx';
 import './AiChecker.css';

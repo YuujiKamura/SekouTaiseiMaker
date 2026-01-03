@@ -1209,25 +1209,22 @@ fn App() -> impl IntoView {
                                     // 更新コマンドをクリップボードにコピー
                                     let window = web_sys::window().unwrap();
                                     let navigator = window.navigator();
-                                    if let Some(clipboard) = navigator.clipboard() {
-                                        // OSを判定（navigator.platformから推測）
-                                        let platform = navigator.platform().unwrap_or_default().to_lowercase();
-                                        let command = if platform.contains("win") {
-                                            "scripts\\generate-health-report.bat"
-                                        } else {
-                                            "bash scripts/generate-health-report.sh"
-                                        };
-                                        let promise = clipboard.write_text(&command);
-                                        match JsFuture::from(promise).await {
-                                            Ok(_) => {
-                                                let _ = window.alert_with_message("更新コマンドをクリップボードにコピーしました。\n\nターミナルで実行してください。\n\nまたは、trunk build --release を実行すると自動更新されます。");
-                                            }
-                                            Err(_) => {
-                                                let _ = window.alert_with_message("更新方法:\n\nWindows: scripts\\generate-health-report.bat\nLinux/Mac: bash scripts/generate-health-report.sh\n\nまたは: trunk build --release");
-                                            }
-                                        }
+                                    let clipboard = navigator.clipboard();
+                                    // OSを判定（navigator.platformから推測）
+                                    let platform = navigator.platform().unwrap_or_default().to_lowercase();
+                                    let command = if platform.contains("win") {
+                                        "scripts\\generate-health-report.bat"
                                     } else {
-                                        let _ = window.alert_with_message("更新方法:\n\nWindows: scripts\\generate-health-report.bat\nLinux/Mac: bash scripts/generate-health-report.sh\n\nまたは: trunk build --release");
+                                        "bash scripts/generate-health-report.sh"
+                                    };
+                                    let promise = clipboard.write_text(&command);
+                                    match JsFuture::from(promise).await {
+                                        Ok(_) => {
+                                            let _ = window.alert_with_message("更新コマンドをクリップボードにコピーしました。\n\nターミナルで実行してください。\n\nまたは、trunk build --release を実行すると自動更新されます。");
+                                        }
+                                        Err(_) => {
+                                            let _ = window.alert_with_message("更新方法:\n\nWindows: scripts\\generate-health-report.bat\nLinux/Mac: bash scripts/generate-health-report.sh\n\nまたは: trunk build --release");
+                                        }
                                     }
                                 });
                             }>
