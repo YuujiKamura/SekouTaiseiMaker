@@ -343,6 +343,29 @@
   font-size: 14px;
 }
 
+.project-info-box {
+  margin: 12px 0;
+  padding: 10px 14px;
+  background: #e8f4fd;
+  border: 1px solid #b3d9f7;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.project-info-box strong {
+  width: 100%;
+  color: #1565c0;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.project-info-box span {
+  color: #333;
+}
+
 .ai-fix-panel {
   margin: 0 0 16px;
   padding: 12px;

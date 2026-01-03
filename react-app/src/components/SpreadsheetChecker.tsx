@@ -480,6 +480,15 @@ export function SpreadsheetChecker() {
                 <div className="sheet-selector-header">
                   <h3>{spreadsheetName}</h3>
                   <p>チェックするシートを選択してください</p>
+                  {projectInfo && (
+                    <div className="project-info-box">
+                      <strong>照合用工事情報:</strong>
+                      <span>工事名: {projectInfo.projectName || '未設定'}</span>
+                      <span>工期: {projectInfo.periodStart || '?'} 〜 {projectInfo.periodEnd || '?'}</span>
+                      <span>現場代理人: {projectInfo.siteRepresentative || '未設定'}</span>
+                      <span>主任技術者: {projectInfo.chiefEngineer || '未設定'}</span>
+                    </div>
+                  )}
                   <div className="debug-info">
                     <small>Build: {BUILD_VERSION}</small>
                   </div>
