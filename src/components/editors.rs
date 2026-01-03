@@ -85,6 +85,10 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
     let (project_name, set_project_name) = create_signal(project.project_name.clone());
     let (client, set_client) = create_signal(project.client.clone());
     let (period, set_period) = create_signal(project.period.clone());
+    let (period_start, set_period_start) = create_signal(project.period_start.clone().unwrap_or_default());
+    let (period_end, set_period_end) = create_signal(project.period_end.clone().unwrap_or_default());
+    let (site_representative, set_site_representative) = create_signal(project.site_representative.clone().unwrap_or_default());
+    let (chief_engineer, set_chief_engineer) = create_signal(project.chief_engineer.clone().unwrap_or_default());
     let (project_docs, set_project_docs) = create_signal(project.project_docs.clone());
     let (contractors, set_contractors) = create_signal(project.contractors.clone());
     let (contracts, _) = create_signal(project.contracts.clone());
@@ -95,10 +99,19 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
 
     // 変更を保存（ローカル + GAS）
     let save_changes = move |_| {
+        let ps = period_start.get();
+        let pe = period_end.get();
+        let sr = site_representative.get();
+        let ce = chief_engineer.get();
+
         let updated = ProjectData {
             project_name: project_name.get(),
             client: client.get(),
             period: period.get(),
+            period_start: if ps.is_empty() { None } else { Some(ps) },
+            period_end: if pe.is_empty() { None } else { Some(pe) },
+            site_representative: if sr.is_empty() { None } else { Some(sr) },
+            chief_engineer: if ce.is_empty() { None } else { Some(ce) },
             project_docs: project_docs.get(),
             contractors: contractors.get(),
             contracts: contracts.get(),
@@ -191,19 +204,63 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
                         on:input=move |ev| set_project_name.set(event_target_value(&ev))
                     />
                 </div>
+                <div class="form-group">
+                    <label>"発注者"</label>
+                    <input type="text"
+                        prop:value=move || client.get()
+                        on:input=move |ev| set_client.set(event_target_value(&ev))
+                    />
+                </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>"発注者"</label>
-                        <input type="text"
-                            prop:value=move || client.get()
-                            on:input=move |ev| set_client.set(event_target_value(&ev))
+                        <label>"工期開始日"</label>
+                        <input type="date"
+                            prop:value=move || period_start.get()
+                            on:input=move |ev| set_period_start.set(event_target_value(&ev))
+                            required=true
                         />
                     </div>
                     <div class="form-group">
-                        <label>"工期"</label>
+                        <label>"工期終了日"</label>
+                        <input type="date"
+                            prop:value=move || period_end.get()
+                            on:input=move |ev| set_period_end.set(event_target_value(&ev))
+                            required=true
+                        />
+                    </div>
+                </div>
+                // 旧形式の工期（表示のみ、新データでは使わない）
+                {move || {
+                    let p = period.get();
+                    (!p.is_empty()).then(|| view! {
+                        <div class="form-group legacy">
+                            <label>"工期（旧形式）"</label>
+                            <input type="text"
+                                prop:value=p
+                                on:input=move |ev| set_period.set(event_target_value(&ev))
+                            />
+                        </div>
+                    })
+                }}
+            </div>
+
+            <div class="editor-section">
+                <h3>"担当者情報"</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>"現場代理人"</label>
                         <input type="text"
-                            prop:value=move || period.get()
-                            on:input=move |ev| set_period.set(event_target_value(&ev))
+                            prop:value=move || site_representative.get()
+                            on:input=move |ev| set_site_representative.set(event_target_value(&ev))
+                            placeholder="例: 山田太郎"
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"主任技術者"</label>
+                        <input type="text"
+                            prop:value=move || chief_engineer.get()
+                            on:input=move |ev| set_chief_engineer.set(event_target_value(&ev))
+                            placeholder="例: 鈴木一郎"
                         />
                     </div>
                 </div>

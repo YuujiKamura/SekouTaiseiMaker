@@ -15,8 +15,21 @@ pub struct ProjectData {
     pub project_name: String,
     #[serde(default)]
     pub client: String,
+    /// 工期（旧形式: 自由テキスト、新形式では使わない）
     #[serde(default)]
     pub period: String,
+    /// 工期開始日 (yyyy-MM-dd)
+    #[serde(default)]
+    pub period_start: Option<String>,
+    /// 工期終了日 (yyyy-MM-dd)
+    #[serde(default)]
+    pub period_end: Option<String>,
+    /// 現場代理人
+    #[serde(default)]
+    pub site_representative: Option<String>,
+    /// 主任技術者
+    #[serde(default)]
+    pub chief_engineer: Option<String>,
     #[serde(default)]
     pub project_docs: ProjectDocs,
     pub contractors: Vec<Contractor>,

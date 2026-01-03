@@ -84,6 +84,7 @@ export interface ProjectContext {
   periodStart?: string;         // 工期開始日 (yyyy-MM-dd)
   periodEnd?: string;           // 工期終了日 (yyyy-MM-dd)
   siteRepresentative?: string;  // 現場代理人（元請け）= 所長名の正解
+  chiefEngineer?: string;       // 主任技術者
   today?: string;               // 今日の日付 (yyyy-MM-dd)
 }
 
@@ -98,6 +99,7 @@ export function buildExtractionPrompt(context?: ProjectContext): string {
 - 業者名: ${context.contractor}
 ${context.projectName ? `- 工事名: ${context.projectName}` : ''}
 ${context.siteRepresentative ? `- 現場代理人（所長名の正解）: ${context.siteRepresentative}` : ''}
+${context.chiefEngineer ? `- 主任技術者: ${context.chiefEngineer}` : ''}
 ${context.periodStart ? `- 工期開始日: ${context.periodStart}` : ''}
 ${context.periodEnd ? `- 工期終了日: ${context.periodEnd}` : ''}
 ${context.today ? `- 今日の日付: ${context.today}` : ''}

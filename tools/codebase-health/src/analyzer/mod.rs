@@ -235,16 +235,43 @@ impl CodebaseAnalyzer {
         issues: &[Issue],
         complexity: &ComplexityReport,
     ) -> u8 {
-        let mut score: i32 = 100;
+        let mut score: f64 = 100.0;
 
-        // Deduct for issues
-        for issue in issues {
-            match issue.severity {
-                Severity::Critical => score -= 10,
-                Severity::High => score -= 5,
-                Severity::Medium => score -= 2,
-                Severity::Low => score -= 1,
-                Severity::Info => {}
+        // Issues減点（ファイル数で正規化して、過剰な減点を防ぐ）
+        let critical_count = issues.iter().filter(|i| i.severity == Severity::Critical).count();
+        let high_count = issues.iter().filter(|i| i.severity == Severity::High).count();
+        let medium_count = issues.iter().filter(|i| i.severity == Severity::Medium).count();
+        let low_count = issues.iter().filter(|i| i.severity == Severity::Low).count();
+        
+        // ファイル数で正規化（1ファイルあたりのissues数で評価）
+        if stats.total_files > 0 {
+            let files = stats.total_files as f64;
+            // Critical: 1ファイルあたり0.1件以上で減点
+            if critical_count as f64 / files > 0.1 {
+                score -= 20.0;
+            } else if critical_count > 0 {
+                score -= (critical_count as f64 / files * 200.0).min(20.0);
+            }
+            
+            // High: 1ファイルあたり0.2件以上で減点
+            if high_count as f64 / files > 0.2 {
+                score -= 15.0;
+            } else if high_count > 0 {
+                score -= (high_count as f64 / files * 75.0).min(15.0);
+            }
+            
+            // Medium: 1ファイルあたり1件以上で減点
+            if medium_count as f64 / files > 1.0 {
+                score -= 10.0;
+            } else if medium_count > 0 {
+                score -= (medium_count as f64 / files * 10.0).min(10.0);
+            }
+            
+            // Low: 1ファイルあたり5件以上で減点
+            if low_count as f64 / files > 5.0 {
+                score -= 5.0;
+            } else if low_count > 0 {
+                score -= (low_count as f64 / files * 1.0).min(5.0);
             }
         }
 
@@ -252,33 +279,33 @@ impl CodebaseAnalyzer {
         if stats.total_lines > 0 {
             let comment_ratio = stats.comment_lines as f64 / stats.total_lines as f64;
             if comment_ratio < 0.05 {
-                score -= 10;
+                score -= 10.0;
             } else if comment_ratio < 0.10 {
-                score -= 5;
+                score -= 5.0;
             }
         }
 
         // Deduct for high complexity
         if complexity.avg_complexity > 15.0 {
-            score -= 15;
+            score -= 15.0;
         } else if complexity.avg_complexity > 10.0 {
-            score -= 10;
+            score -= 10.0;
         } else if complexity.avg_complexity > 5.0 {
-            score -= 5;
+            score -= 5.0;
         }
 
         // Deduct for lack of tests
         if stats.total_files > 0 {
             let test_ratio = stats.test_files as f64 / stats.total_files as f64;
             if test_ratio < 0.05 {
-                score -= 15;
+                score -= 15.0;
             } else if test_ratio < 0.10 {
-                score -= 10;
+                score -= 10.0;
             } else if test_ratio < 0.20 {
-                score -= 5;
+                score -= 5.0;
             }
         }
 
-        score.clamp(0, 100) as u8
+        score.clamp(0.0, 100.0) as u8
     }
 }
