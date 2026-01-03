@@ -332,3 +332,124 @@ export function formatDateValue(value: string | null): string | null {
 
   return value;
 }
+
+/**
+ * ExtractionResultをCheckResult形式に変換
+ * Rust側のCheckResultDataと互換性を持たせるため
+ */
+export function convertExtractionResultToCheckResult(
+  extractionResult: ExtractionResult
+): {
+  status: 'ok' | 'warning' | 'error';
+  summary: string;
+  items: Array<{ type: 'ok' | 'warning' | 'error'; message: string }>;
+  missing_fields: Array<{ field: string; location: string }>;
+  extracted_fields?: Record<string, string>;
+} {
+  const items: Array<{ type: 'ok' | 'warning' | 'error'; message: string }> = [];
+  const missing_fields: Array<{ field: string; location: string }> = [];
+  const extracted_fields: Record<string, string> = {};
+  
+  let hasError = false;
+  let hasWarning = false;
+  let allOk = true;
+
+  // 重要4項目をチェック
+  const keyFields = ['事業所名', '所長名', '作成日', '提出日'];
+  for (const keyField of keyFields) {
+    const field = extractionResult.fields.find(f => f.label === keyField);
+    
+    if (!field || !field.value) {
+      missing_fields.push({
+        field: keyField,
+        location: field?.cell || '未検出'
+      });
+      items.push({
+        type: 'error',
+        message: `${keyField}が未検出です`
+      });
+      hasError = true;
+      allOk = false;
+    } else {
+      // 妥当性判定に基づいてアイテムを追加
+      if (field.validation === 'error') {
+        items.push({
+          type: 'error',
+          message: `${keyField}: ${field.validationNote || 'エラー'}`
+        });
+        hasError = true;
+        allOk = false;
+      } else if (field.validation === 'warning') {
+        items.push({
+          type: 'warning',
+          message: `${keyField}: ${field.validationNote || '警告'}`
+        });
+        hasWarning = true;
+        allOk = false;
+      } else {
+        items.push({
+          type: 'ok',
+          message: `${keyField}: ${field.value}`
+        });
+      }
+      
+      // extracted_fieldsに追加（重要フィールドのみ）
+      if (keyField === '所長名') {
+        extracted_fields['representative_name'] = field.value;
+      } else if (keyField === '事業所名') {
+        extracted_fields['office_name'] = field.value;
+      }
+    }
+  }
+
+  // その他のフィールドもチェック
+  for (const field of extractionResult.fields) {
+    if (!keyFields.includes(field.label)) {
+      if (!field.value) {
+        missing_fields.push({
+          field: field.label,
+          location: field.cell || '未検出'
+        });
+      } else if (field.validation === 'error') {
+        items.push({
+          type: 'error',
+          message: `${field.label}: ${field.validationNote || 'エラー'}`
+        });
+        hasError = true;
+        allOk = false;
+      } else if (field.validation === 'warning') {
+        items.push({
+          type: 'warning',
+          message: `${field.label}: ${field.validationNote || '警告'}`
+        });
+        hasWarning = true;
+        allOk = false;
+      }
+    }
+  }
+
+  // ステータス決定
+  let status: 'ok' | 'warning' | 'error';
+  if (hasError) {
+    status = 'error';
+  } else if (hasWarning) {
+    status = 'warning';
+  } else {
+    status = 'ok';
+  }
+
+  // サマリー生成
+  const summary = allOk
+    ? `${extractionResult.documentType}のチェックが完了しました。問題は見つかりませんでした。`
+    : hasError
+    ? `${extractionResult.documentType}のチェックでエラーが見つかりました。`
+    : `${extractionResult.documentType}のチェックで警告が見つかりました。`;
+
+  return {
+    status,
+    summary,
+    items,
+    missing_fields,
+    extracted_fields: Object.keys(extracted_fields).length > 0 ? extracted_fields : undefined,
+  };
+}

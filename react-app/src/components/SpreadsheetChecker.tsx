@@ -19,7 +19,9 @@ import {
   KEY_FIELDS,
   type ExtractionResult,
   type ProjectContext,
+  convertExtractionResultToCheckResult,
 } from '../services/fieldExtractor';
+import type { CheckResult } from '../services/gemini';
 import * as XLSX from 'xlsx';
 import './AiChecker.css';
 
@@ -428,14 +430,17 @@ export function SpreadsheetChecker() {
 
   const handleSaveAndBack = () => {
     if (result) {
+      // ExtractionResultをCheckResult形式に変換
+      const checkResult: CheckResult = convertExtractionResultToCheckResult(result);
+      
       window.parent.postMessage({
         type: 'ai-check-result',
-        result,
+        result: checkResult,
         contractor,
         contractorId,
         docType,
         docKey,
-        spreadsheetId: spreadsheetId || fileId,
+        fileId: spreadsheetId || fileId, // フィールド名をfileIdに統一
       }, '*');
     }
   };
