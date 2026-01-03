@@ -15,8 +15,15 @@ import * as XLSX from 'xlsx';
 import './AiChecker.css';
 
 // 抽出した重要フィールド
+interface FieldLocation {
+  row: number;
+  col: number;
+  source: 'right' | 'below';
+}
+
 interface ExtractedFields {
   officeName: string | null;      // 事業所名
+  officeNameCell?: FieldLocation; // 事業所名のセル位置
   directorName: string | null;    // 所長名
   createdDate: string | null;     // 名簿作成日
   submittedDate: string | null;   // 提出日
@@ -44,6 +51,7 @@ interface SheetListResponse {
 function extractImportantFields(data: string[][]): ExtractedFields {
   const fields: ExtractedFields = {
     officeName: null,
+    officeNameCell: undefined,
     directorName: null,
     createdDate: null,
     submittedDate: null,
@@ -60,6 +68,11 @@ function extractImportantFields(data: string[][]): ExtractedFields {
       if ((cell.includes('事業所') || cell.includes('事業所の名称')) && !fields.officeName) {
         const rightValue = col + 1 < data[row].length ? data[row][col + 1] : null;
         const belowValue = row + 1 < data.length && col < (data[row + 1]?.length || 0) ? data[row + 1][col] : null;
+        if (rightValue !== null && rightValue !== undefined) {
+          fields.officeNameCell = { row, col: col + 1, source: 'right' };
+        } else if (belowValue !== null && belowValue !== undefined) {
+          fields.officeNameCell = { row: row + 1, col, source: 'below' };
+        }
         fields.officeName = rightValue || belowValue || null;
       }
 
@@ -140,6 +153,18 @@ function validateOfficeName(officeName: string | null, currentProjectName: strin
   return { isValid: true, warning: null };
 }
 
+function needsOfficeNameFix(fields: ExtractedFields | undefined, currentProjectName: string): boolean {
+  if (!fields || !currentProjectName) return false;
+  if (!fields.officeNameCell) return false;
+  const validation = validateOfficeName(fields.officeName, currentProjectName);
+  // 未入力または工事名を含まない警告状態を修正対象とみなす
+  if (!validation.isValid) return true;
+  if (validation.warning && (!fields.officeName || !fields.officeName.includes(currentProjectName))) {
+    return true;
+  }
+  return false;
+}
+
 interface ExcelResponse {
   success?: boolean;
   error?: string;
@@ -172,6 +197,9 @@ export function SpreadsheetChecker() {
 
   // Excel用のワークブック
   const [excelWorkbook, setExcelWorkbook] = useState<XLSX.WorkBook | null>(null);
+  const [fixing, setFixing] = useState(false);
+  const [fixMessage, setFixMessage] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const spreadsheetId = getUrlParam('spreadsheetId');
   const fileId = getUrlParam('fileId');
@@ -183,6 +211,39 @@ export function SpreadsheetChecker() {
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || docType;
   const projectName = getUrlParam('projectName') || ''; // 現在の工事名（バリデーション用）
+
+  useEffect(() => {
+    return () => {
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+    };
+  }, [downloadUrl]);
+
+  const buildExcelSheetData = (workbook: XLSX.WorkBook, sheetIds: Set<number>) => {
+    const allData: string[][] = [];
+    const sheetNames: string[] = [];
+
+    for (const sheetId of sheetIds) {
+      const sheetName = workbook.SheetNames[sheetId];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+
+      if (allData.length > 0) {
+        allData.push(['']);
+        allData.push([`=== ${sheetName} ===`]);
+      } else {
+        allData.push([`=== ${sheetName} ===`]);
+      }
+
+      jsonData.forEach(row => {
+        allData.push((row as string[]).map(cell => String(cell ?? '')));
+      });
+      sheetNames.push(sheetName);
+    }
+
+    return { allData, sheetNames };
+  };
 
   // データ取得（Excel or スプレッドシート）
   useEffect(() => {
@@ -314,30 +375,16 @@ export function SpreadsheetChecker() {
     setError(null);
 
     try {
-      const allData: string[][] = [];
-      const sheetNames: string[] = [];
-
       if (isExcel && excelWorkbook) {
         // Excelの場合はローカルでパース
-        for (const sheetId of selectedSheetIds) {
-          const sheetName = excelWorkbook.SheetNames[sheetId];
-          const sheet = excelWorkbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
-
-          if (allData.length > 0) {
-            allData.push(['']);
-            allData.push([`=== ${sheetName} ===`]);
-          } else {
-            allData.push([`=== ${sheetName} ===`]);
-          }
-
-          jsonData.forEach(row => {
-            allData.push((row as string[]).map(cell => String(cell ?? '')));
-          });
-          sheetNames.push(sheetName);
-        }
+        const { allData, sheetNames } = buildExcelSheetData(excelWorkbook, selectedSheetIds);
+        setSheetData(allData);
+        setCurrentSheetName(sheetNames.join(', '));
       } else {
         // スプレッドシートの場合はGAS経由
+        const allData: string[][] = [];
+        const sheetNames: string[] = [];
+
         for (const sheetId of selectedSheetIds) {
           const url = `${gasUrl}?action=fetchSpreadsheet&spreadsheetId=${encodeURIComponent(spreadsheetId!)}&gid=${sheetId}`;
           const response = await fetch(url, { cache: 'no-store' });
@@ -356,10 +403,9 @@ export function SpreadsheetChecker() {
           allData.push(...data.data);
           sheetNames.push(data.sheetName);
         }
+        setSheetData(allData);
+        setCurrentSheetName(sheetNames.join(', '));
       }
-
-      setSheetData(allData);
-      setCurrentSheetName(sheetNames.join(', '));
       setPhase('check');
       setLoading(false);
     } catch (e) {
@@ -414,8 +460,96 @@ export function SpreadsheetChecker() {
     }
   };
 
+  const applyOfficeNameAutoFix = () => {
+    if (!isExcel) return;
+    if (!excelWorkbook) {
+      setError('Excelファイルが読み込まれていません');
+      return;
+    }
+    if (!projectName) {
+      setError('工事名が取得できませんでした。工事情報を読み込んでから再試行してください。');
+      return;
+    }
+    if (selectedSheetIds.size === 0) {
+      setError('修正するシートを選択してください');
+      return;
+    }
+
+    setFixing(true);
+    setError(null);
+    setFixMessage(null);
+
+    try {
+      let updatedCount = 0;
+      const updatedSheetList = sheetList.map((sheet) => {
+        if (!selectedSheetIds.has(sheet.sheetId)) return sheet;
+
+        const sheetName = excelWorkbook.SheetNames[sheet.sheetId];
+        const worksheet = excelWorkbook.Sheets[sheetName];
+        const targetCell = sheet.fields?.officeNameCell;
+
+        if (!worksheet || !targetCell || !needsOfficeNameFix(sheet.fields, projectName)) {
+          return sheet;
+        }
+
+        const cellAddress = XLSX.utils.encode_cell({ r: targetCell.row, c: targetCell.col });
+        const originalCell = worksheet[cellAddress] || { t: 's', v: '' };
+        worksheet[cellAddress] = { ...originalCell, t: 's', v: projectName };
+        updatedCount += 1;
+
+        const jsonData = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1 });
+        const extendedData = jsonData.slice(0, 10).map(row =>
+          (row || []).slice(0, 20).map(cell => String(cell ?? ''))
+        );
+        const fields = extractImportantFields(extendedData);
+        const preview = jsonData.slice(0, 3).map(row =>
+          (row || []).slice(0, 5).map(cell => String(cell ?? ''))
+        );
+
+        return {
+          ...sheet,
+          rowCount: jsonData.length,
+          colCount: jsonData[0]?.length || 0,
+          preview,
+          fields
+        };
+      });
+
+      if (updatedCount === 0) {
+        setFixMessage('修正対象のセルを特定できませんでした。事業所名のラベルが見つかっているか確認してください。');
+        return;
+      }
+
+      setSheetList(updatedSheetList);
+
+      const { allData, sheetNames } = buildExcelSheetData(excelWorkbook, selectedSheetIds);
+      if (phase === 'check') {
+        setSheetData(allData);
+        setCurrentSheetName(sheetNames.join(', '));
+        setResult(null);
+      }
+
+      const workbookArray = XLSX.write(excelWorkbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([workbookArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+      setDownloadUrl(url);
+      setFixMessage(`事業所名を工事名「${projectName}」に更新しました（${updatedCount}件）。修正済みファイルをダウンロードして保存してください。`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '自動修正に失敗しました');
+    } finally {
+      setFixing(false);
+    }
+  };
+
   // ファイルタイプ表示
   const fileTypeLabel = isExcel ? 'Excel' : 'スプレッドシート';
+  const selectedSheets = sheetList.filter(sheet => selectedSheetIds.has(sheet.sheetId));
+  const fixableCount = isExcel && projectName
+    ? selectedSheets.filter(sheet => needsOfficeNameFix(sheet.fields, projectName)).length
+    : 0;
 
   // シート選択フェーズ
   if (phase === 'select') {
@@ -448,6 +582,33 @@ export function SpreadsheetChecker() {
                   <h3>{spreadsheetName}</h3>
                   <p>AIチェックを実行するシートを選択してください（複数選択可）</p>
                 </div>
+                {isExcel && projectName && (
+                  <div className="ai-fix-panel">
+                    <div className="ai-fix-text">
+                      <strong>事業所名の自動修正</strong>
+                      <p>工事情報の工事名と一致していない事業所名を、AIが工事名に書き換えます（選択中のシートのみ）。</p>
+                      {fixMessage && <p className="fix-message">{fixMessage}</p>}
+                    </div>
+                    <div className="ai-fix-actions">
+                      <button
+                        className="ai-fix-btn"
+                        onClick={applyOfficeNameAutoFix}
+                        disabled={fixing || selectedSheetIds.size === 0 || fixableCount === 0}
+                      >
+                        {fixing ? 'AI修正中...' : `AIで修正 (${fixableCount}件候補)`}
+                      </button>
+                      {downloadUrl && (
+                        <a
+                          className="download-link"
+                          href={downloadUrl}
+                          download={`${spreadsheetName || 'spreadsheet'}-fixed.xlsx`}
+                        >
+                          修正後Excelをダウンロード
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="sheet-list">
                   {sheetList.map(sheet => {
                     const fields = sheet.fields;
