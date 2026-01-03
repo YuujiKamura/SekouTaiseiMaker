@@ -1,8 +1,8 @@
 //! プロジェクト表示コンポーネント
 
-use leptos::*;
-use crate::models::{ProjectData, DocLink};
 use super::ContractorCard;
+use crate::models::{DocLink, ProjectData};
+use leptos::*;
 
 /// プロジェクト全体の書類カード
 #[component]
@@ -34,13 +34,36 @@ pub fn ProjectDocCard(label: &'static str, doc: Option<DocLink>) -> impl IntoVie
 #[component]
 pub fn ProjectView(project: ProjectData) -> impl IntoView {
     let total_docs: usize = project.contractors.iter().map(|c| c.docs.len()).sum();
-    let complete_docs: usize = project.contractors.iter()
+    let complete_docs: usize = project
+        .contractors
+        .iter()
         .flat_map(|c| c.docs.values())
         .filter(|d| d.status)
         .count();
-    let progress = if total_docs > 0 { (complete_docs * 100) / total_docs } else { 0 };
+    let progress = if total_docs > 0 {
+        (complete_docs * 100) / total_docs
+    } else {
+        0
+    };
 
     let project_docs = project.project_docs.clone();
+    let site_agent = project.site_agent.clone().unwrap_or_default();
+    let chief_engineer = project.chief_engineer.clone().unwrap_or_default();
+
+    let period_text = {
+        let start = project.period_start.clone().unwrap_or_default();
+        let end = project.period_end.clone().unwrap_or_default();
+        if !start.is_empty() || !end.is_empty() {
+            match (start.as_str(), end.as_str()) {
+                (s, e) if !s.is_empty() && !e.is_empty() => format!("{}〜{}", s, e),
+                (s, _) if !s.is_empty() => format!("{}〜", s),
+                (_, e) if !e.is_empty() => format!("〜{}", e),
+                _ => project.period.clone(),
+            }
+        } else {
+            project.period.clone()
+        }
+    };
 
     view! {
         <div class="project-view">
@@ -48,8 +71,18 @@ pub fn ProjectView(project: ProjectData) -> impl IntoView {
                 <h3>{project.project_name.clone()}</h3>
                 <div class="project-meta">
                     <span class="client">{project.client.clone()}</span>
-                    <span class="period">{project.period.clone()}</span>
+                    <span class="period">{period_text}</span>
                 </div>
+                {(!site_agent.is_empty() || !chief_engineer.is_empty()).then(|| view! {
+                    <div class="project-meta">
+                        {(!site_agent.is_empty()).then(|| view! {
+                            <span class="client">"現場代理人: " {site_agent.clone()}</span>
+                        })}
+                        {(!chief_engineer.is_empty()).then(|| view! {
+                            <span class="period">"主任技術者: " {chief_engineer.clone()}</span>
+                        })}
+                    </div>
+                })}
             </div>
 
             <div class="progress-section">

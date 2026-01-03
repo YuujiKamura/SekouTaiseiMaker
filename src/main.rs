@@ -1,28 +1,31 @@
 // モジュール宣言
+mod components;
 mod models;
 mod utils;
-mod components;
 mod views;
 
 // 外部クレート
 use leptos::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::{JsFuture, spawn_local};
+use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{FileReader, HtmlInputElement, Request, RequestInit, Response};
-use std::collections::HashMap;
 
 // 自モジュールからのインポート
-use models::*;
 use components::{CheckResultTooltip, ContextMenu};
-use utils::cache::{save_to_cache, load_from_cache, clear_cache};
-use utils::gas::{get_gas_url, save_gas_url, clear_gas_url, init_gas_from_url_params, generate_gas_share_url, fetch_from_gas, auto_save_api_key_to_sheet, format_gas_modified_time, save_gas_url_to_sheet};
-use utils::{encode_base64, decode_base64};
-use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
+use components::{ProjectEditor, ProjectView};
+use models::*;
+use utils::cache::{clear_cache, load_from_cache, save_to_cache};
+use utils::gas::{
+    auto_save_api_key_to_sheet, clear_gas_url, fetch_from_gas, format_gas_modified_time,
+    generate_gas_share_url, get_gas_url, init_gas_from_url_params, save_gas_url,
+    save_gas_url_to_sheet,
+};
+use utils::{decode_base64, encode_base64};
 use views::ocr_viewer::{OcrDocument, OcrToken, OcrViewContext, OcrViewer};
-use components::{ProjectView, ProjectEditor};
-
+use views::{CheckResultsPanel, PdfViewer, SpreadsheetViewer};
 
 // URLハッシュからデータを取得
 fn get_hash_data() -> Option<ProjectData> {
@@ -50,7 +53,8 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
     let body = serde_json::to_string(&SaveRequest {
         action: "save",
         project,
-    }).map_err(|e| format!("JSON変換失敗: {:?}", e))?;
+    })
+    .map_err(|e| format!("JSON変換失敗: {:?}", e))?;
 
     // GASはCORSプリフライトに対応しないため、text/plainで送信
     // （Content-Type: application/jsonだとプリフライトが発生する）
@@ -60,7 +64,9 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
     opts.set_mode(web_sys::RequestMode::Cors);
 
     let headers = web_sys::Headers::new().map_err(|_| "Headers作成失敗")?;
-    headers.set("Content-Type", "text/plain").map_err(|_| "Header設定失敗")?;
+    headers
+        .set("Content-Type", "text/plain")
+        .map_err(|_| "Header設定失敗")?;
     opts.set_headers(&headers);
 
     let request = Request::new_with_str_and_init(&gas_url, &opts)
@@ -71,8 +77,7 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
         .await
         .map_err(|e| format!("fetch失敗: {:?}", e))?;
 
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
+    let resp: Response = resp_value.dyn_into().map_err(|_| "Responseへの変換失敗")?;
 
     if !resp.ok() {
         return Err(format!("APIエラー: {}", resp.status()));
@@ -90,8 +95,8 @@ async fn sync_to_gas(project: &ProjectData) -> Result<String, String> {
         error: Option<String>,
     }
 
-    let response: SaveResponse = serde_wasm_bindgen::from_value(json)
-        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
+    let response: SaveResponse =
+        serde_wasm_bindgen::from_value(json).map_err(|e| format!("デシリアライズ失敗: {:?}", e))?;
 
     if let Some(err) = response.error {
         return Err(err);
@@ -114,8 +119,8 @@ pub use models::ContextMenuState;
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckMode {
     None,
-    Existence,  // 書類存在チェック
-    Date,       // 日付チェック
+    Existence, // 書類存在チェック
+    Date,      // 日付チェック
 }
 
 #[derive(Debug, Clone)]
@@ -283,7 +288,6 @@ pub struct ProjectContext {
     pub set_context_menu: WriteSignal<ContextMenuState>,
 }
 
-
 #[component]
 fn Dashboard() -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
@@ -315,7 +319,6 @@ fn Dashboard() -> impl IntoView {
     }
 }
 
-
 // JSONファイルをfetch
 async fn fetch_json(url: &str) -> Result<ProjectData, String> {
     let opts = RequestInit::new();
@@ -329,15 +332,13 @@ async fn fetch_json(url: &str) -> Result<ProjectData, String> {
         .await
         .map_err(|e| format!("fetch失敗: {:?}", e))?;
 
-    let resp: Response = resp_value.dyn_into()
-        .map_err(|_| "Responseへの変換失敗")?;
+    let resp: Response = resp_value.dyn_into().map_err(|_| "Responseへの変換失敗")?;
 
     let json = JsFuture::from(resp.json().map_err(|e| format!("json()失敗: {:?}", e))?)
         .await
         .map_err(|e| format!("JSON解析失敗: {:?}", e))?;
 
-    serde_wasm_bindgen::from_value(json)
-        .map_err(|e| format!("デシリアライズ失敗: {:?}", e))
+    serde_wasm_bindgen::from_value(json).map_err(|e| format!("デシリアライズ失敗: {:?}", e))
 }
 
 // ============================================
@@ -376,11 +377,7 @@ fn extract_file_id(url: &str) -> Option<String> {
 
 #[allow(unused_variables)]
 #[component]
-fn PdfEditor(
-    contractor: String,
-    doc_type: String,
-    original_url: String,
-) -> impl IntoView {
+fn PdfEditor(contractor: String, doc_type: String, original_url: String) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext必須");
     let set_view_mode = ctx.set_view_mode;
 
@@ -391,10 +388,12 @@ fn PdfEditor(
 
         match (gas_url, file_id) {
             (Some(gas), Some(fid)) => {
-                let encoded_gas = js_sys::encode_uri_component(&gas).as_string().unwrap_or_default();
+                let encoded_gas = js_sys::encode_uri_component(&gas)
+                    .as_string()
+                    .unwrap_or_default();
                 format!("editor/index.html?fileId={}&gasUrl={}", fid, encoded_gas)
             }
-            _ => "editor/index.html".to_string()
+            _ => "editor/index.html".to_string(),
         }
     };
 
@@ -417,7 +416,9 @@ fn PdfEditor(
             }
         }) as Box<dyn FnMut(_)>);
 
-        window.add_event_listener_with_callback("message", closure.as_ref().unchecked_ref()).ok();
+        window
+            .add_event_listener_with_callback("message", closure.as_ref().unchecked_ref())
+            .ok();
         closure.forget(); // リスナーを保持
     });
 
@@ -442,7 +443,11 @@ fn run_existence_check(project: &ProjectData) -> Vec<CheckResult> {
     let mut results = Vec::new();
     for contractor in &project.contractors {
         for (doc_key, doc_status) in &contractor.docs {
-            let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+            let label = doc_key
+                .replace("_", " ")
+                .chars()
+                .skip_while(|c| c.is_numeric())
+                .collect::<String>();
             let label = label.trim_start_matches('_').to_string();
 
             if !doc_status.status {
@@ -450,7 +455,10 @@ fn run_existence_check(project: &ProjectData) -> Vec<CheckResult> {
                     contractor_name: contractor.name.clone(),
                     doc_name: label,
                     status: CheckStatus::Error,
-                    message: doc_status.note.clone().unwrap_or_else(|| "未提出".to_string()),
+                    message: doc_status
+                        .note
+                        .clone()
+                        .unwrap_or_else(|| "未提出".to_string()),
                 });
             } else if doc_status.url.is_none() && doc_status.file.is_some() {
                 results.push(CheckResult {
@@ -477,7 +485,11 @@ fn run_date_check(project: &ProjectData, today: &str) -> Vec<CheckResult> {
     let mut results = Vec::new();
     for contractor in &project.contractors {
         for (doc_key, doc_status) in &contractor.docs {
-            let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+            let label = doc_key
+                .replace("_", " ")
+                .chars()
+                .skip_while(|c| c.is_numeric())
+                .collect::<String>();
             let label = label.trim_start_matches('_').to_string();
 
             // 有効期限がある書類のみチェック
@@ -530,12 +542,10 @@ fn clear_all_check_results(project: &mut ProjectData) {
 
 /// 特定の書類のチェック結果をクリア
 #[allow(dead_code)]
-fn clear_check_result(
-    project: &mut ProjectData,
-    contractor_id: &str,
-    doc_key: &str,
-) {
-    if let Some(contractor) = project.contractors.iter_mut()
+fn clear_check_result(project: &mut ProjectData, contractor_id: &str, doc_key: &str) {
+    if let Some(contractor) = project
+        .contractors
+        .iter_mut()
         .find(|c| c.id == contractor_id)
     {
         if let Some(doc) = contractor.docs.get_mut(doc_key) {
@@ -553,11 +563,20 @@ fn add_days_to_date(date: &str, days: i32) -> String {
     // YYYY-MM-DD形式を想定
     if let Some((year, rest)) = date.split_once('-') {
         if let Some((month, day)) = rest.split_once('-') {
-            if let (Ok(y), Ok(m), Ok(d)) = (year.parse::<i32>(), month.parse::<i32>(), day.parse::<i32>()) {
+            if let (Ok(y), Ok(m), Ok(d)) = (
+                year.parse::<i32>(),
+                month.parse::<i32>(),
+                day.parse::<i32>(),
+            ) {
                 let total_days = d + days;
                 let new_month = m + (total_days - 1) / 30;
                 let new_day = ((total_days - 1) % 30) + 1;
-                return format!("{:04}-{:02}-{:02}", y + (new_month - 1) / 12, ((new_month - 1) % 12) + 1, new_day);
+                return format!(
+                    "{:04}-{:02}-{:02}",
+                    y + (new_month - 1) / 12,
+                    ((new_month - 1) % 12) + 1,
+                    new_day
+                );
             }
         }
     }
@@ -582,7 +601,10 @@ fn get_timestamp() -> String {
     let hours = date.get_hours();
     let minutes = date.get_minutes();
     let seconds = date.get_seconds();
-    format!("{:04}{:02}{:02}_{:02}{:02}{:02}", year, month, day, hours, minutes, seconds)
+    format!(
+        "{:04}{:02}{:02}_{:02}{:02}{:02}",
+        year, month, day, hours, minutes, seconds
+    )
 }
 
 // JSONダウンロード用関数（タイムスタンプ付き）
@@ -601,7 +623,9 @@ fn download_json(project: &ProjectData) {
                 let options = web_sys::BlobPropertyBag::new();
                 options.set_type("application/json");
 
-                if let Ok(blob) = web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &options) {
+                if let Ok(blob) =
+                    web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &options)
+                {
                     if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
                         if let Ok(a) = document.create_element("a") {
                             let _ = a.set_attribute("href", &url);
@@ -646,7 +670,8 @@ fn App() -> impl IntoView {
     let (api_loading, set_api_loading) = create_signal(false);
 
     // チェック結果ツールチップ状態
-    let (check_result_tooltip, set_check_result_tooltip) = create_signal(CheckResultTooltipState::default());
+    let (check_result_tooltip, set_check_result_tooltip) =
+        create_signal(CheckResultTooltipState::default());
 
     // コンテキストメニュー状態（右クリック/ロングプレス）
     let (context_menu, set_context_menu) = create_signal(ContextMenuState::default());
@@ -733,34 +758,72 @@ fn App() -> impl IntoView {
                                 "ai-check-result" => {
                                     web_sys::console::log_1(&"[ai-check-result] Received".into());
                                     // AIチェック結果を受け取り、ProjectDataを更新
-                                    let contractor = js_sys::Reflect::get(&data, &JsValue::from_str("contractor"))
-                                        .ok().and_then(|v| v.as_string());
-                                    let doc_key_raw = js_sys::Reflect::get(&data, &JsValue::from_str("docKey"))
-                                        .ok().and_then(|v| v.as_string());
-                                    let result_val = js_sys::Reflect::get(&data, &JsValue::from_str("result")).ok();
+                                    let contractor = js_sys::Reflect::get(
+                                        &data,
+                                        &JsValue::from_str("contractor"),
+                                    )
+                                    .ok()
+                                    .and_then(|v| v.as_string());
+                                    let doc_key_raw =
+                                        js_sys::Reflect::get(&data, &JsValue::from_str("docKey"))
+                                            .ok()
+                                            .and_then(|v| v.as_string());
+                                    let result_val =
+                                        js_sys::Reflect::get(&data, &JsValue::from_str("result"))
+                                            .ok();
 
-                                    web_sys::console::log_1(&format!("[ai-check-result] contractor={:?}, doc_key={:?}", contractor, doc_key_raw).into());
+                                    web_sys::console::log_1(
+                                        &format!(
+                                            "[ai-check-result] contractor={:?}, doc_key={:?}",
+                                            contractor, doc_key_raw
+                                        )
+                                        .into(),
+                                    );
 
-                                    if let (Some(contractor_name), Some(doc_key_raw), Some(result_js)) = (contractor, doc_key_raw, result_val) {
+                                    if let (
+                                        Some(contractor_name),
+                                        Some(doc_key_raw),
+                                        Some(result_js),
+                                    ) = (contractor, doc_key_raw, result_val)
+                                    {
                                         let doc_key = doc_key_raw.trim().to_string();
                                         // 結果をCheckResultDataにデシリアライズ
-                                        match serde_wasm_bindgen::from_value::<CheckResultData>(result_js.clone()) {
+                                        match serde_wasm_bindgen::from_value::<CheckResultData>(
+                                            result_js.clone(),
+                                        ) {
                                             Ok(check_result) => {
-                                                web_sys::console::log_1(&format!("[ai-check-result] Deserialized: status={}", check_result.status).into());
+                                                web_sys::console::log_1(
+                                                    &format!(
+                                                        "[ai-check-result] Deserialized: status={}",
+                                                        check_result.status
+                                                    )
+                                                    .into(),
+                                                );
                                                 // ProjectDataを更新
                                                 if let Some(mut proj) = project.get() {
-                                                    let now = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
+                                                    let now = js_sys::Date::new_0()
+                                                        .to_iso_string()
+                                                        .as_string()
+                                                        .unwrap_or_default();
 
                                                     // contractor.docsを更新
-                                                    let contractor_name_trimmed = contractor_name.trim();
+                                                    let contractor_name_trimmed =
+                                                        contractor_name.trim();
                                                     for contractor in &mut proj.contractors {
-                                                        if contractor.name.trim() == contractor_name_trimmed {
+                                                        if contractor.name.trim()
+                                                            == contractor_name_trimmed
+                                                        {
                                                             web_sys::console::log_1(&format!("[ai-check-result] Found contractor: {}", contractor.name).into());
-                                                            let doc_keys: Vec<_> = contractor.docs.keys().collect();
+                                                            let doc_keys: Vec<_> =
+                                                                contractor.docs.keys().collect();
                                                             web_sys::console::log_1(&format!("[ai-check-result] Available docs: {:?}", doc_keys).into());
-                                                            if let Some(doc_status) = contractor.docs.get_mut(&doc_key) {
-                                                                doc_status.check_result = Some(check_result.clone());
-                                                                doc_status.last_checked = Some(now.clone());
+                                                            if let Some(doc_status) =
+                                                                contractor.docs.get_mut(&doc_key)
+                                                            {
+                                                                doc_status.check_result =
+                                                                    Some(check_result.clone());
+                                                                doc_status.last_checked =
+                                                                    Some(now.clone());
                                                                 web_sys::console::log_1(&format!("[ai-check-result] Updated doc: {}", doc_key).into());
                                                             } else {
                                                                 web_sys::console::log_1(&format!("[ai-check-result] Doc key '{}' not found", doc_key).into());
@@ -772,18 +835,29 @@ fn App() -> impl IntoView {
                                                     // ローカル更新
                                                     set_project.set(Some(proj.clone()));
                                                     save_to_cache(&proj);
-                                                    web_sys::console::log_1(&"[ai-check-result] Saved to cache".into());
+                                                    web_sys::console::log_1(
+                                                        &"[ai-check-result] Saved to cache".into(),
+                                                    );
 
                                                     // GASに保存
                                                     spawn_local(async move {
                                                         if let Err(e) = sync_to_gas(&proj).await {
-                                                            web_sys::console::error_1(&format!("GAS保存エラー: {}", e).into());
+                                                            web_sys::console::error_1(
+                                                                &format!("GAS保存エラー: {}", e)
+                                                                    .into(),
+                                                            );
                                                         }
                                                     });
                                                 }
                                             }
                                             Err(e) => {
-                                                web_sys::console::error_1(&format!("[ai-check-result] Deserialize error: {:?}", e).into());
+                                                web_sys::console::error_1(
+                                                    &format!(
+                                                        "[ai-check-result] Deserialize error: {:?}",
+                                                        e
+                                                    )
+                                                    .into(),
+                                                );
                                             }
                                         }
                                     }
@@ -804,7 +878,9 @@ fn App() -> impl IntoView {
                     }
                 }
             }) as Box<dyn FnMut(_)>);
-            window.add_event_listener_with_callback("message", closure.as_ref().unchecked_ref()).ok();
+            window
+                .add_event_listener_with_callback("message", closure.as_ref().unchecked_ref())
+                .ok();
             closure.forget();
         });
     }
@@ -935,15 +1011,21 @@ fn App() -> impl IntoView {
                                     Ok(_) => {
                                         set_copy_success.set(true);
                                         // コンソールにも出力
-                                        web_sys::console::log_1(&"共有URLをクリップボードにコピーしました".into());
+                                        web_sys::console::log_1(
+                                            &"共有URLをクリップボードにコピーしました".into(),
+                                        );
                                         gloo::timers::future::TimeoutFuture::new(3000).await;
                                         set_copy_success.set(false);
                                     }
                                     Err(e) => {
-                                        web_sys::console::error_1(&format!("クリップボードへのコピー失敗: {:?}", e).into());
+                                        web_sys::console::error_1(
+                                            &format!("クリップボードへのコピー失敗: {:?}", e)
+                                                .into(),
+                                        );
                                         // フォールバック: alertで表示
                                         if let Some(window) = web_sys::window() {
-                                            let _ = window.alert_with_message(&format!("共有URL:\n{}", href));
+                                            let _ = window
+                                                .alert_with_message(&format!("共有URL:\n{}", href));
                                         }
                                     }
                                 }
@@ -993,15 +1075,17 @@ fn App() -> impl IntoView {
             project_name: "新規工事".to_string(),
             client: "".to_string(),
             period: "".to_string(),
+            period_start: None,
+            period_end: None,
+            site_agent: None,
+            chief_engineer: None,
             project_docs: ProjectDocs::default(),
-            contractors: vec![
-                Contractor {
-                    id: "prime".to_string(),
-                    name: "元請業者".to_string(),
-                    role: "元請".to_string(),
-                    docs: HashMap::new(),
-                }
-            ],
+            contractors: vec![Contractor {
+                id: "prime".to_string(),
+                name: "元請業者".to_string(),
+                role: "元請".to_string(),
+                docs: HashMap::new(),
+            }],
             contracts: Vec::new(),
         };
         set_project.set(Some(new_project));
@@ -1481,9 +1565,7 @@ fn App() -> impl IntoView {
     }
 }
 
-
 fn main() {
     console_error_panic_hook::set_once();
     mount_to_body(App);
 }
-

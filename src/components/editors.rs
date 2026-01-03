@@ -2,13 +2,30 @@
 //!
 //! ProjectEditor, ContractorEditor, DocEditor を提供
 
+use crate::models::{Contractor, DocLink, DocStatus, ProjectData};
+use crate::utils::cache::save_to_cache;
+use crate::utils::gas::{get_gas_url, save_to_gas};
+use crate::ProjectContext;
 use leptos::*;
 use std::collections::HashMap;
 use wasm_bindgen_futures::spawn_local;
-use crate::models::{Contractor, DocStatus, ProjectData, DocLink};
-use crate::ProjectContext;
-use crate::utils::gas::{get_gas_url, save_to_gas};
-use crate::utils::cache::save_to_cache;
+
+fn parse_period_range(period: &str) -> (String, String) {
+    if let Some((start, end)) = period.split_once('〜').or_else(|| period.split_once('~')) {
+        (start.trim().to_string(), end.trim().to_string())
+    } else {
+        (String::new(), String::new())
+    }
+}
+
+fn empty_to_none(value: String) -> Option<String> {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
 
 /// 標準的な書類リスト
 pub const STANDARD_DOCS: &[(&str, &str)] = &[
@@ -27,18 +44,19 @@ pub const STANDARD_DOCS: &[(&str, &str)] = &[
 
 /// プロジェクト全体書類の編集用コンポーネント
 #[component]
-fn ProjectDocEditor<G, F>(
-    label: &'static str,
-    doc: G,
-    on_update: F,
-) -> impl IntoView
+fn ProjectDocEditor<G, F>(label: &'static str, doc: G, on_update: F) -> impl IntoView
 where
     G: Fn() -> Option<DocLink> + 'static,
     F: Fn(Option<DocLink>) + 'static + Clone,
 {
     let initial = doc();
     let (status, set_status) = create_signal(initial.as_ref().map(|d| d.status).unwrap_or(false));
-    let (url, set_url) = create_signal(initial.as_ref().and_then(|d| d.url.clone()).unwrap_or_default());
+    let (url, set_url) = create_signal(
+        initial
+            .as_ref()
+            .and_then(|d| d.url.clone())
+            .unwrap_or_default(),
+    );
 
     let on_update_1 = on_update.clone();
     let on_update_2 = on_update;
@@ -81,10 +99,20 @@ where
 pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
 
+    let (parsed_start, parsed_end) = parse_period_range(&project.period);
+
     // ローカルで編集可能な状態を作成
     let (project_name, set_project_name) = create_signal(project.project_name.clone());
     let (client, set_client) = create_signal(project.client.clone());
-    let (period, set_period) = create_signal(project.period.clone());
+    let (period, _) = create_signal(project.period.clone());
+    let (period_start, set_period_start) =
+        create_signal(project.period_start.clone().unwrap_or(parsed_start));
+    let (period_end, set_period_end) =
+        create_signal(project.period_end.clone().unwrap_or(parsed_end));
+    let (site_agent, set_site_agent) =
+        create_signal(project.site_agent.clone().unwrap_or_default());
+    let (chief_engineer, set_chief_engineer) =
+        create_signal(project.chief_engineer.clone().unwrap_or_default());
     let (project_docs, set_project_docs) = create_signal(project.project_docs.clone());
     let (contractors, set_contractors) = create_signal(project.contractors.clone());
     let (contracts, _) = create_signal(project.contracts.clone());
@@ -95,10 +123,20 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
 
     // 変更を保存（ローカル + GAS）
     let save_changes = move |_| {
+        let period_text = if !period_start.get().is_empty() || !period_end.get().is_empty() {
+            format!("{}〜{}", period_start.get(), period_end.get())
+        } else {
+            period.get()
+        };
+
         let updated = ProjectData {
             project_name: project_name.get(),
             client: client.get(),
-            period: period.get(),
+            period: period_text,
+            period_start: empty_to_none(period_start.get()),
+            period_end: empty_to_none(period_end.get()),
+            site_agent: empty_to_none(site_agent.get()),
+            chief_engineer: empty_to_none(chief_engineer.get()),
             project_docs: project_docs.get(),
             contractors: contractors.get(),
             contracts: contracts.get(),
@@ -200,10 +238,34 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
                         />
                     </div>
                     <div class="form-group">
-                        <label>"工期"</label>
+                        <label>"工期開始"</label>
+                        <input type="date"
+                            prop:value=move || period_start.get()
+                            on:input=move |ev| set_period_start.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"工期終了"</label>
+                        <input type="date"
+                            prop:value=move || period_end.get()
+                            on:input=move |ev| set_period_end.set(event_target_value(&ev))
+                        />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>"現場代理人"</label>
                         <input type="text"
-                            prop:value=move || period.get()
-                            on:input=move |ev| set_period.set(event_target_value(&ev))
+                            prop:value=move || site_agent.get()
+                            on:input=move |ev| set_site_agent.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"主任技術者"</label>
+                        <input type="text"
+                            prop:value=move || chief_engineer.get()
+                            on:input=move |ev| set_chief_engineer.set(event_target_value(&ev))
                         />
                     </div>
                 </div>
@@ -256,11 +318,7 @@ pub fn ProjectEditor(project: ProjectData) -> impl IntoView {
 
 /// 業者編集コンポーネント
 #[component]
-pub fn ContractorEditor<F, D>(
-    contractor: Contractor,
-    on_update: F,
-    on_delete: D,
-) -> impl IntoView
+pub fn ContractorEditor<F, D>(contractor: Contractor, on_update: F, on_delete: D) -> impl IntoView
 where
     F: Fn(Contractor) + 'static + Clone,
     D: Fn(()) + 'static,
@@ -422,7 +480,8 @@ where
     let (doc_status, set_doc_status) = create_signal(status.status);
     let (file, set_file) = create_signal(status.file.clone().unwrap_or_default());
     let (url, set_url) = create_signal(status.url.clone().unwrap_or_default());
-    let (valid_until, set_valid_until) = create_signal(status.valid_until.clone().unwrap_or_default());
+    let (valid_until, set_valid_until) =
+        create_signal(status.valid_until.clone().unwrap_or_default());
     let (note, set_note) = create_signal(status.note.clone().unwrap_or_default());
 
     // 既存データを保持（編集時に消えないように）
@@ -430,7 +489,11 @@ where
     let original_check_result = status.check_result.clone();
     let original_last_checked = status.last_checked.clone();
 
-    let label = doc_key.replace("_", " ").chars().skip_while(|c| c.is_numeric()).collect::<String>();
+    let label = doc_key
+        .replace("_", " ")
+        .chars()
+        .skip_while(|c| c.is_numeric())
+        .collect::<String>();
     let label = label.trim_start_matches('_').to_string();
 
     // 各イベント用にon_updateをクローン
@@ -441,11 +504,31 @@ where
     let on_update_5 = on_update;
 
     // 各ハンドラ用に既存値をクローン
-    let (vf1, cr1, lc1) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
-    let (vf2, cr2, lc2) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
-    let (vf3, cr3, lc3) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
-    let (vf4, cr4, lc4) = (original_valid_from.clone(), original_check_result.clone(), original_last_checked.clone());
-    let (vf5, cr5, lc5) = (original_valid_from, original_check_result, original_last_checked);
+    let (vf1, cr1, lc1) = (
+        original_valid_from.clone(),
+        original_check_result.clone(),
+        original_last_checked.clone(),
+    );
+    let (vf2, cr2, lc2) = (
+        original_valid_from.clone(),
+        original_check_result.clone(),
+        original_last_checked.clone(),
+    );
+    let (vf3, cr3, lc3) = (
+        original_valid_from.clone(),
+        original_check_result.clone(),
+        original_last_checked.clone(),
+    );
+    let (vf4, cr4, lc4) = (
+        original_valid_from.clone(),
+        original_check_result.clone(),
+        original_last_checked.clone(),
+    );
+    let (vf5, cr5, lc5) = (
+        original_valid_from,
+        original_check_result,
+        original_last_checked,
+    );
 
     view! {
         <div class=format!("doc-editor {}", if doc_status.get() { "complete" } else { "incomplete" })>

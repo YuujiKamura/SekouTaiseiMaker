@@ -15,6 +15,14 @@ pub struct ProjectData {
     #[serde(default)]
     pub period: String,
     #[serde(default)]
+    pub period_start: Option<String>,
+    #[serde(default)]
+    pub period_end: Option<String>,
+    #[serde(default)]
+    pub site_agent: Option<String>,
+    #[serde(default)]
+    pub chief_engineer: Option<String>,
+    #[serde(default)]
     pub project_docs: ProjectDocs,
     pub contractors: Vec<Contractor>,
     #[serde(default)]
@@ -220,7 +228,8 @@ pub fn detect_file_type(url: &str) -> DocFileType {
         } else if url_lower.contains("mime=application/vnd.openxmlformats")
             || url_lower.contains("mime=application/vnd.ms-excel")
             || url_lower.contains("type=xlsx")
-            || url_lower.contains("type=xls") {
+            || url_lower.contains("type=xls")
+        {
             DocFileType::Excel
         } else if url_lower.contains("mime=image/") || url_lower.contains("type=image") {
             DocFileType::Image
@@ -231,7 +240,10 @@ pub fn detect_file_type(url: &str) -> DocFileType {
                 DocFileType::Pdf
             } else if url_lower.contains(".xlsx") || url_lower.contains(".xls") {
                 DocFileType::Excel
-            } else if url_lower.contains(".png") || url_lower.contains(".jpg") || url_lower.contains(".jpeg") {
+            } else if url_lower.contains(".png")
+                || url_lower.contains(".jpg")
+                || url_lower.contains(".jpeg")
+            {
                 DocFileType::Image
             } else {
                 // 判別不能な場合はPDFとして試行（従来の動作）
