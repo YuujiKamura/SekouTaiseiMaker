@@ -1210,9 +1210,11 @@ fn App() -> impl IntoView {
                                     let window = web_sys::window().unwrap();
                                     let url = "http://localhost:8081/update";
                                     
-                                    match Request::new_with_str(url) {
+                                    let mut init = RequestInit::new();
+                                    init.method("POST");
+                                    
+                                    match Request::new_with_str_and_init(url, &init) {
                                         Ok(request) => {
-                                            request.set_method("POST");
                                             match JsFuture::from(window.fetch_with_request(&request)).await {
                                                 Ok(response) => {
                                                     let resp: Response = response.dyn_into().unwrap();
