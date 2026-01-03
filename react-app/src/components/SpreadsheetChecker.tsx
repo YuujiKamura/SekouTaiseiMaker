@@ -597,6 +597,13 @@ export function SpreadsheetChecker() {
 
         {result && (
           <div className="result-panel">
+            {/* 保存ボタンを最上部に配置 */}
+            <div className="result-actions-top" style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #ddd' }}>
+              <button className="save-btn" onClick={handleSaveAndBack} style={{ fontSize: '16px', padding: '12px 24px', fontWeight: 'bold' }}>
+                保存して閉じる
+              </button>
+            </div>
+            
             <h3>書類判定結果</h3>
             <div className="document-type-badge">
               {result.documentType}
@@ -696,9 +703,6 @@ export function SpreadsheetChecker() {
                 alert('JSONをコピーしました');
               }}>
                 JSONコピー
-              </button>
-              <button className="save-btn" onClick={handleSaveAndBack}>
-                保存して閉じる
               </button>
             </div>
           </div>
