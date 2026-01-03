@@ -1040,10 +1040,19 @@ window.clearPdfCache = async function() {
 };
 
 // ============================================
-// APIキー暗号化/復号（固定キー）
+// APIキー暗号化/復号
 // ============================================
 
-const API_KEY_FIXED_PASSWORD = 'SekouTaisei2024!AppKey#Encrypt';
+// Get encryption password from external config (config.js)
+// Falls back to error if not configured
+function getApiKeyEncryptionPassword() {
+    if (window.APP_CONFIG && window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD) {
+        return window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD;
+    }
+    console.error('[pdf-editor] API_KEY_ENCRYPTION_PASSWORD not configured. Please set up config.js');
+    throw new Error('API encryption password not configured');
+}
+
 const API_KEY_STORAGE_KEY = 'sekou_taisei_api_key';
 
 /**
@@ -1051,7 +1060,7 @@ const API_KEY_STORAGE_KEY = 'sekou_taisei_api_key';
  */
 async function deriveApiKeyEncryptionKey(salt) {
     const encoder = new TextEncoder();
-    const passwordBuffer = encoder.encode(API_KEY_FIXED_PASSWORD);
+    const passwordBuffer = encoder.encode(getApiKeyEncryptionPassword());
     const passwordKey = await crypto.subtle.importKey('raw', passwordBuffer, 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey(
         { name: 'PBKDF2', salt: salt.buffer, iterations: 100000, hash: 'SHA-256' },
