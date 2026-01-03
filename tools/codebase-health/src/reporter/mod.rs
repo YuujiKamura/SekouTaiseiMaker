@@ -4,9 +4,11 @@
 
 mod markdown;
 mod json;
+mod html;
 
 pub use markdown::MarkdownReporter;
 pub use json::JsonReporter;
+pub use html::HtmlReporter;
 
 use crate::analyzer::CodebaseAnalysis;
 use anyhow::Result;

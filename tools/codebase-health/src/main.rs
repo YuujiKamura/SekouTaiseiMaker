@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use analyzer::CodebaseAnalyzer;
-use reporter::{MarkdownReporter, JsonReporter, Reporter};
+use reporter::{MarkdownReporter, JsonReporter, HtmlReporter, Reporter};
 use task_generator::ClaudeTaskGenerator;
 
 #[derive(Parser)]
@@ -32,7 +32,7 @@ enum Commands {
         #[arg(short, long, default_value = ".")]
         path: PathBuf,
 
-        /// Output format (markdown, json)
+        /// Output format (markdown, json, html)
         #[arg(short, long, default_value = "markdown")]
         format: String,
 
@@ -101,6 +101,7 @@ fn main() -> Result<()> {
 
             let report = match format.as_str() {
                 "json" => JsonReporter::generate(&analysis)?,
+                "html" => HtmlReporter::generate(&analysis)?,
                 _ => MarkdownReporter::generate(&analysis)?,
             };
 
