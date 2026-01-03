@@ -3,6 +3,9 @@
  *
  * ■ 変更履歴 (要再デプロイ) ※新しい順
  * ─────────────────────────────────────
+ * 2026-01-03: getLatestFile に修正版ファイル優先ロジック追加
+ *             → _修正済_YYYYMMDD.xlsx パターンを自動検出・優先採用
+ *             → Excel(xlsx)ファイルにも対応
  * 2026-01-03: ProjectData新フィールド対応
  *             → period_start, period_end, site_representative, chief_engineer
  *             → getProjectInfoForValidation がプロジェクトレベルのフィールドを優先
@@ -257,17 +260,20 @@ function getFileInfo(fileId) {
 }
 
 // フォルダ内の最新ファイルを取得
-// 古いfileIdから親フォルダを特定し、同名ファイルがあればそれを、なければ最新のPDFを返す
+// 古いfileIdから親フォルダを特定し、修正版ファイルがあればそれを優先
+// 優先順位: 1. _修正済_版 → 2. 同名ファイル → 3. 最新ファイル
 function getLatestFileInFolder(oldFileId) {
   try {
     // 古いファイルの情報を取得
     let oldFile;
     let oldFileName = null;
+    let oldMimeType = null;
     let folderId = null;
 
     try {
       oldFile = DriveApp.getFileById(oldFileId);
       oldFileName = oldFile.getName();
+      oldMimeType = oldFile.getMimeType();
       const parents = oldFile.getParents();
       if (parents.hasNext()) {
         folderId = parents.next().getId();
@@ -290,18 +296,41 @@ function getLatestFileInFolder(oldFileId) {
     }
 
     const folder = DriveApp.getFolderById(folderId);
-    const files = folder.getFilesByType(MimeType.PDF);
+
+    // ファイルタイプに応じて検索（PDF or Excel）
+    const isExcel = oldMimeType && oldMimeType.includes('spreadsheet');
+    const files = isExcel
+      ? folder.getFilesByType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      : folder.getFilesByType(MimeType.PDF);
 
     let latestFile = null;
     let latestTime = null;
     let sameNameFile = null;
+    let fixedVersionFile = null;
+    let fixedVersionTime = null;
+
+    // 元ファイル名のベース部分を抽出（拡張子と_修正済_を除去）
+    const baseNameMatch = oldFileName.match(/^(.+?)(?:_修正済_\d+)?(\.[^.]+)$/);
+    const baseName = baseNameMatch ? baseNameMatch[1] : oldFileName.replace(/\.[^.]+$/, '');
+    const extension = baseNameMatch ? baseNameMatch[2] : '';
 
     while (files.hasNext()) {
       const file = files.next();
+      const fileName = file.getName();
       const fileTime = file.getLastUpdated();
 
+      // 修正版ファイルを探す（_修正済_YYYYMMDD パターン、重複時の (1) 等も許容）
+      const fixedPattern = new RegExp('^' + escapeRegExp(baseName) + '_修正済_\\d+(\\s*\\(\\d+\\))?' + escapeRegExp(extension) + '$');
+      if (fixedPattern.test(fileName)) {
+        // 最新の修正版を追跡
+        if (!fixedVersionTime || fileTime > fixedVersionTime) {
+          fixedVersionTime = fileTime;
+          fixedVersionFile = file;
+        }
+      }
+
       // 同名ファイルを探す
-      if (file.getName() === oldFileName) {
+      if (fileName === oldFileName) {
         sameNameFile = file;
       }
 
@@ -312,14 +341,15 @@ function getLatestFileInFolder(oldFileId) {
       }
     }
 
-    // 同名ファイルがあればそれを優先、なければ最新のファイル
-    const targetFile = sameNameFile || latestFile;
+    // 優先順位: 修正版 > 同名 > 最新
+    const targetFile = fixedVersionFile || sameNameFile || latestFile;
 
     if (!targetFile) {
-      return { error: 'No PDF files found in folder' };
+      return { error: 'No matching files found in folder' };
     }
 
     const isUpdated = targetFile.getId() !== oldFileId;
+    const isFixedVersion = !!fixedVersionFile && targetFile.getId() === fixedVersionFile.getId();
 
     return {
       success: true,
@@ -329,11 +359,17 @@ function getLatestFileInFolder(oldFileId) {
       modifiedTime: targetFile.getLastUpdated().toISOString(),
       isLatest: true,
       wasUpdated: isUpdated,
+      isFixedVersion: isFixedVersion,
       oldFileId: isUpdated ? oldFileId : undefined
     };
   } catch (err) {
     return { error: 'Failed to get latest file: ' + err.message };
   }
+}
+
+// 正規表現用エスケープ
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ExcelファイルをBase64で取得（フロントエンドでSheetJSパース用）
@@ -527,18 +563,42 @@ function updateDocUrl(contractorId, docKey, newFileId) {
       return { error: 'ProjectData sheet not found' };
     }
 
-    const data = dataSheet.getRange('A1').getValue();
+    // A2にJSONデータがある（A1はタイムスタンプ）
+    const data = dataSheet.getRange('A2').getValue();
     if (!data) {
       return { error: 'No project data found' };
     }
 
     const project = JSON.parse(data);
 
+    // 新しいファイルのMIMEタイプを確認してURL形式を決定
+    let newUrl;
+    try {
+      const newFile = DriveApp.getFileById(newFileId);
+      const mimeType = newFile.getMimeType();
+      const fileName = newFile.getName().toLowerCase();
+      if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        // Google Spreadsheet
+        newUrl = `https://docs.google.com/spreadsheets/d/${newFileId}/edit?usp=drivesdk`;
+      } else if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                 || mimeType === 'application/vnd.ms-excel'
+                 || fileName.endsWith('.xlsx')
+                 || fileName.endsWith('.xls')) {
+        // Excel - type=xlsxを追加してファイルタイプ判定を補助
+        newUrl = `https://drive.google.com/file/d/${newFileId}/view?usp=drivesdk&type=xlsx`;
+      } else {
+        // その他のファイル
+        newUrl = `https://drive.google.com/file/d/${newFileId}/view?usp=drivesdk`;
+      }
+    } catch (e) {
+      // ファイル取得に失敗した場合はDrive形式
+      newUrl = `https://drive.google.com/file/d/${newFileId}/view?usp=drivesdk`;
+    }
+
     // 対象のcontractorとdocを探してURLを更新
     let updated = false;
     for (const contractor of (project.contractors || [])) {
       if (contractor.id === contractorId && contractor.docs && contractor.docs[docKey]) {
-        const newUrl = `https://drive.google.com/file/d/${newFileId}/view?usp=drivesdk`;
         contractor.docs[docKey].url = newUrl;
         updated = true;
         break;
@@ -549,8 +609,8 @@ function updateDocUrl(contractorId, docKey, newFileId) {
       return { error: `Document not found: ${contractorId}/${docKey}` };
     }
 
-    // 更新したデータを保存
-    dataSheet.getRange('A1').setValue(JSON.stringify(project, null, 2));
+    // 更新したデータを保存（A2にJSON）
+    dataSheet.getRange('A2').setValue(JSON.stringify(project, null, 2));
 
     return {
       success: true,

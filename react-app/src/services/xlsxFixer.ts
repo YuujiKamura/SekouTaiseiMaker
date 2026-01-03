@@ -1,11 +1,14 @@
 /**
- * xlsxファイル修正サービス - AIが検出した問題をxlsxファイルに反映
+ * xlsxファイル修正サービス - xlsx-populateで書式を完全保持したまま修正
  *
  * ## 変更履歴
+ * - 2026-01-03: xlsx-populateに移行（オートシェイプ含む書式完全保持）
+ * - 2026-01-03: ExcelJS版
  * - 2026-01-03: 初期実装
  */
 
-import * as XLSX from 'xlsx';
+import XlsxPopulate from 'xlsx-populate';
+import type { Workbook } from 'xlsx-populate';
 
 /**
  * 修正情報
@@ -19,33 +22,35 @@ export interface CellFix {
 }
 
 /**
- * xlsxワークブックのセルを修正する
- * @param workbook 修正対象のワークブック（SheetJS）
+ * xlsx-populateでワークブックを読み込む（書式完全保持）
+ * @param data ArrayBuffer
+ * @returns xlsx-populateワークブック
+ */
+export async function loadWorkbook(data: ArrayBuffer): Promise<Workbook> {
+  return await XlsxPopulate.fromDataAsync(data);
+}
+
+/**
+ * ワークブックのセルを修正する（書式を完全保持）
+ * @param workbook 修正対象のワークブック
  * @param fixes 適用する修正リスト
- * @returns 修正されたワークブック
  */
 export function applyFixesToWorkbook(
-  workbook: XLSX.WorkBook,
+  workbook: Workbook,
   fixes: CellFix[]
-): XLSX.WorkBook {
+): void {
   for (const fix of fixes) {
-    const sheet = workbook.Sheets[fix.sheetName];
+    const sheet = workbook.sheet(fix.sheetName);
     if (!sheet) {
       console.warn(`[xlsxFixer] Sheet not found: ${fix.sheetName}`);
       continue;
     }
 
-    // セルを更新
-    sheet[fix.cell] = {
-      t: 's',           // 文字列型
-      v: fix.newValue,  // 値
-      w: fix.newValue,  // 表示用テキスト
-    };
+    // 値だけ更新（書式は自動的に保持される）
+    sheet.cell(fix.cell).value(fix.newValue);
 
     console.log(`[xlsxFixer] Fixed ${fix.sheetName}!${fix.cell}: "${fix.oldValue}" → "${fix.newValue}"`);
   }
-
-  return workbook;
 }
 
 /**
@@ -53,14 +58,10 @@ export function applyFixesToWorkbook(
  * @param workbook 修正済みワークブック
  * @returns Blob（xlsxファイル）
  */
-export function exportWorkbookAsBlob(workbook: XLSX.WorkBook): Blob {
-  const wbout = XLSX.write(workbook, {
-    type: 'array',
-    bookType: 'xlsx',
-  });
-  return new Blob([wbout], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
+export async function exportWorkbookAsBlob(workbook: Workbook): Promise<Blob> {
+  // ブラウザ環境では 'blob' タイプを明示的に指定
+  const blob = await workbook.outputAsync({ type: 'blob' }) as Blob;
+  return blob;
 }
 
 /**
@@ -68,11 +69,11 @@ export function exportWorkbookAsBlob(workbook: XLSX.WorkBook): Blob {
  * @param workbook 修正済みワークブック
  * @param originalFileName 元のファイル名
  */
-export function downloadFixedXlsx(
-  workbook: XLSX.WorkBook,
+export async function downloadFixedXlsx(
+  workbook: Workbook,
   originalFileName: string
-): void {
-  const blob = exportWorkbookAsBlob(workbook);
+): Promise<void> {
+  const blob = await exportWorkbookAsBlob(workbook);
   const url = URL.createObjectURL(blob);
 
   // ファイル名生成（_修正済を追加）

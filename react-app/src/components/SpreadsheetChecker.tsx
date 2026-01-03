@@ -25,6 +25,7 @@ import {
   generateFixCandidates,
   applyFixesToWorkbook,
   downloadFixedXlsx,
+  loadWorkbook,
   type CellFix,
 } from '../services/xlsxFixer';
 import type { CheckResult } from '../services/gemini';
@@ -95,6 +96,10 @@ export function SpreadsheetChecker() {
   // 修正候補
   const [fixCandidates, setFixCandidates] = useState<CellFix[]>([]);
 
+  // 修正版ダウンロード済み
+  const [hasDownloaded, setHasDownloaded] = useState(false);
+  const [adoptingFixedVersion, setAdoptingFixedVersion] = useState(false);
+
   const spreadsheetId = getUrlParam('spreadsheetId');
   const fileId = getUrlParam('fileId');
   const isExcel = getUrlParam('isExcel') === 'true';
@@ -104,6 +109,7 @@ export function SpreadsheetChecker() {
   const gasUrl = getUrlParam('gasUrl');
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || docType;
+  const autoFix = getUrlParam('autoFix') === 'true';
 
 
   const buildExcelSheetData = (workbook: XLSX.WorkBook, sheetIds: Set<number>) => {
@@ -202,6 +208,36 @@ export function SpreadsheetChecker() {
 
     fetchProjectInfo();
   }, [gasUrl]);
+
+  // autoFix モード: シート一覧取得後に自動で全シート選択して処理開始
+  const [autoFixStarted, setAutoFixStarted] = useState(false);
+  useEffect(() => {
+    if (!autoFix || sheetList.length === 0 || loading || autoFixStarted) return;
+
+    // 全シートを選択
+    const allSheetIds = new Set(sheetList.map(s => s.sheetId));
+    setSelectedSheetIds(allSheetIds);
+    setAutoFixStarted(true);
+
+    // 少し待ってから自動で処理開始
+    const timer = setTimeout(() => {
+      handleProceedToCheck();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [autoFix, sheetList, loading, autoFixStarted]);
+
+  // autoFix モード: チェックフェーズに入ったら自動でAI解析実行
+  useEffect(() => {
+    if (!autoFix || phase !== 'check' || !sheetData || checking || result) return;
+
+    // 少し待ってからAIチェック実行
+    const timer = setTimeout(() => {
+      runCheck();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [autoFix, phase, sheetData, checking, result]);
 
   const fetchExcelFile = async () => {
     try {
@@ -421,23 +457,28 @@ export function SpreadsheetChecker() {
         console.log('[SpreadsheetChecker] Extraction result:', extractionResult);
         setResult(extractionResult);
 
-        // Excel の場合、修正候補を生成
+        // Excel の場合、修正候補を生成（選択された全シートに適用）
         if (isExcel && excelWorkbook && projectInfo) {
-          const currentSheetNameForFix = Array.from(selectedSheetIds)
+          const selectedSheetNames = Array.from(selectedSheetIds)
             .map(id => excelWorkbook.SheetNames[id])
-            .find(name => name) || excelWorkbook.SheetNames[0];
+            .filter(name => name);
 
-          const candidates = generateFixCandidates(
-            extractionResult.fields,
-            currentSheetNameForFix,
-            {
-              projectName: projectInfo.projectName,
-              siteRepresentative: projectInfo.siteRepresentative,
-              chiefEngineer: projectInfo.chiefEngineer,
-            }
-          );
-          setFixCandidates(candidates);
-          console.log('[SpreadsheetChecker] Fix candidates:', candidates);
+          // 各シートに対して修正候補を生成
+          const allCandidates: CellFix[] = [];
+          for (const sheetName of selectedSheetNames) {
+            const candidates = generateFixCandidates(
+              extractionResult.fields,
+              sheetName,
+              {
+                projectName: projectInfo.projectName,
+                siteRepresentative: projectInfo.siteRepresentative,
+                chiefEngineer: projectInfo.chiefEngineer,
+              }
+            );
+            allCandidates.push(...candidates);
+          }
+          setFixCandidates(allCandidates);
+          console.log('[SpreadsheetChecker] Fix candidates:', allCandidates);
         }
       } else {
         setError('書類タイプの判定に失敗しました');
@@ -476,21 +517,85 @@ export function SpreadsheetChecker() {
     }
   };
 
-  // xlsx修正実行
-  const handleApplyFixes = () => {
+  // xlsx修正実行（ExcelJSで書式保持）
+  const handleApplyFixes = async () => {
     if (!excelWorkbook || fixCandidates.length === 0) return;
 
-    // ワークブックをクローン（元データを変更しない）
-    const clonedWorkbook = JSON.parse(JSON.stringify(excelWorkbook)) as XLSX.WorkBook;
+    // 元のワークブックを再取得して書式を保持（GASから再度取得）
+    try {
+      const url = `${gasUrl}?action=fetchExcelAsBase64&fileId=${encodeURIComponent(fileId!)}`;
+      const response = await fetch(url, { cache: 'no-store' });
+      const data = await response.json();
 
-    // 修正を適用
-    applyFixesToWorkbook(clonedWorkbook, fixCandidates);
+      if (!data.base64) {
+        throw new Error('Excelデータを再取得できませんでした');
+      }
 
-    // ダウンロード
-    downloadFixedXlsx(clonedWorkbook, spreadsheetName);
+      const buffer = safeBase64ToArrayBuffer(data.base64);
+      // ExcelJSで書式を保持して読み込み
+      const freshWorkbook = await loadWorkbook(buffer);
 
-    // 修正完了通知
-    alert(`${fixCandidates.length}件の修正を適用しました。\n修正済みファイルがダウンロードされます。`);
+      // 修正を適用
+      applyFixesToWorkbook(freshWorkbook, fixCandidates);
+
+      // ダウンロード
+      await downloadFixedXlsx(freshWorkbook, spreadsheetName);
+
+      setHasDownloaded(true);
+      alert(`${fixCandidates.length}件の修正を適用しました。\nダウンロードしたファイルをGoogle Driveの同じフォルダに保存してから「修正版を採用」ボタンを押してください。`);
+    } catch (e) {
+      console.error('[SpreadsheetChecker] Fix error:', e);
+      alert(`修正に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}`);
+    }
+  };
+
+  // 修正版を採用（Driveにアップロードされた修正版をProjectDataに反映）
+  const handleAdoptFixedVersion = async () => {
+    if (!fileId || !gasUrl) return;
+
+    setAdoptingFixedVersion(true);
+    try {
+      // 修正版ファイルを検索
+      const latestUrl = `${gasUrl}?action=getLatestFile&fileId=${encodeURIComponent(fileId)}`;
+      const latestResponse = await fetch(latestUrl, { cache: 'no-store' });
+      const latestData = await latestResponse.json();
+
+      if (latestData.error) {
+        throw new Error(latestData.error);
+      }
+
+      if (!latestData.isFixedVersion) {
+        alert('修正版ファイルが見つかりません。\nダウンロードしたファイルをGoogle Driveの同じフォルダに保存してください。');
+        return;
+      }
+
+      // ProjectDataのURLを更新
+      const updateUrl = `${gasUrl}?action=updateDocUrl&contractorId=${encodeURIComponent(contractorId)}&docKey=${encodeURIComponent(docKey)}&newFileId=${encodeURIComponent(latestData.fileId)}`;
+      const updateResponse = await fetch(updateUrl, { cache: 'no-store' });
+      const updateData = await updateResponse.json();
+
+      if (updateData.error) {
+        throw new Error(updateData.error);
+      }
+
+      alert(`修正版を採用しました: ${latestData.fileName}`);
+
+      // 親ウィンドウに通知して閉じる
+      window.parent.postMessage({
+        type: 'fixed-version-adopted',
+        newFileId: latestData.fileId,
+        fileName: latestData.fileName,
+        contractor,
+        contractorId,
+        docType,
+        docKey,
+      }, '*');
+    } catch (e) {
+      console.error('[SpreadsheetChecker] Adopt error:', e);
+      alert(`修正版の採用に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}`);
+    } finally {
+      setAdoptingFixedVersion(false);
+    }
   };
 
   const fileTypeLabel = isExcel ? 'Excel' : 'スプレッドシート';
@@ -709,28 +814,76 @@ export function SpreadsheetChecker() {
               </ul>
             </div>
 
-            {/* Excel修正セクション */}
-            {isExcel && fixCandidates.length > 0 && (
-              <div className="fix-section">
-                <h4>自動修正候補 ({fixCandidates.length}件)</h4>
-                <ul className="fix-candidates-list">
-                  {fixCandidates.map((fix, i) => (
-                    <li key={i} className="fix-candidate-item">
-                      <span className="fix-label">{fix.label}</span>
-                      <span className="fix-cell">[{fix.cell}]</span>
-                      <span className="fix-change">
-                        <span className="fix-old">{fix.oldValue}</span>
-                        <span className="fix-arrow">→</span>
-                        <span className="fix-new">{fix.newValue}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <button className="apply-fix-btn" onClick={handleApplyFixes}>
-                  修正してダウンロード
-                </button>
-              </div>
-            )}
+            {/* 修正セクション */}
+            {(() => {
+              const problemFields = result.fields.filter(
+                f => f.validation === 'error' || f.validation === 'warning'
+              );
+              if (problemFields.length === 0) return null;
+
+              return (
+                <div className="fix-section">
+                  <h4>要修正項目 ({problemFields.length}件)</h4>
+
+                  {/* 修正候補がある場合 */}
+                  {fixCandidates.length > 0 ? (
+                    <>
+                      <ul className="fix-candidates-list">
+                        {fixCandidates.map((fix, i) => (
+                          <li key={i} className="fix-candidate-item">
+                            <span className="fix-label">{fix.label}</span>
+                            <span className="fix-cell">[{fix.cell}]</span>
+                            <span className="fix-change">
+                              <span className="fix-old">{fix.oldValue}</span>
+                              <span className="fix-arrow">→</span>
+                              <span className="fix-new">{fix.newValue}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {isExcel && excelWorkbook ? (
+                        <div className="fix-buttons">
+                          <button className="apply-fix-btn" onClick={handleApplyFixes}>
+                            修正してダウンロード
+                          </button>
+                          <button
+                            className="adopt-fix-btn"
+                            onClick={handleAdoptFixedVersion}
+                            disabled={!hasDownloaded || adoptingFixedVersion}
+                            title={hasDownloaded ? 'Driveにアップロードした修正版を採用' : 'まず「修正してダウンロード」を実行してください'}
+                          >
+                            {adoptingFixedVersion ? '検索中...' : '修正版を採用'}
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="fix-manual-note">
+                          Google Spreadsheet: シートを開いて手動で修正してください
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    /* 修正候補がない場合（期待値が不明など） */
+                    <div className="fix-manual-section">
+                      <p className="fix-manual-note">
+                        以下の項目に問題があります。正しい値に修正してください：
+                      </p>
+                      <ul className="problem-fields-list">
+                        {problemFields.map((field, i) => (
+                          <li key={i} className="problem-field-item">
+                            <span className="fix-label">{field.label}</span>
+                            {field.cell && <span className="fix-cell">[{field.cell}]</span>}
+                            <span className="problem-value">{field.value || '未検出'}</span>
+                            {field.validationNote && (
+                              <span className="problem-note">{field.validationNote}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* その他のフィールド */}
             {result.fields.filter(f => !KEY_FIELDS.includes(f.label)).length > 0 && (

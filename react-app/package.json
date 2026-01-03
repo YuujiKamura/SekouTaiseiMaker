@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
+    "buffer": "^6.0.3",
     "harfbuzzjs": "^0.4.15",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.530",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-populate": "^1.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -31,8 +33,10 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "types-xlsx-populate": "^1.19.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vite-plugin-node-polyfills": "^0.24.0"
   }
 }

@@ -83,9 +83,12 @@ pub fn SpreadsheetViewer(
     url: String,
     doc_key: String,
     contractor_id: String,
+    #[prop(default = false)]
+    auto_fix: bool,
 ) -> impl IntoView {
     let ctx = use_context::<ProjectContext>().expect("ProjectContext not found");
-    let (ai_check_mode, set_ai_check_mode) = create_signal(false);
+    // auto_fix=true の場合は最初からAIチェックモードに入る
+    let (ai_check_mode, set_ai_check_mode) = create_signal(auto_fix);
 
     let on_back = {
         let set_ai_check_mode = set_ai_check_mode.clone();
@@ -103,7 +106,8 @@ pub fn SpreadsheetViewer(
 
     // Google Sheets URLを埋め込み用に変換（堅牢なID抽出方式）
     // rtpof=true がある場合はExcelファイルなのでDrive形式でプレビュー
-    let is_excel_compat = url.contains("rtpof=true");
+    // type=xlsx がある場合もExcelファイル
+    let is_excel_compat = url.contains("rtpof=true") || url.contains("type=xlsx");
     let embed_url = if is_local_path {
         String::new()
     } else if url.contains("docs.google.com/spreadsheets") {
@@ -116,6 +120,11 @@ pub fn SpreadsheetViewer(
                     build_sheets_embed_url(&id, gid.as_deref())
                 }
             })
+            .unwrap_or_else(|| url.clone())
+    } else if url.contains("drive.google.com/file") {
+        // Google Drive URLからファイルIDを抽出してプレビューURLに変換
+        extract_spreadsheet_id(&url)
+            .map(|id| build_drive_preview_url(&id))
             .unwrap_or_else(|| url.clone())
     } else {
         url.clone()
@@ -143,6 +152,10 @@ pub fn SpreadsheetViewer(
         // Excelファイルの場合はfileIdとフラグを追加
         if is_excel_compat {
             check_url.push_str(&format!("&isExcel=true&fileId={}", js_sys::encode_uri_component(id)));
+        }
+        // auto_fix モードの場合はフラグを追加
+        if auto_fix {
+            check_url.push_str("&autoFix=true");
         }
         check_url
     });
