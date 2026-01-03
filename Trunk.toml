@@ -24,6 +24,8 @@ command_arguments = ["-c", "if command -v codebase-health.exe >/dev/null 2>&1 ||
 
 [watch]
 ignore = ["dist", "react-app"]
+# ファイル変更時にヘルスレポートも更新（開発サーバー時）
+watch_build = true
 
 [serve]
 port = 8080
