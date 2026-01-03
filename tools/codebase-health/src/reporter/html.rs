@@ -73,9 +73,19 @@ impl Reporter for HtmlReporter {
         .issue.high {{ border-color: #f97316; }}
         .issue.medium {{ border-color: #eab308; }}
         .issue.low {{ border-color: #22c55e; }}
-        .issue-title {{ font-weight: 600; margin-bottom: 4px; }}
+        .issue-title {{ font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }}
         .issue-file {{ font-size: 0.8rem; color: #94a3b8; font-family: monospace; }}
         .issue-desc {{ font-size: 0.85rem; color: #cbd5e1; margin-top: 5px; }}
+        .issue-actions {{ display: flex; gap: 8px; margin-top: 8px; }}
+        .copy-btn {{
+            background: #3b82f6; color: white; border: none;
+            padding: 6px 12px; border-radius: 6px; cursor: pointer;
+            font-size: 0.8rem; font-weight: 500;
+            transition: background 0.2s;
+        }}
+        .copy-btn:hover {{ background: #2563eb; }}
+        .copy-btn:active {{ background: #1d4ed8; }}
+        .copy-btn.copied {{ background: #22c55e; }}
 
         .badge {{
             display: inline-block; padding: 2px 8px; border-radius: 4px;
@@ -271,19 +281,34 @@ impl Reporter for HtmlReporter {
         renderComplexityList('deeply-nested', cx.deeply_nested);
     }}
 
+    let filteredIssues = [];
+
     function renderIssues(filter) {{
         const list = document.getElementById('issue-list');
         let issues = data.issues;
         if (filter !== 'all') {{
             issues = issues.filter(i => i.severity.toLowerCase() === filter);
         }}
-        list.innerHTML = issues.slice(0, 50).map(i => `
+        filteredIssues = issues;
+        list.innerHTML = issues.slice(0, 50).map((i, idx) => {{
+            const originalIdx = data.issues.findIndex(orig => 
+                orig.file === i.file && 
+                orig.line === i.line && 
+                orig.title === i.title
+            );
+            return `
             <div class="issue ${{i.severity.toLowerCase()}}">
-                <div class="issue-title">${{i.title}}</div>
+                <div class="issue-title">
+                    <span>${{i.title}}</span>
+                    <button class="copy-btn" onclick="copyTaskToClipboard(${{originalIdx >= 0 ? originalIdx : idx}})" data-issue-idx="${{originalIdx >= 0 ? originalIdx : idx}}">
+                        📋 コピー
+                    </button>
+                </div>
                 <div class="issue-file">${{i.file}}${{i.line ? ':' + i.line : ''}}</div>
                 ${{i.description ? `<div class="issue-desc">${{i.description}}</div>` : ''}}
             </div>
-        `).join('');
+        `;
+        }}).join('');
         if (issues.length > 50) {{
             list.innerHTML += `<div style="padding:10px;color:#64748b">...and ${{issues.length - 50}} more</div>`;
         }}
@@ -306,6 +331,109 @@ impl Reporter for HtmlReporter {
                 <span class="complexity-name">${{item.split('/').pop()}}</span>
             </div>
         `).join('');
+    }}
+
+    function generateClaudeTask(issue) {{
+        const severityNames = {{
+            'critical': 'Critical',
+            'high': 'High',
+            'medium': 'Medium',
+            'low': 'Low',
+            'info': 'Info'
+        }};
+        const categoryNames = {{
+            'Security': 'Security',
+            'CodeQuality': 'Code Quality',
+            'Performance': 'Performance',
+            'Maintainability': 'Maintainability',
+            'Documentation': 'Documentation',
+            'Testing': 'Testing',
+            'BestPractice': 'Best Practice'
+        }};
+
+        const priority = issue.severity === 'critical' ? 'P1' :
+                        issue.severity === 'high' ? 'P2' :
+                        issue.severity === 'medium' ? 'P3' :
+                        issue.severity === 'low' ? 'P4' : 'P5';
+
+        let task = `# コード改善タスク
+
+**優先度:** ${{priority}} (${{severityNames[issue.severity]}})
+**カテゴリ:** ${{categoryNames[issue.category] || issue.category}}
+**ファイル:** \`${{issue.file}}\`
+${{issue.line ? `**行番号:** ${{issue.line}}\n` : ''}}
+
+## 問題の説明
+
+${{issue.title}}
+
+${{issue.description ? issue.description : ''}}
+
+## 改善提案
+
+${{issue.suggestion || '該当箇所を確認し、適切な修正を実施してください。'}}
+
+## 受け入れ基準
+
+- [ ] 問題が解決されている
+- [ ] コードが正常にコンパイル/実行できる
+- [ ] 既存のテストが通過する
+- [ ] コードの可読性が向上している
+
+## 実装時のヒント
+
+${{issue.category === 'Security' ? '- セキュリティベストプラクティスに従う\n- 機密情報が適切に扱われているか確認する' : ''}}
+${{issue.category === 'CodeQuality' ? '- コードの可読性を向上させる\n- エラーハンドリングを追加する' : ''}}
+${{issue.category === 'Performance' ? '- パフォーマンスプロファイリングを検討する\n- キャッシュやメモ化を検討する' : ''}}
+${{issue.category === 'Maintainability' ? '- 変更は最小限に留める\n- 複雑なロジックにはコメントを追加する' : ''}}
+${{issue.category === 'Documentation' ? '- 公開APIにはドキュメントコメントを追加する\n- 例を含める場合は追加する' : ''}}
+${{issue.category === 'Testing' ? '- 新しいコードにはユニットテストを追加する\n- エッジケースを考慮する' : ''}}
+${{issue.category === 'BestPractice' ? '- プロジェクトのコーディング規約に従う\n- CONTRIBUTINGガイドを確認する' : ''}}
+
+---
+
+## Claudeへの指示
+
+このタスクを完了する際は：
+
+1. まず、影響を受けるファイルを読み、現在の実装を理解する
+2. 特定の問題に対応する最小限の変更を行う
+3. すべての受け入れ基準が満たされていることを確認する
+4. 関連するテストを実行して変更を検証する
+5. このタスクIDを参照する明確なメッセージでコミットする
+
+\`\`\`
+git commit -m "fix: ${{issue.title}} in ${{issue.file}}${{issue.line ? ':' + issue.line : ''}}"
+\`\`\`
+`;
+
+        return task;
+    }}
+
+    async function copyTaskToClipboard(issueIdx) {{
+        const issue = data.issues[issueIdx];
+        if (!issue) return;
+
+        const taskText = generateClaudeTask(issue);
+
+        try {{
+            await navigator.clipboard.writeText(taskText);
+            
+            // ボタンの状態を更新
+            const btn = document.querySelector(`[data-issue-idx="${{issueIdx}}"]`);
+            if (btn) {{
+                const originalText = btn.textContent;
+                btn.textContent = '✓ コピー済み';
+                btn.classList.add('copied');
+                setTimeout(() => {{
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }}, 2000);
+            }}
+        }} catch (err) {{
+            console.error('クリップボードへのコピーに失敗しました:', err);
+            alert('クリップボードへのコピーに失敗しました。手動でコピーしてください。');
+        }}
     }}
 
     init();
