@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 test.describe('Font Subset Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,7 +13,7 @@ test.describe('Font Subset Tests', () => {
   });
 
   // サブセット設定をテストするためのヘルパー
-  async function testPdfSave(page: any, useSubset: boolean, testName: string) {
+  async function testPdfSave(page: Page, useSubset: boolean, testName: string) {
     const downloadPromise = page.waitForEvent('download');
 
     // テスト用PDFをアップロード
