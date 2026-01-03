@@ -78,10 +78,11 @@ impl IssueDetector {
     fn detect_common_issues(path: &str, content: &str) -> Vec<Issue> {
         let mut issues = Vec::new();
 
-        // TODO/FIXME/HACK comments
-        let todo_re = Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX|BUG)\b[:\s]*(.*)").unwrap();
+        // TODO/FIXME/HACK comments - only match in actual comments, not string literals
+        // Match keywords that appear after comment markers (// # /* -- etc.)
+        let comment_todo_re = Regex::new(r"(?://|#|/\*|--)\s*(?i)(TODO|FIXME|HACK|XXX|BUG)\b[:\s]*(.*)").unwrap();
         for (line_num, line) in content.lines().enumerate() {
-            if let Some(cap) = todo_re.captures(line) {
+            if let Some(cap) = comment_todo_re.captures(line) {
                 let tag = cap.get(1).map(|m| m.as_str()).unwrap_or("TODO");
                 let description = cap.get(2).map(|m| m.as_str().trim()).unwrap_or("");
 
