@@ -17,8 +17,10 @@ command_arguments = ["-c", "mkdir -p dist/editor && cp -r react-app/dist/* dist/
 
 [[hooks]]
 stage = "post_build"
+# Windows/Linux両対応
+# Windows: cmd.exeを使用、Linux/Mac: shを使用
 command = "sh"
-command_arguments = ["-c", "./tools/codebase-health/target/release/codebase-health analyze --format html --output dist/health-report.html 2>/dev/null || true"]
+command_arguments = ["-c", "if command -v codebase-health.exe >/dev/null 2>&1 || [ -f 'tools/codebase-health/target/release/codebase-health.exe' ]; then tools/codebase-health/target/release/codebase-health.exe analyze --format html --output dist/health-report.html 2>/dev/null || true; elif [ -f 'tools/codebase-health/target/release/codebase-health' ]; then ./tools/codebase-health/target/release/codebase-health analyze --format html --output dist/health-report.html 2>/dev/null || true; fi"]
 
 [watch]
 ignore = ["dist", "react-app"]

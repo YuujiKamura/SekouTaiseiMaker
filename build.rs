@@ -1,4 +1,5 @@
 use std::fs;
+use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 fn main() {
@@ -17,6 +18,28 @@ fn main() {
 
     // ファイル変更時に再ビルド
     println!("cargo:rerun-if-changed=gas/SekouTaiseiSync.gs");
+
+    // health-report.htmlを生成（Windows/Linux両対応）
+    // distディレクトリが存在する場合のみ実行（Trunkのビルド後）
+    if fs::metadata("dist").is_ok() {
+        let exe_path = if cfg!(windows) {
+            "tools\\codebase-health\\target\\release\\codebase-health.exe"
+        } else {
+            "tools/codebase-health/target/release/codebase-health"
+        };
+
+        if fs::metadata(exe_path).is_ok() {
+            let output = Command::new(exe_path)
+                .args(&["analyze", "--format", "html", "--output", "dist/health-report.html"])
+                .output();
+
+            if let Ok(result) = output {
+                if !result.status.success() {
+                    println!("cargo:warning=Failed to generate health-report.html: {:?}", result.stderr);
+                }
+            }
+        }
+    }
 }
 
 
