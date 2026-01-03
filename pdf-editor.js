@@ -1048,11 +1048,8 @@ window.clearPdfCache = async function() {
 // against casual inspection, NOT true security. For production environments requiring
 // secure API key management, consider using a backend service.
 
-// Default placeholder password - must be changed for production
-const DEFAULT_PLACEHOLDER_PASSWORD = 'CHANGE_THIS_TO_A_SECURE_PASSWORD';
-
 // Get encryption password from external config (config.js)
-// Falls back to error if not configured or using placeholder
+// Throws error if not configured
 function getApiKeyEncryptionPassword() {
     if (!window.APP_CONFIG || !window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD) {
         console.error('[pdf-editor] API_KEY_ENCRYPTION_PASSWORD not configured. Please set up config.js');
@@ -1061,9 +1058,10 @@ function getApiKeyEncryptionPassword() {
 
     const password = window.APP_CONFIG.API_KEY_ENCRYPTION_PASSWORD;
 
-    // Warn if using the default placeholder password
-    if (password === DEFAULT_PLACEHOLDER_PASSWORD) {
-        console.warn('[pdf-editor] WARNING: Using default placeholder password. Please configure a secure password in config.js');
+    // Validate password is a non-empty string
+    if (typeof password !== 'string' || password.trim().length === 0) {
+        console.error('[pdf-editor] API_KEY_ENCRYPTION_PASSWORD must be a non-empty string');
+        throw new Error('Invalid API encryption password');
     }
 
     return password;
