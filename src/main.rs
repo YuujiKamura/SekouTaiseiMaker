@@ -1209,7 +1209,7 @@ fn App() -> impl IntoView {
                                     // 更新コマンドをクリップボードにコピー
                                     let window = web_sys::window().unwrap();
                                     let navigator = window.navigator();
-                                    if let Ok(clipboard) = navigator.clipboard() {
+                                    if let Some(clipboard) = navigator.clipboard() {
                                         // OSを判定（navigator.platformから推測）
                                         let platform = navigator.platform().unwrap_or_default().to_lowercase();
                                         let command = if platform.contains("win") {
