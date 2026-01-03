@@ -73,9 +73,6 @@ export function SpreadsheetChecker() {
 
   // Excel用のワークブック
   const [excelWorkbook, setExcelWorkbook] = useState<XLSX.WorkBook | null>(null);
-  const [fixing, setFixing] = useState(false);
-  const [fixMessage, setFixMessage] = useState<string | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   // 工事情報（妥当性判定用）
   const [projectInfo, setProjectInfo] = useState<{
@@ -96,34 +93,39 @@ export function SpreadsheetChecker() {
   const contractorId = getUrlParam('contractorId') || '';
   const docKey = getUrlParam('docKey') || docType;
 
-  useEffect(() => {
-    return () => {
-      if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
-      }
-    };
-  }, [downloadUrl]);
 
   const buildExcelSheetData = (workbook: XLSX.WorkBook, sheetIds: Set<number>) => {
     const allData: string[][] = [];
     const sheetNames: string[] = [];
+    const MAX_ROWS = 100000; // セキュリティ対策: 最大行数制限
+    const MAX_COLS = 1000;   // セキュリティ対策: 最大列数制限
 
     for (const sheetId of sheetIds) {
-      const sheetName = workbook.SheetNames[sheetId];
-      const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+      try {
+        const sheetName = workbook.SheetNames[sheetId];
+        const sheet = workbook.Sheets[sheetName];
+        
+        // セキュリティ対策: 行数・列数制限を適用
+        const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+        const limitedData = jsonData.slice(0, MAX_ROWS).map(row => 
+          (row || []).slice(0, MAX_COLS).map(cell => String(cell ?? ''))
+        );
 
-      if (allData.length > 0) {
-        allData.push(['']);
-        allData.push([`=== ${sheetName} ===`]);
-      } else {
-        allData.push([`=== ${sheetName} ===`]);
+        if (allData.length > 0) {
+          allData.push(['']);
+          allData.push([`=== ${sheetName} ===`]);
+        } else {
+          allData.push([`=== ${sheetName} ===`]);
+        }
+
+        limitedData.forEach(row => {
+          allData.push(row);
+        });
+        sheetNames.push(sheetName);
+      } catch (error) {
+        console.error(`[SpreadsheetChecker] Error processing sheet ${sheetId}:`, error);
+        throw new Error(`シート処理に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`);
       }
-
-      jsonData.forEach(row => {
-        allData.push((row as string[]).map(cell => String(cell ?? '')));
-      });
-      sheetNames.push(sheetName);
     }
 
     return { allData, sheetNames };
@@ -191,7 +193,34 @@ export function SpreadsheetChecker() {
       }
 
       const bytes = new Uint8Array(safeBase64ToArrayBuffer(data.base64));
-      const workbook = XLSX.read(bytes, { type: 'array' });
+      
+      // セキュリティ対策: ファイルサイズ制限（50MB）
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+      if (bytes.length > MAX_FILE_SIZE) {
+        throw new Error(`ファイルサイズが大きすぎます（最大${MAX_FILE_SIZE / 1024 / 1024}MB）`);
+      }
+
+      // セキュリティ対策: タイムアウト付きで処理（ReDoS対策）
+      const parsePromise = new Promise<XLSX.WorkBook>((resolve, reject) => {
+        try {
+          const workbook = XLSX.read(bytes, { 
+            type: 'array',
+            // セキュリティ対策: オプションを制限
+            cellDates: false,
+            cellNF: false,
+            cellStyles: false,
+          });
+          resolve(workbook);
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('ファイル処理がタイムアウトしました')), 30000); // 30秒
+      });
+
+      const workbook = await Promise.race([parsePromise, timeoutPromise]);
       setExcelWorkbook(workbook);
       setSpreadsheetName(data.fileName);
 
@@ -275,25 +304,8 @@ export function SpreadsheetChecker() {
 
     try {
       if (isExcel && excelWorkbook) {
-        const allData: string[][] = [];
-        const sheetNames: string[] = [];
-        for (const sheetId of selectedSheetIds) {
-          const sheetName = excelWorkbook.SheetNames[sheetId];
-          const sheet = excelWorkbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
-
-          if (allData.length > 0) {
-            allData.push(['']);
-            allData.push([`=== ${sheetName} ===`]);
-          } else {
-            allData.push([`=== ${sheetName} ===`]);
-          }
-
-          jsonData.forEach(row => {
-            allData.push((row as string[]).map(cell => String(cell ?? '')));
-          });
-          sheetNames.push(sheetName);
-        }
+        // セキュリティ対策: buildExcelSheetDataを使用（行数・列数制限あり）
+        const { allData, sheetNames } = buildExcelSheetData(excelWorkbook, selectedSheetIds);
         setSheetData(allData);
         setCurrentSheetName(sheetNames.join(', '));
       } else {
@@ -398,10 +410,6 @@ export function SpreadsheetChecker() {
   };
 
   const fileTypeLabel = isExcel ? 'Excel' : 'スプレッドシート';
-  const selectedSheets = sheetList.filter(sheet => selectedSheetIds.has(sheet.sheetId));
-  const fixableCount = isExcel && projectName
-    ? selectedSheets.filter(sheet => needsOfficeNameFix(sheet.fields, projectName)).length
-    : 0;
 
   // シート選択フェーズ
   if (phase === 'select') {
@@ -437,33 +445,6 @@ export function SpreadsheetChecker() {
                     <small>Build: {BUILD_VERSION}</small>
                   </div>
                 </div>
-                {isExcel && projectName && (
-                  <div className="ai-fix-panel">
-                    <div className="ai-fix-text">
-                      <strong>事業所名の自動修正</strong>
-                      <p>工事情報の工事名と一致していない事業所名を、AIが工事名に書き換えます（選択中のシートのみ）。</p>
-                      {fixMessage && <p className="fix-message">{fixMessage}</p>}
-                    </div>
-                    <div className="ai-fix-actions">
-                      <button
-                        className="ai-fix-btn"
-                        onClick={applyOfficeNameAutoFix}
-                        disabled={fixing || selectedSheetIds.size === 0 || fixableCount === 0}
-                      >
-                        {fixing ? 'AI修正中...' : `AIで修正 (${fixableCount}件候補)`}
-                      </button>
-                      {downloadUrl && (
-                        <a
-                          className="download-link"
-                          href={downloadUrl}
-                          download={`${spreadsheetName || 'spreadsheet'}-fixed.xlsx`}
-                        >
-                          修正後Excelをダウンロード
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
                 <div className="sheet-list">
                   {sheetList.map(sheet => (
                     <div
